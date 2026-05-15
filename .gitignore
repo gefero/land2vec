@@ -216,3 +216,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+data\id_seqs_text_2000_2022_chaco_santiago_frontier.csv
