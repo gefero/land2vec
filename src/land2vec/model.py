@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from land2vec.tokenizer import Tokenizer
 
 
-class GPT(nn.Module):
+class DecoderTransformer(nn.Module):
     def __init__(
         self,
         vocab_size: int,
