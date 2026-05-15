@@ -1,8 +1,9 @@
 from torch.utils.data import Dataset
 import torch
 import pandas as pd
-from src.land2vec.tokenizer import Tokenizer
 import tqdm
+
+from land2vec.tokenizer import Tokenizer
 
 
 class SequenceDataset(Dataset):

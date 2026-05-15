@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.land2vec.tokenizer import Tokenizer
+from land2vec.tokenizer import Tokenizer
 
 
 class GPT(nn.Module):
