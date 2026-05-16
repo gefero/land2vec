@@ -1,6 +1,10 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from torch import nn
+from torch.nn import functional as F
+from torch.utils.data.dataloader import DataLoader
+from torch.utils.data.dataset import Subset
+from torch.optim.lr_scheduler import LRScheduler
+from torch.optim import Optimizer
 
 from land2vec.tokenizer import Tokenizer
 
@@ -71,3 +75,39 @@ class DecoderTransformer(nn.Module):
             next_token = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, next_token), dim=1)
         return idx
+
+
+def train_loop(
+    model: nn.Module,
+    train_loader: DataLoader | Subset,
+    optimizer: Optimizer,
+    device: str = "cuda",
+):
+    model.train()
+    train_loss: float = 0.0
+    for x, y in train_loader:  # type: ignore
+        x = x.long().to(device)
+        y = y.long().to(device)
+
+        logits, loss = model(x, y)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        train_loss += loss.item()
+    return train_loss / len(train_loader)
+
+
+@torch.no_grad()
+def val_loop(
+    model: nn.Module,
+    val_loader: DataLoader | Subset,
+    device: str = "cuda",
+):
+    model.eval()
+    val_loss: float = 0.0
+    for x, y in val_loader:  # type: ignore
+        x = x.long().to(device)
+        y = y.long().to(device)
+        _, loss = model(x, y)
+        val_loss += loss.item()
+    return val_loss / len(val_loader)
