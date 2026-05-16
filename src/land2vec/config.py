@@ -9,7 +9,12 @@ class Config:
     n_head: int = 2
     n_layer: int = 2
     dropout: float = 0.1
+    
     # training
-    epochs: int = 10
+    epochs: int = 25
+    patience: int = 10
     batch_size: int = 128
     lr: float = 1e-3
+    patience: int = 5
+    min_lr: float = 1e-6
+    weight_decay: float = 1e-2
