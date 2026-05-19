@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class Config:
     # model
-    block_size: int = 8
+    block_size: int = 12
     n_embd: int = 128
     n_head: int = 4
     n_layer: int = 4

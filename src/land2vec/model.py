@@ -104,9 +104,7 @@ def run_epoch(
             x = x.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
 
-            with torch.autocast(
-                device_type=device, dtype=torch.bfloat16, enabled=use_amp
-            ):
+            with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
                 _, loss = model(x, y)
 
             if training:
