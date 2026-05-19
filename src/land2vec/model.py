@@ -88,37 +88,6 @@ class DecoderTransformer(nn.Module):
         return idx
 
 
-# def run_epoch(
-#     model: nn.Module,
-#     data_loader: DataLoader | Subset,
-#     optimizer: Optimizer | None = None,
-#     device: str = "cuda",
-# ):
-#     if optimizer is not None:
-#         model.train()
-#         train_loss: float = 0.0
-#         for x, y in data_loader:  # type: ignore
-#             x = x.long().to(device, non_blocking=True)
-#             y = y.long().to(device, non_blocking=True)
-
-#             logits, loss = model(x, y)
-#             optimizer.zero_grad()
-#             loss.backward()
-#             optimizer.step()
-#             train_loss += loss.item()
-#         return train_loss / len(data_loader)
-
-#     with torch.no_grad():
-#         model.eval()
-#         val_loss: float = 0.0
-#         for x, y in data_loader:  # type: ignore
-#             x = x.long().to(device)
-#             y = y.long().to(device)
-#             _, loss = model(x, y)
-#             val_loss += loss.item()
-#         return val_loss / len(data_loader)
-
-
 def run_epoch(
     model: nn.Module,
     data_loader: DataLoader,
