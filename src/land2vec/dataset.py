@@ -23,7 +23,7 @@ class SequenceDataset(Dataset):
         start = idx % (self.encoded.shape[-1] - self.window)
         row = idx // (self.encoded.shape[-1] - self.window)
         x = self.encoded[row, start:start + self.window]
-        y = self.encoded[row, start:start + self.window + 1]
+        y = self.encoded[row, start + 1:start + self.window + 1]
         return x, y
 
 def load_data(
