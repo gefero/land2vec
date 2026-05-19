@@ -9,7 +9,6 @@ from land2vec.tokenizer import Tokenizer
 class SequenceDataset(Dataset):
     def __init__(self, sequences: pd.Series, window: int):
         self.window = window
-        self.index_map: list[tuple[int, int]] = []
 
         encoded_sequences: list[torch.Tensor] = []
         for seq_idx, seq in enumerate(tqdm.tqdm(sequences)):
@@ -18,7 +17,7 @@ class SequenceDataset(Dataset):
         self.encoded = torch.stack(encoded_sequences)
 
     def __len__(self):
-        return len(self.index_map)
+        return len(self.encoded)
 
     def __getitem__(self, idx):
         start = idx % (self.encoded.shape[-1] - self.window)
