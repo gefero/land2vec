@@ -21,3 +21,4 @@ class Config:
     weight_decay: float = 1e-2
     
     seed: int = 42
+    num_workers: int = 2
