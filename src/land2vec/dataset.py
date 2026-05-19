@@ -9,29 +9,23 @@ from land2vec.tokenizer import Tokenizer
 class SequenceDataset(Dataset):
     def __init__(self, sequences: pd.Series, window: int):
         self.window = window
-        self.encoded_sequences: list[torch.Tensor] = []
         self.index_map: list[tuple[int, int]] = []
 
+        encoded_sequences: list[torch.Tensor] = []
         for seq_idx, seq in enumerate(tqdm.tqdm(sequences)):
-            encoded = Tokenizer.encode(seq)
-            if len(encoded) <= window:
-                continue
-            encoded_tensor = torch.tensor(encoded, dtype=torch.long)
-            self.encoded_sequences.append(encoded_tensor)
-            n_windows = len(encoded) - window
-            for start in range(n_windows):
-                self.index_map.append((len(self.encoded_sequences) - 1, start))
+            encoded_sequences.append(torch.tensor(Tokenizer.encode(seq)))
+        
+        self.encoded = torch.stack(encoded_sequences)
 
     def __len__(self):
         return len(self.index_map)
 
     def __getitem__(self, idx):
-        seq_idx, start = self.index_map[idx]
-        seq = self.encoded_sequences[seq_idx]
-        x = seq[start : start + self.window]
-        y = seq[start + 1 : start + self.window + 1]
+        start = idx % (self.encoded.shape[-1] - self.window)
+        row = idx // (self.encoded.shape[-1] - self.window)
+        x = self.encoded[row, start:start + self.window]
+        y = self.encoded[row, start:start + self.window + 1]
         return x, y
-
 
 def load_data(
     *,
@@ -46,9 +40,10 @@ def load_data(
 
 
 def main():
-    dataset = load_data()
+    dataset = load_data(file_path="data/seqs_short.csv")
     print(len(dataset))
-    [print(dataset[i]) for i in range(10, 18)]
+    for i in range(20):
+        print(i, dataset[i])
 
 
 if __name__ == "__main__":
