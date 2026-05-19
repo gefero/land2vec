@@ -3,7 +3,6 @@ from torch import nn
 from torch.nn import functional as F
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Subset
-from torch.optim.lr_scheduler import LRScheduler
 from torch.optim import Optimizer
 
 from land2vec.tokenizer import Tokenizer
@@ -31,30 +30,39 @@ class DecoderTransformer(nn.Module):
             dropout=dropout,
             activation="gelu",
             batch_first=True,
+            norm_first=True,
         )
+
         self.transformer = nn.TransformerEncoder(
             encoder_layer,
             num_layers=n_layer,
         )
-        # final normalization
+
         self.ln_f = nn.LayerNorm(n_embd)
-        # language modeling head
-        self.lm_head = nn.Linear(n_embd, vocab_size)
+        self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
+        self.lm_head.weight = self.token_embedding.weight
+
+        self.register_buffer(
+            "causal_mask",
+            torch.triu(torch.ones(block_size, block_size), diagonal=1).bool(),
+        )
+
+        self.register_buffer("position_ids", torch.arange(block_size), persistent=False)
 
     def forward(self, x, targets=None):
         B, T = x.shape
         if T > self.block_size:
             raise ValueError(f"Sequence length {T} exceeds block size {self.block_size}")
 
-        positions = torch.arange(T, device=x.device)
-        tok_emb = self.token_embedding(x)  # [B, T, C]
-        pos_emb = self.position_embedding(positions)  # [T, C]
-
+        positions = self.position_ids[:T]  # type: ignore
+        tok_emb = self.token_embedding(x)
+        pos_emb = self.position_embedding(positions)
         x = tok_emb + pos_emb
-        mask = torch.triu(torch.ones(T, T, device=x.device), diagonal=1).bool()
+
+        mask = self.causal_mask[:T, :T]  # type: ignore
         x = self.transformer(x, mask=mask)
         x = self.ln_f(x)
-        logits = self.lm_head(x)  # [B, T, vocab]
+        logits = self.lm_head(x)
         loss = None
         if targets is not None:
             loss = F.cross_entropy(
@@ -65,49 +73,86 @@ class DecoderTransformer(nn.Module):
         return logits, loss
 
     @torch.no_grad()
-    def generate(self, idx: torch.Tensor, max_new_tokens: int):
+    def generate(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+    ):
         self.eval()
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.block_size :]
             logits, _ = self(idx_cond)
-            logits = logits[:, -1, :]  # [B, vocab]
-            probs = F.softmax(logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)
-            idx = torch.cat((idx, next_token), dim=1)
+            logits = logits[:, -1, :]
+            next_token = torch.distributions.Categorical(logits=logits).sample()
+            idx = torch.cat((idx, next_token.unsqueeze(1)), dim=1)
         return idx
 
 
-def train_loop(
+# def run_epoch(
+#     model: nn.Module,
+#     data_loader: DataLoader | Subset,
+#     optimizer: Optimizer | None = None,
+#     device: str = "cuda",
+# ):
+#     if optimizer is not None:
+#         model.train()
+#         train_loss: float = 0.0
+#         for x, y in data_loader:  # type: ignore
+#             x = x.long().to(device, non_blocking=True)
+#             y = y.long().to(device, non_blocking=True)
+
+#             logits, loss = model(x, y)
+#             optimizer.zero_grad()
+#             loss.backward()
+#             optimizer.step()
+#             train_loss += loss.item()
+#         return train_loss / len(data_loader)
+
+#     with torch.no_grad():
+#         model.eval()
+#         val_loss: float = 0.0
+#         for x, y in data_loader:  # type: ignore
+#             x = x.long().to(device)
+#             y = y.long().to(device)
+#             _, loss = model(x, y)
+#             val_loss += loss.item()
+#         return val_loss / len(data_loader)
+
+
+def run_epoch(
     model: nn.Module,
-    train_loader: DataLoader | Subset,
-    optimizer: Optimizer,
+    data_loader: DataLoader,
+    optimizer: Optimizer | None = None,
     device: str = "cuda",
+    scaler: torch.amp.GradScaler | None = None,  # type: ignore
+    use_amp: bool = True,
 ):
-    model.train()
-    train_loss: float = 0.0
-    for x, y in train_loader:  # type: ignore
-        x = x.long().to(device)
-        y = y.long().to(device)
+    training = optimizer is not None
+    model.train(training)
+    total_loss = 0.0
+    with torch.enable_grad() if training else torch.inference_mode():
+        for x, y in data_loader:
+            x = x.to(device, non_blocking=True)
+            y = y.to(device, non_blocking=True)
 
-        logits, loss = model(x, y)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        train_loss += loss.item()
-    return train_loss / len(train_loader)
+            with torch.autocast(
+                device_type=device, dtype=torch.bfloat16, enabled=use_amp
+            ):
+                _, loss = model(x, y)
 
+            if training:
+                optimizer.zero_grad()
 
-@torch.no_grad()
-def val_loop(
-    model: nn.Module,
-    val_loader: DataLoader | Subset,
-    device: str = "cuda",
-):
-    model.eval()
-    val_loss: float = 0.0
-    for x, y in val_loader:  # type: ignore
-        x = x.long().to(device)
-        y = y.long().to(device)
-        _, loss = model(x, y)
-        val_loss += loss.item()
-    return val_loss / len(val_loader)
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    optimizer.step()
+
+            total_loss += loss.detach()
+
+    total_loss = total_loss / len(data_loader)
+
+    return total_loss.item()  # type: ignore
