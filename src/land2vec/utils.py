@@ -10,8 +10,8 @@ from land2vec.model import GPTDecoder
 
 
 def get_target_folder(model_name: str):
-    if (Path("context") / "land2vec").exists():
-        target = Path("/context") / "land2vec" / "models" / model_name
+    if Path.cwd() == (Path("/context") / "land2vec"):
+        target = Path("models") / model_name
     else:
         target = Path("..") / "models" / model_name
     return target
