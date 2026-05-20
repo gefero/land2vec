@@ -2,13 +2,74 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data.dataloader import DataLoader
-from torch.utils.data.dataset import Subset
 from torch.optim import Optimizer
 
 from land2vec.tokenizer import Tokenizer
 
 
-class DecoderTransformer(nn.Module):
+class CausalSelfAttention(nn.Module):
+    def __init__(self, n_embd: int, n_head: int, dropout: float):
+        super().__init__()
+        assert n_embd % n_head == 0
+        self.n_head = n_head
+        self.head_dim = n_embd // n_head
+
+        self.qkv = nn.Linear(n_embd, 3 * n_embd, bias=False)
+        self.proj = nn.Linear(n_embd, n_embd, bias=False)
+        self.dropout = dropout
+
+    def forward(self, x):
+        B, T, C = x.shape
+        qkv = self.qkv(x)
+        q, k, v = qkv.split(C, dim=-1)
+
+        q = q.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
+        k = k.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
+        v = v.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
+
+        y = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=None,
+            dropout_p=self.dropout if self.training else 0.0,
+            is_causal=True,
+        )
+
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
+        y = self.proj(y)
+        return y
+
+
+class FeedForward(nn.Module):
+    def __init__(self, n_embd: int, dropout: float):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embd, 4 * n_embd),
+            nn.GELU(),
+            nn.Linear(4 * n_embd, n_embd),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class Block(nn.Module):
+    def __init__(self, n_embd: int, n_head: int, dropout: float):
+        super().__init__()
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.attn = CausalSelfAttention(n_embd, n_head, dropout)
+        self.ln2 = nn.LayerNorm(n_embd)
+        self.mlp = FeedForward(n_embd, dropout)
+
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.mlp(self.ln2(x))
+        return x
+
+
+class GPTDecoder(nn.Module):
     def __init__(
         self,
         vocab_size: int,
@@ -20,33 +81,16 @@ class DecoderTransformer(nn.Module):
     ):
         super().__init__()
         self.block_size = block_size
+
         self.token_embedding = nn.Embedding(vocab_size, n_embd)
         self.position_embedding = nn.Embedding(block_size, n_embd)
-
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=n_embd,
-            nhead=n_head,
-            dim_feedforward=n_embd * 4,
-            dropout=dropout,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
+        self.blocks = nn.Sequential(
+            *[Block(n_embd, n_head, dropout) for _ in range(n_layer)]
         )
-
-        self.transformer = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=n_layer,
-        )
-
         self.ln_f = nn.LayerNorm(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
+
         self.lm_head.weight = self.token_embedding.weight
-
-        self.register_buffer(
-            "causal_mask",
-            torch.triu(torch.ones(block_size, block_size), diagonal=1).bool(),
-        )
-
         self.register_buffer("position_ids", torch.arange(block_size), persistent=False)
 
     def forward(self, x, targets=None):
@@ -58,26 +102,21 @@ class DecoderTransformer(nn.Module):
         tok_emb = self.token_embedding(x)
         pos_emb = self.position_embedding(positions)
         x = tok_emb + pos_emb
-
-        mask = self.causal_mask[:T, :T]  # type: ignore
-        x = self.transformer(x, mask=mask)
+        x = self.blocks(x)
         x = self.ln_f(x)
+
         logits = self.lm_head(x)
-        loss = None
         if targets is not None:
             loss = F.cross_entropy(
                 logits.reshape(-1, logits.size(-1)),
                 targets.reshape(-1),
                 ignore_index=Tokenizer.VOCAB["[PAD]"],
             )
-        return logits, loss
+            return None, loss
+        return logits, None
 
     @torch.no_grad()
-    def generate(
-        self,
-        idx: torch.Tensor,
-        max_new_tokens: int,
-    ):
+    def generate(self, idx: torch.Tensor, max_new_tokens: int):
         self.eval()
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.block_size :]
