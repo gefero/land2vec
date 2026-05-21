@@ -84,7 +84,9 @@ def collect_predictions(
 
     use_amp = device == "cuda"
 
+    n_batch = 0
     for batch_idx, (x, y) in enumerate(loader):
+        n_batch = batch_idx
         if max_batches is not None and batch_idx >= max_batches:
             break
         x = x.to(device, non_blocking=True)
@@ -111,7 +113,7 @@ def collect_predictions(
     preds = np.asarray(all_preds)
     targets = np.asarray(all_targets)
 
-    avg_loss = total_loss / len(loader)
+    avg_loss = total_loss / n_batch
 
     return preds, targets, avg_loss
 
