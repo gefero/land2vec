@@ -2,6 +2,7 @@ from torch.utils.data import Dataset
 import torch
 import pandas as pd
 import tqdm
+from pathlib import Path
 
 from land2vec.tokenizer import Tokenizer
 
@@ -27,14 +28,6 @@ class SequenceDataset(Dataset):
         return x, y
 
 
-from torch.utils.data import Dataset
-import torch
-import pandas as pd
-import tqdm
-
-from land2vec.tokenizer import Tokenizer
-
-
 class SequenceDatasetNonWindow(Dataset):
     def __init__(self, sequences: pd.Series):
         self.encoded: list[torch.Tensor] = []
@@ -56,12 +49,12 @@ class SequenceDatasetNonWindow(Dataset):
 
 def load_data(
     *,
-    file_path: str | None = None,
+    file_path: Path | None = None,
     data_column: str = "seqs",
     window: int | None = None,
 ):
     if file_path is None:
-        file_path = "data/id_seqs_text_2000_2022_chaco_santiago_frontier.zip"
+        file_path = Path("data") / "id_seqs_text_2000_2022_chaco_santiago_frontier.zip"
     df = pd.read_csv(file_path)
     if window is not None:
         return SequenceDataset(df[data_column], window=window)
@@ -69,7 +62,7 @@ def load_data(
 
 
 def main():
-    dataset = load_data(file_path="data/seqs_short.csv")
+    dataset = load_data(file_path=Path("data") / "seqs_short.csv")
     print(len(dataset))
     i = 0
     while True:
