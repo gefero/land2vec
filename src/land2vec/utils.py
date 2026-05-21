@@ -3,6 +3,7 @@ from json import dump, load
 from typing import Literal
 from dataclasses import asdict
 import pandas as pd
+import numpy as np
 
 import torch
 from torch import nn
@@ -68,36 +69,51 @@ def load_train_results(target_folder: Path):
     return pd.read_csv(target_folder / "train_data.csv")
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def collect_predictions(
-    model: nn.Module, loader: DataLoader, device: Literal["cpu", "cuda"],
-    weights: torch.Tensor
+    model: nn.Module,
+    loader: DataLoader,
+    device: str,
+    weights: torch.Tensor,
+    max_batches: int = 100,
 ):
     model.eval()
-    all_logits = []
+    all_preds = []
     all_targets = []
     total_loss = 0.0
 
-    for x, y in loader:
-        x = x.to(device)
-        logits = model(x)
-        all_logits.append(logits.cpu())
-        all_targets.append(y.cpu())
+    use_amp = device == "cuda"
 
-        loss = F.cross_entropy(
-            logits.reshape(-1, logits.size(-1)),
-            y.reshape(-1),
-            ignore_index=Tokenizer.VOCAB["[PAD]"],
-            weight=weights,
-            label_smoothing=0.1
-        )
-        total_loss += loss.detach()
+    for batch_idx, (x, y) in enumerate(loader):
+        if max_batches is not None and batch_idx >= max_batches:
+            break
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True)
 
-    all_logits = torch.cat(all_logits, dim=0)
-    all_targets = torch.cat(all_targets, dim=0)
-    preds = all_logits.reshape(-1, all_logits.size(-1)).argmax(dim=-1)
-    targets = all_targets.reshape(-1)
-    return preds.numpy(), targets.numpy(), total_loss / len(loader)
+        with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
+            logits = model(x)
+
+            loss = F.cross_entropy(
+                logits.reshape(-1, logits.size(-1)),
+                y.reshape(-1),
+                ignore_index=Tokenizer.VOCAB["[UNK]"],
+                weight=weights,
+            )
+
+        total_loss += loss.item()
+
+        preds = logits.argmax(dim=-1)
+
+        all_preds.extend(preds.reshape(-1).cpu().numpy())
+
+        all_targets.extend(y.reshape(-1).cpu().numpy())
+
+    preds = np.asarray(all_preds)
+    targets = np.asarray(all_targets)
+
+    avg_loss = total_loss / len(loader)
+
+    return preds, targets, avg_loss
 
 
 def compute_metrics(y_true, y_pred):

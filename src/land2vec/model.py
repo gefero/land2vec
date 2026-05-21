@@ -167,7 +167,7 @@ def run_epoch(
                 logits.reshape(-1, logits.size(-1)),
                 y.reshape(-1),
                 weight=weights.to(logits.dtype),
-                label_smoothing=0.1,
+                label_smoothing=0.02,
                 ignore_index=Tokenizer.VOCAB["[UNK]"]
             )
 
