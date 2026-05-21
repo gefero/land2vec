@@ -1,21 +1,22 @@
+import torch
+
 class Tokenizer:
     VOCAB = {
-        "[PAD]": 0,
-        "[UNK]": 1,
-        "[CLS]": 2,
-        "[SEP]": 3,
+        "[PAD]":  0,
+        "[UNK]":  1,
+        "[CLS]":  2,
+        "[SEP]":  3,
         "[MASK]": 4,
-        "A": 6,
-        "F": 7,
-        "G": 8,
-        "Wt": 9,
-        "U": 10,
-        "Sh": 11,
-        "Sp": 12,
-        "B": 13,
-        "Wa": 14,
-        "Nd": 15,
-        "-": 16,
+        "A":  5,
+        "F":  6,
+        "G":  7,
+        "Wt": 8,
+        "U":  9,
+        "Sh": 10,
+        "Sp": 11,
+        "B":  12,
+        "Wa": 13,
+        "Nd": 14,
     }
     REVERSE_VOCAB = {v: k for k, v in VOCAB.items()}
 
