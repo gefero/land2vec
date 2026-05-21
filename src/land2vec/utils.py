@@ -69,13 +69,14 @@ def load_train_results(target_folder: Path):
     return pd.read_csv(target_folder / "train_data.csv")
 
 
+# Metrics
 @torch.inference_mode()
 def collect_predictions(
     model: nn.Module,
     loader: DataLoader,
     device: str,
     weights: torch.Tensor,
-    max_batches: int = 100,
+    max_batches: int | None = 100,
 ):
     model.eval()
     all_preds = []
