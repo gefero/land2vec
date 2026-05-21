@@ -21,12 +21,14 @@ class Tokenizer:
 
     @staticmethod
     def encode(seq: str):
+        "Convierte una secuencia en una lista de numeros"
         states = seq.split("-")
-        return [Tokenizer.VOCAB[state] for state in states]
+        return [Tokenizer.VOCAB.get(state, Tokenizer.VOCAB["[UNK]"]) for state in states]
 
     @staticmethod
-    def decode(states: list[int]):
-        return "-".join([Tokenizer.REVERSE_VOCAB[state] for state in states])
+    def decode(states: torch.Tensor):
+        "Convierte Tensor plano (1D) a una secuencia de estados"
+        return "-".join([Tokenizer.REVERSE_VOCAB[state] for state in states.tolist()])
 
 
 if __name__ == "__main__":
