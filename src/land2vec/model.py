@@ -166,7 +166,6 @@ def run_epoch(
             loss = F.cross_entropy(
                 logits.reshape(-1, logits.size(-1)),
                 y.reshape(-1),
-                ignore_index=Tokenizer.VOCAB["[PAD]"],
                 weight=weights,
                 label_smoothing=0.1,
             )
