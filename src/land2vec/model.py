@@ -146,8 +146,8 @@ class GPTDecoder(nn.Module):
 def run_epoch(
     model: nn.Module,
     data_loader: DataLoader,
+    weights: torch.Tensor,
     optimizer: Optimizer | None = None,
-    weights: torch.Tensor | None = None,
     device: str = "cuda",
     scaler: torch.amp.GradScaler | None = None,  # type: ignore
     use_amp: bool = True,
@@ -166,7 +166,7 @@ def run_epoch(
             loss = F.cross_entropy(
                 logits.reshape(-1, logits.size(-1)),
                 y.reshape(-1),
-                weight=weights,
+                weight=weights.to(logits.dtype),
                 label_smoothing=0.1,
             )
 
