@@ -17,7 +17,7 @@ class SequenceDataset(Dataset):
         self.encoded = torch.stack(encoded_sequences)
 
     def __len__(self):
-        return len(self.encoded)
+        return len(self.encoded) * (self.encoded.shape[-1] - self.window)
 
     def __getitem__(self, idx):
         start = idx % (self.encoded.shape[-1] - self.window)
@@ -41,8 +41,13 @@ def load_data(
 def main():
     dataset = load_data(file_path="data/seqs_short.csv")
     print(len(dataset))
-    for i in range(20):
-        print(i, dataset[i])
+    i = 0
+    while True:
+        try:
+            print(i, dataset[i])
+        except:
+            break
+        i += 1
 
 
 if __name__ == "__main__":
