@@ -2,17 +2,17 @@ import torch
 
 class Tokenizer:
     VOCAB = {
-        "[UNK]":  1,
-        "A":  2,
-        "F":  3,
-        "G":  4,
-        "Wt": 5,
-        "U":  6,
-        "Sh": 7,
-        "Sp": 8,
-        "B":  9,
-        "Wa": 10,
-        "Nd": 11,
+        "[UNK]":  0,
+        "A":  1,
+        "F":  2,
+        "G":  3,
+        "Wt": 4,
+        "U":  5,
+        "Sh": 6,
+        "Sp": 7,
+        "B":  8,
+        "Wa": 9,
+        "Nd": 10,
     }
     REVERSE_VOCAB = {v: k for k, v in VOCAB.items()}
 
