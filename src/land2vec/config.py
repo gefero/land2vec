@@ -13,7 +13,6 @@ class Config:
 
     # training
     epochs: int = 25
-    patience: int = 10
     lr: float = 1e-3
     patience: int = 5
     min_lr: float = 1e-6
