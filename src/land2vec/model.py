@@ -93,7 +93,7 @@ class GPTDecoder(nn.Module):
         self.lm_head.weight = self.token_embedding.weight
         self.register_buffer("position_ids", torch.arange(block_size), persistent=False)
 
-    def forward(self, x, targets=None):
+    def forward(self, x) -> torch.Tensor:
         B, T = x.shape
         if T > self.block_size:
             raise ValueError(f"Sequence length {T} exceeds block size {self.block_size}")
@@ -106,24 +106,40 @@ class GPTDecoder(nn.Module):
         x = self.ln_f(x)
 
         logits = self.lm_head(x)
-        if targets is not None:
-            loss = F.cross_entropy(
-                logits.reshape(-1, logits.size(-1)),
-                targets.reshape(-1),
-                ignore_index=Tokenizer.VOCAB["[PAD]"],
-            )
-            return None, loss
-        return logits, None
+        return logits
 
     @torch.no_grad()
-    def generate(self, idx: torch.Tensor, max_new_tokens: int):
+    def generate(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
+    ):
         self.eval()
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.block_size :]
-            logits, _ = self(idx_cond)
+            logits = self(idx_cond)
             logits = logits[:, -1, :]
-            next_token = torch.distributions.Categorical(logits=logits).sample()
-            idx = torch.cat((idx, next_token.unsqueeze(1)), dim=1)
+            logits = logits / temperature
+            if top_k is not None:
+                v, _ = torch.topk(logits, top_k)
+                logits[logits < v[:, [-1]]] = -float("inf")
+            
+            if top_p is not None:
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                probs = F.softmax(sorted_logits, dim=-1)
+                cumulative_probs = torch.cumsum(probs, dim=-1)
+                sorted_mask = cumulative_probs > top_p
+                sorted_mask[..., 1:] = sorted_mask[..., :-1].clone()
+                sorted_mask[..., 0] = False
+                indices_to_remove = sorted_mask.scatter(1, sorted_indices, sorted_mask)
+                logits[indices_to_remove] = -float("inf")
+            
+            probs = F.softmax(logits, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, next_token), dim=1)
         return idx
 
 
@@ -131,6 +147,7 @@ def run_epoch(
     model: nn.Module,
     data_loader: DataLoader,
     optimizer: Optimizer | None = None,
+    weights: torch.Tensor | None = None,
     device: str = "cuda",
     scaler: torch.amp.GradScaler | None = None,  # type: ignore
     use_amp: bool = True,
@@ -144,7 +161,15 @@ def run_epoch(
             y = y.to(device, non_blocking=True)
 
             with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
-                _, loss = model(x, y)
+                logits = model(x)
+
+            loss = F.cross_entropy(
+                logits.reshape(-1, logits.size(-1)),
+                y.reshape(-1),
+                ignore_index=Tokenizer.VOCAB["[PAD]"],
+                weight=weights,
+                label_smoothing=0.1,
+            )
 
             if training:
                 optimizer.zero_grad()
