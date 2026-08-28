@@ -1,4 +1,7 @@
-# land2vec
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="imgs/logo-dark.png">
+  <img alt="land2vec" src="imgs/logo-light.png" width="360">
+</picture>
 
 `land2vec` entrena un modelo de lenguaje tipo GPT (transformer decoder-only,
 causal self-attention) sobre **secuencias temporales de uso/cobertura del
