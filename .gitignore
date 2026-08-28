@@ -1,7 +1,3 @@
-# Specific folders and files
-data/landcover_timeseries_2000-2022.nc
-
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
