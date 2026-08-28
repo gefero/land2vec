@@ -29,7 +29,7 @@ def get_target_folder(model_name: str):
 def save_config(config: Config, target_folder: Path):
     with open(target_folder / "config.json", "w") as f:
         dump(asdict(config), f, indent=2)
-    print(f"Config saved to {target_folder / "config.json"}")
+    print(f"Config saved to {target_folder / 'config.json'}")
 
 
 def load_config(target_folder: Path):
@@ -41,7 +41,7 @@ def load_config(target_folder: Path):
 # Model saving and loading
 def save_model(model: torch.nn.Module, target_folder: Path):
     torch.save(model.state_dict(), target_folder / "model.pt")
-    print(f"Model saved to {target_folder / "model.pt"}")
+    print(f"Model saved to {target_folder / 'model.pt'}")
 
 
 def load_model(config: Config, target_folder: Path):
@@ -52,7 +52,7 @@ def load_model(config: Config, target_folder: Path):
         n_head=config.n_head,
         n_layer=config.n_layer,
     )
-    model_state = torch.load(target_folder / "model.pt")
+    model_state = torch.load(target_folder / "model.pt", map_location=config.device)
     model.load_state_dict(model_state)
     model = model.to(config.device)
     model.eval()
@@ -62,7 +62,7 @@ def load_model(config: Config, target_folder: Path):
 # Training data saving and loading
 def save_train_results(results: dict[str, list], target_folder: Path):
     pd.DataFrame(results).to_csv(target_folder / "train_data.csv", index=False)
-    print(f"Train data saved to {target_folder / "train_data.csv"}")
+    print(f"Train data saved to {target_folder / 'train_data.csv'}")
 
 
 def load_train_results(target_folder: Path):
@@ -119,8 +119,14 @@ def collect_predictions(
     return preds, targets, avg_loss
 
 
-def compute_metrics(y_true, y_pred):
+def compute_metrics(y_true, y_pred, labels: list[int] | None = None):
+    # Por defecto fija las clases del vocabulario (sin [UNK]) en vez de dejar que
+    # f1_score promedie solo sobre las clases presentes en y_true/y_pred: si no,
+    # el macro F1 no es comparable entre evaluaciones con distinta composición de
+    # clases (ver notebooks/test_2.ipynb, sección de la clase "B").
+    if labels is None:
+        labels = [i for i in Tokenizer.VOCAB.values() if i != Tokenizer.VOCAB["[UNK]"]]
     return {
         "accuracy": accuracy_score(y_true, y_pred),
-        "macro_f1": f1_score(y_true, y_pred, average="macro"),
+        "macro_f1": f1_score(y_true, y_pred, average="macro", labels=labels, zero_division=0),
     }
