@@ -174,6 +174,18 @@ proyecto se hace de forma exploratoria en estos notebooks, evaluando
 accuracy y F1 macro sobre datos de validación/test y revisando matrices de
 confusión.
 
+## Resultados preliminares
+
+> ⚠️ **Resultados preliminares**, obtenidos en `test_1.ipynb` evaluando el
+> modelo final (`models/full_model`) sobre el set de test held-out
+> (`data/id_seqs_text_2000_2022_test_set.zip`). Sujetos a revisión con más
+> datos y validaciones adicionales.
+
+- Parámetros del modelo: 795,520
+- Mejor F1 macro en validación (durante entrenamiento, época 1): 0.9886
+- **Accuracy (test set)**: 0.9960
+- **Macro F1 (test set)**: 0.9789
+
 ## Modelos entrenados incluidos
 
 - `models/full_model/` — modelo final, entrenado sobre el dataset completo y evaluado en el test set held-out (ver `test_1.ipynb`).
@@ -183,3 +195,8 @@ confusión.
 
 Cada carpeta de modelo incluye `config.json` (hiperparámetros usados),
 `model.pt` (pesos) y `train_data.csv` (historial de loss/métricas por época).
+
+## Créditos
+
+- **Coordinación**: Germán Rosati (CONICET-EIDAES/UNSAM)
+- **Colaboración**: Gonzalo Jara (Lic. en Ciencia de Datos - ECyT/UNSAM)
