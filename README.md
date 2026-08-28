@@ -19,7 +19,8 @@ src/land2vec/
   dataset.py    # Datasets de PyTorch (ventaneado y no ventaneado) + carga de CSV/zip
   model.py      # GPTDecoder (transformer causal) + loop de entrenamiento/eval
   utils.py      # Guardado/carga de config, modelo y métricas
-data/           # Secuencias de entrenamiento y de test (CSV/zip)
+  extract.py    # Extracción de secuencias por píxel desde el netCDF fuente (ESA CCI)
+data/           # Secuencias de entrenamiento y de test (CSV/zip) + netCDF fuente (Git LFS)
 models/         # Checkpoints entrenados (config.json + model.pt + train_data.csv)
 notebooks/      # Notebooks de experimentación ("pruebas") en Google Colab
 ```
@@ -34,6 +35,15 @@ pip install -e .
 Requiere Python 3.11+ (usa `dataclass(slots=True)` y sintaxis de tipos
 moderna) y, para entrenar en GPU, una instalación de PyTorch con soporte
 CUDA.
+
+`data/landcover_timeseries_2000-2022.nc` (ver más abajo) se versiona con
+[Git LFS](https://git-lfs.com/) por su tamaño (~189MB). Para clonar el repo
+con el archivo real (no solo el puntero):
+
+```bash
+git lfs install   # una sola vez por máquina
+git clone https://github.com/gefero/land2vec
+```
 
 ## Datos
 
@@ -68,6 +78,40 @@ Archivos en `data/`:
 - `id_seqs_text_2000_2022_test_set.zip` — set de test held-out, usado en la evaluación final.
 - `test_sample_0/1/2.zip` — muestras adicionales de test.
 - `seqs_short.csv` — muestra chica (10 filas) usada para pruebas rápidas/debug.
+
+## Extracción desde el netCDF fuente (`land2vec.extract`)
+
+Los `id_seqs_text_*.zip` / `lat_long_df_*.zip` de `data/` se derivan de
+`data/landcover_timeseries_2000-2022.nc`: series anuales 2000-2022 de
+[ESA CCI Land Cover](http://www.esa-landcover-cci.org/) (`lccs_class`,
+300m de resolución), ya recortadas a Sudamérica — cubre
+lat `[-55.0, -20.0]`, lon `[-75.0, -53.0]` (todo el territorio continental
+argentino, Uruguay, buena parte de Chile y el sur de Bolivia/Paraguay/Brasil).
+
+El proceso original de extracción (recortar el netCDF a una región,
+aplanar píxeles a una grilla con `ID`, mapear los códigos numéricos de
+`lccs_class` a los tokens del vocabulario) está documentado en
+`src/3_concat_extract_nc_files.ipynb` y reimplementado como funciones
+reutilizables en `land2vec.extract`:
+
+```python
+from land2vec.extract import load_landcover_dataset, extract_zone, save_zone_csvs
+
+ds = load_landcover_dataset()  # data/landcover_timeseries_2000-2022.nc por defecto
+
+# bbox = (minx, miny, maxx, maxy) en lon/lat
+lat_long_df, seqs_df = extract_zone(ds, bbox=(-57.6, -28.6, -57.4, -28.4))
+
+save_zone_csvs(lat_long_df, seqs_df, output_dir=Path("data"), zone_name="ibera")
+# -> data/id_seqs_text_2000_2022_ibera.zip, data/lat_long_df_ibera.zip
+```
+
+`extract_zone()` reproduce exactamente `id_seqs_text_2000_2022_chaco_santiago_frontier.zip`
+al recortar con el mismo bbox (validado píxel a píxel contra el dataset de
+entrenamiento). También incluye `drop_constant_sequences()`, para descartar
+píxeles cuya secuencia no cambia en todo el período (p. ej. agua
+permanente), como hace `src/3_concat_extract_nc_files.ipynb` para el
+dataset de entrenamiento.
 
 `land2vec.dataset.load_data()` carga cualquiera de estos archivos y
 devuelve:
