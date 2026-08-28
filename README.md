@@ -179,15 +179,15 @@ confusión.
 
 ## Resultados preliminares
 
-> ⚠️ **Resultados preliminares**, obtenidos en `test_1.ipynb` evaluando el
+> ⚠️ **Resultados preliminares**, obtenidos en `test_2.ipynb` evaluando el
 > modelo final (`models/full_model`) sobre el set de test held-out
 > (`data/id_seqs_text_2000_2022_test_set.zip`). Sujetos a revisión con más
 > datos y validaciones adicionales.
 
 - Parámetros del modelo: 795,520
 - Mejor F1 macro en validación (durante entrenamiento, época 1): 0.9886
-- **Accuracy (test set)**: 0.9960
-- **Macro F1 (test set)**: 0.9789
+- **Accuracy (test set)**: 0.9929
+- **Macro F1 (test set)**: 0.9005
 
 ## Modelos entrenados incluidos
 
