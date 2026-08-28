@@ -78,6 +78,16 @@ devuelve:
   completa de cada parcela como un solo ejemplo (padding/batching lo maneja
   el `DataLoader`).
 
+## Cobertura geográfica
+
+![Zonas de entrenamiento y de test](imgs/train_test_zones.png)
+
+Mapa generado con `scripts/plot_train_test_zones.py` a partir de
+`data/lat_long_df_*.zip` (coordenadas por parcela) y los límites de
+Argentina/provincias en `data/geo/` (Natural Earth). El área de estudio
+cae en Chaco y Santiago del Estero; el recuadro marrón en el panel derecho
+muestra dónde se superponen las parcelas de entrenamiento y de test.
+
 ## Modelo
 
 `GPTDecoder` (`src/land2vec/model.py`) es un transformer decoder causal
