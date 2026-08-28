@@ -124,6 +124,37 @@ Los checkpoints se guardan/cargan con `save_model`/`load_model` y
 dentro de `models/` (`config.json` + `model.pt` + `train_data.csv` con el
 historial de entrenamiento).
 
+## Ejemplo de uso: inferencia con un modelo entrenado
+
+Este ejemplo carga el modelo final (`models/full_model`) y predice el
+próximo estado de uso del suelo a partir de una secuencia histórica:
+
+```python
+from pathlib import Path
+import torch
+
+from land2vec.tokenizer import Tokenizer
+from land2vec.utils import load_config, load_model
+
+target_folder = Path("models/full_model")
+config = load_config(target_folder)
+model = load_model(config, target_folder)  # ya queda en eval() y en config.device
+
+# Secuencia histórica de una parcela (estados separados por "-")
+seq = "F-Sh-F-F-F-F-F-F-F-F-F-F-F-F-F-F-F-F-F-Sh-Sh-Sh"
+tokens = torch.tensor([Tokenizer.encode(seq)], device=config.device)  # (1, T)
+
+# Predecir el próximo estado más probable
+with torch.inference_mode():
+    logits = model(tokens[:, -config.block_size:])
+next_state_id = logits[0, -1].argmax().item()
+print(Tokenizer.decode(torch.tensor([next_state_id])))  # p.ej. "Sh"
+
+# Generar varios pasos hacia adelante muestreando (autoregresivo)
+generated = model.generate(tokens, max_new_tokens=5, temperature=0.8, top_k=5)
+print(Tokenizer.decode(generated[0]))
+```
+
 ## Notebooks / pruebas experimentales
 
 Los notebooks en `notebooks/` documentan las corridas de experimentación
