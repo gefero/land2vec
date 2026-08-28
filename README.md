@@ -243,6 +243,34 @@ confusión.
 - **Accuracy (test set)**: 0.9929
 - **Macro F1 (test set)**: 0.9005
 
+## Evaluación out-of-domain
+
+> ⚠️ El número anterior mide generalización *dentro* del área de estudio
+> (Chaco/Santiago del Estero/frontera agrícola). `notebooks/eval_ood_zones.ipynb`
+> evalúa el mismo modelo (`models/full_model`) sobre 7 zonas de Argentina
+> geográficamente disjuntas de esa área, construidas con
+> `scripts/build_eval_zones.py` (ver `land2vec.extract`), cada una dominada
+> por una modalidad de uso de suelo distinta.
+
+| Zona | Mezcla dominante | Accuracy | Macro F1 |
+|---|---|---:|---:|
+| `puna_noa` | `B`=47.5%, `Sp`=36.9% | 0.6042 | 0.4682 |
+| `patagonia_estepa` | `Sp`=54.0%, `Sh`=44.0% | 0.9957 | 0.6502 |
+| `misiones_selva` | `F`=70.9%, `A`=23.9% | 0.9982 | 0.6947 |
+| `pampa_nucleo` | `A`=89.3% | 0.9993 | 0.7920 |
+| `ibera` | `Wt`=51.4%, `F`=22.6% | 0.9951 | 0.7946 |
+| `periurbano_cordoba` | `A`=69.0%, `U`=14.5% | 0.9950 | 0.7969 |
+| `delta_parana` | `A`=44.0%, `Wt`=34.7%, `G`=13.5% | 0.9971 | 0.8101 |
+| **Pooled (7 zonas)** | — | **0.9511** | **0.7507** |
+
+El accuracy no detecta la falla de generalización (se mantiene alto porque
+la clase mayoritaria en casi cualquier parcela es "sin cambio interanual");
+el macro F1 cae entre 9 y 43 puntos porcentuales respecto al 0.9005
+in-domain en las 7 zonas. La caída es más severa en `puna_noa`, la única
+zona con peso real de la clase `B` (0% en entrenamiento). Ver
+`notebooks/eval_ood_zones.ipynb` para matrices de confusión, accuracy por
+posición y el detalle completo.
+
 ## Modelos entrenados incluidos
 
 - `models/full_model/` — modelo final, entrenado sobre el dataset completo y evaluado en el test set held-out (ver `test_1.ipynb`).
