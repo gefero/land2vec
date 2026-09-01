@@ -14,7 +14,7 @@ from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 
 from land2vec.config import Config
 from land2vec.tokenizer import Tokenizer
-from land2vec.model import GPTDecoder
+from land2vec.model import GPTDecoder, TrajectoryAutoencoder
 
 
 def get_target_folder(model_name: str):
@@ -44,14 +44,36 @@ def save_model(model: torch.nn.Module, target_folder: Path):
     print(f"Model saved to {target_folder / 'model.pt'}")
 
 
-def load_model(config: Config, target_folder: Path):
-    model = GPTDecoder(
-        vocab_size=len(Tokenizer.VOCAB),
-        block_size=config.block_size,
-        n_embd=config.n_embd,
-        n_head=config.n_head,
-        n_layer=config.n_layer,
-    )
+def load_model(config: Config, target_folder: Path, arch: str | None = None):
+    # arch permite forzar la arquitectura sin tocar config.json; por defecto se
+    # usa config.arch (los config.json de antes de la v2 no tienen ese campo,
+    # así que Config lo completa con su default "gpt_decoder").
+    arch = arch or config.arch
+    if arch == "gpt_decoder":
+        model: nn.Module = GPTDecoder(
+            vocab_size=len(Tokenizer.VOCAB),
+            block_size=config.block_size,
+            n_embd=config.n_embd,
+            n_head=config.n_head,
+            n_layer=config.n_layer,
+        )
+    elif arch == "seq_autoencoder":
+        if config.embed_dim is None:
+            raise ValueError("config.embed_dim es obligatorio para arch='seq_autoencoder'")
+        # block_size se reusa como seq_len: el largo fijo de secuencia que
+        # espera el autoencoder (no hay ventaneo, a diferencia de GPTDecoder).
+        model = TrajectoryAutoencoder(
+            vocab_size=len(Tokenizer.VOCAB),
+            seq_len=config.block_size,
+            embed_dim=config.embed_dim,
+            n_embd=config.n_embd,
+            n_head=config.n_head,
+            n_layer=config.n_layer,
+            pooling=config.pooling,
+        )
+    else:
+        raise ValueError(f"arch desconocida: {arch!r}")
+
     model_state = torch.load(target_folder / "model.pt", map_location=config.device)
     model.load_state_dict(model_state)
     model = model.to(config.device)
@@ -85,9 +107,8 @@ def collect_predictions(
 
     use_amp = device == "cuda"
 
-    n_batch = 0
+    n_batches = 0
     for batch_idx, (x, y) in enumerate(loader):
-        n_batch = batch_idx
         if max_batches is not None and batch_idx >= max_batches:
             break
         x = x.to(device, non_blocking=True)
@@ -104,6 +125,7 @@ def collect_predictions(
             )
 
         total_loss += loss.item()
+        n_batches += 1
 
         preds = logits.argmax(dim=-1)
 
@@ -114,7 +136,7 @@ def collect_predictions(
     preds = np.asarray(all_preds)
     targets = np.asarray(all_targets)
 
-    avg_loss = total_loss / n_batch
+    avg_loss = total_loss / n_batches if n_batches else float("nan")
 
     return preds, targets, avg_loss
 

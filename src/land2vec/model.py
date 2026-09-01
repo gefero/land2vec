@@ -8,11 +8,12 @@ from land2vec.tokenizer import Tokenizer
 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, n_embd: int, n_head: int, dropout: float):
+    def __init__(self, n_embd: int, n_head: int, dropout: float, is_causal: bool = True):
         super().__init__()
         assert n_embd % n_head == 0
         self.n_head = n_head
         self.head_dim = n_embd // n_head
+        self.is_causal = is_causal
 
         self.qkv = nn.Linear(n_embd, 3 * n_embd, bias=False)
         self.proj = nn.Linear(n_embd, n_embd, bias=False)
@@ -33,7 +34,7 @@ class CausalSelfAttention(nn.Module):
             v,
             attn_mask=None,
             dropout_p=self.dropout if self.training else 0.0,
-            is_causal=True,
+            is_causal=self.is_causal,
         )
 
         y = y.transpose(1, 2).contiguous().view(B, T, C)
@@ -56,10 +57,10 @@ class FeedForward(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, n_embd: int, n_head: int, dropout: float):
+    def __init__(self, n_embd: int, n_head: int, dropout: float, is_causal: bool = True):
         super().__init__()
         self.ln1 = nn.LayerNorm(n_embd)
-        self.attn = CausalSelfAttention(n_embd, n_head, dropout)
+        self.attn = CausalSelfAttention(n_embd, n_head, dropout, is_causal=is_causal)
         self.ln2 = nn.LayerNorm(n_embd)
         self.mlp = FeedForward(n_embd, dropout)
 
@@ -93,7 +94,8 @@ class GPTDecoder(nn.Module):
         self.lm_head.weight = self.token_embedding.weight
         self.register_buffer("position_ids", torch.arange(block_size), persistent=False)
 
-    def forward(self, x) -> torch.Tensor:
+    def hidden_states(self, x) -> torch.Tensor:
+        "Estado contextual de n_embd dims por posición, antes de lm_head -- útil para extraer un embedding de la v1 (p. ej. promediando sobre posiciones)."
         B, T = x.shape
         if T > self.block_size:
             raise ValueError(f"Sequence length {T} exceeds block size {self.block_size}")
@@ -103,9 +105,10 @@ class GPTDecoder(nn.Module):
         pos_emb = self.position_embedding(positions)
         x = tok_emb + pos_emb
         x = self.blocks(x)
-        x = self.ln_f(x)
+        return self.ln_f(x)
 
-        logits = self.lm_head(x)
+    def forward(self, x) -> torch.Tensor:
+        logits = self.lm_head(self.hidden_states(x))
         return logits
 
     @torch.no_grad()
@@ -141,6 +144,90 @@ class GPTDecoder(nn.Module):
             next_token = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, next_token), dim=1)
         return idx
+
+
+class TrajectoryAutoencoder(nn.Module):
+    """Autoencoder no autorregresivo: comprime una secuencia completa a un vector
+    z de embed_dim y la reconstruye a partir de ese único vector.
+
+    A diferencia de GPTDecoder, tanto el encoder como el decoder usan atención
+    bidireccional (Block con is_causal=False): el objetivo no es predecir el
+    próximo token, sino forzar que toda la señal de reconstrucción pase por el
+    cuello de botella z. El decoder recibe únicamente z (difundido a las
+    seq_len posiciones + position embedding), sin ver los tokens de entrada, así
+    que no puede "copiar" la secuencia usando contexto local.
+    """
+
+    def __init__(
+        self,
+        vocab_size: int,
+        seq_len: int,
+        embed_dim: int,
+        n_embd: int = 128,
+        n_head: int = 4,
+        n_layer: int = 4,
+        dropout: float = 0.1,
+        pooling: str = "mean",
+    ):
+        super().__init__()
+        if pooling not in ("mean", "query"):
+            raise ValueError(f"pooling debe ser 'mean' o 'query', recibido: {pooling!r}")
+        self.seq_len = seq_len
+        self.embed_dim = embed_dim
+        self.pooling = pooling
+
+        self.token_embedding = nn.Embedding(vocab_size, n_embd)
+        self.position_embedding = nn.Embedding(seq_len, n_embd)
+        self.register_buffer("position_ids", torch.arange(seq_len), persistent=False)
+
+        self.encoder_blocks = nn.Sequential(
+            *[Block(n_embd, n_head, dropout, is_causal=False) for _ in range(n_layer)]
+        )
+        self.encoder_ln = nn.LayerNorm(n_embd)
+        if pooling == "query":
+            self.pool_query = nn.Parameter(torch.randn(n_embd) * n_embd**-0.5)
+        self.to_latent = nn.Linear(n_embd, embed_dim)
+
+        self.from_latent = nn.Linear(embed_dim, n_embd)
+        self.decoder_blocks = nn.Sequential(
+            *[Block(n_embd, n_head, dropout, is_causal=False) for _ in range(n_layer)]
+        )
+        self.decoder_ln = nn.LayerNorm(n_embd)
+        self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
+        self.lm_head.weight = self.token_embedding.weight
+
+    def _pool(self, h: torch.Tensor) -> torch.Tensor:
+        "h: (B, T, C) -> (B, C)"
+        if self.pooling == "mean":
+            return h.mean(dim=1)
+        # pooling == "query": atención de una sola cabeza con un query aprendido,
+        # en vez de promediar todas las posiciones con el mismo peso.
+        scores = (h @ self.pool_query) / (h.size(-1) ** 0.5)  # (B, T)
+        weights = torch.softmax(scores, dim=-1).unsqueeze(-1)  # (B, T, 1)
+        return (h * weights).sum(dim=1)
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        "x: (B, seq_len) de ids de token -> z: (B, embed_dim)"
+        B, T = x.shape
+        if T != self.seq_len:
+            raise ValueError(f"encode() espera secuencias de largo {self.seq_len}, recibió {T}")
+
+        h = self.token_embedding(x) + self.position_embedding(self.position_ids)  # type: ignore
+        h = self.encoder_blocks(h)
+        h = self.encoder_ln(h)
+        return self.to_latent(self._pool(h))
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        "z: (B, embed_dim) -> logits: (B, seq_len, vocab_size)"
+        B = z.shape[0]
+        h = self.from_latent(z).unsqueeze(1).expand(B, self.seq_len, -1)
+        h = h + self.position_embedding(self.position_ids).unsqueeze(0)  # type: ignore
+        h = self.decoder_blocks(h)
+        h = self.decoder_ln(h)
+        return self.lm_head(h)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.decode(self.encode(x))
 
 
 def run_epoch(

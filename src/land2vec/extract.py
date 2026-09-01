@@ -81,10 +81,43 @@ def extract_zone(
     return lat_long_df, seqs_df
 
 
+def _constant_mask(seqs_df: pd.DataFrame, seq_col: str) -> pd.Series:
+    return seqs_df[seq_col].str.split("-").apply(lambda states: len(set(states)) == 1)
+
+
 def drop_constant_sequences(seqs_df: pd.DataFrame, seq_col: str = "seqs") -> pd.DataFrame:
     "Descarta píxeles cuya secuencia es constante en todo el período (p. ej. agua permanente)."
-    is_constant = seqs_df[seq_col].str.split("-").apply(lambda states: len(set(states)) == 1)
-    return seqs_df[~is_constant]
+    return seqs_df[~_constant_mask(seqs_df, seq_col)]
+
+
+def subsample_constant_sequences(
+    seqs_df: pd.DataFrame,
+    max_fraction: float = 0.15,
+    seq_col: str = "seqs",
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Como drop_constant_sequences, pero submuestrea en vez de descartar del todo:
+    una trayectoria estable (bosque o agua que no cambia en 23 años) es un tipo de
+    dinámica legítimo y debe seguir presente en el dataset, solo que sin dominarlo
+    -- útil para entrenar el autoencoder, donde la inmensa mayoría de los píxeles
+    de cualquier zona es constante (ver notebooks/eval_ood_zones.ipynb) y sin
+    balancear el modelo aprende poco más que reconstruir "23 años de lo mismo".
+
+    Devuelve como mucho max_fraction del dataset resultante como secuencias
+    constantes; el resto (secuencias con al menos una transición) queda intacto.
+    """
+    is_constant = _constant_mask(seqs_df, seq_col)
+    varying_df, constant_df = seqs_df[~is_constant], seqs_df[is_constant]
+
+    n_varying = len(varying_df)
+    if n_varying == 0 or max_fraction >= 1:
+        return seqs_df  # nada para balancear, o no se pidió balancear
+
+    max_constant = int(max_fraction * n_varying / (1 - max_fraction))
+    if len(constant_df) > max_constant:
+        constant_df = constant_df.sample(n=max_constant, random_state=seed)
+
+    return pd.concat([varying_df, constant_df]).sort_index()
 
 
 def save_zone_csvs(
