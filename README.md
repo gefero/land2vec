@@ -28,13 +28,23 @@ notebooks/      # Notebooks de experimentación ("pruebas") en Google Colab
 ## Instalación
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 pip install -e .
 ```
 
+O con `scripts/setup_venv.sh`, que hace lo mismo y de paso chequea si
+`torch` detecta GPU:
+
+```bash
+bash scripts/setup_venv.sh
+```
+
 Requiere Python 3.11+ (usa `dataclass(slots=True)` y sintaxis de tipos
 moderna) y, para entrenar en GPU, una instalación de PyTorch con soporte
-CUDA.
+CUDA (el wheel de `torch` en PyPI ya lo trae si tenés drivers NVIDIA
+compatibles -- no hace falta instalar el CUDA toolkit aparte).
 
 `data/landcover_timeseries_2000-2022.nc` (ver más abajo) se versiona con
 [Git LFS](https://git-lfs.com/) por su tamaño (~189MB). Para clonar el repo
