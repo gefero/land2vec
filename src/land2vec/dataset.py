@@ -47,6 +47,22 @@ class SequenceDatasetNonWindow(Dataset):
         return x, y
 
 
+class SequenceDatasetAutoencoder(Dataset):
+    "Secuencia completa como input Y target (reconstrucción, no next-token)."
+
+    def __init__(self, sequences: pd.Series):
+        self.encoded: list[torch.Tensor] = []
+        for seq in tqdm.tqdm(sequences):
+            self.encoded.append(torch.tensor(Tokenizer.encode(seq), dtype=torch.long))
+
+    def __len__(self):
+        return len(self.encoded)
+
+    def __getitem__(self, idx):
+        seq = self.encoded[idx]
+        return seq, seq
+
+
 def load_data(
     *,
     file_path: Path | None = None,
@@ -59,6 +75,16 @@ def load_data(
     if window is not None:
         return SequenceDataset(df[data_column], window=window)
     return SequenceDatasetNonWindow(df[data_column])
+
+
+def load_autoencoder_data(
+    *,
+    file_path: Path,
+    data_column: str = "seqs",
+) -> SequenceDatasetAutoencoder:
+    "Igual que load_data(), pero devuelve (secuencia, secuencia) para TrajectoryAutoencoder."
+    df = pd.read_csv(file_path)
+    return SequenceDatasetAutoencoder(df[data_column])
 
 
 def main():

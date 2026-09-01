@@ -17,7 +17,7 @@ src/land2vec/
   config.py     # dataclass Config con hiperparámetros del modelo/entrenamiento
   tokenizer.py  # Tokenizer estático: vocabulario fijo de estados de uso del suelo
   dataset.py    # Datasets de PyTorch (ventaneado y no ventaneado) + carga de CSV/zip
-  model.py      # GPTDecoder (transformer causal) + loop de entrenamiento/eval
+  model.py      # GPTDecoder (v1, causal) + TrajectoryAutoencoder (v2, embeddings) + run_epoch
   utils.py      # Guardado/carga de config, modelo y métricas
   extract.py    # Extracción de secuencias por píxel desde el netCDF fuente (ESA CCI)
 data/           # Secuencias de entrenamiento y de test (CSV/zip) + netCDF fuente (Git LFS)
@@ -270,6 +270,110 @@ in-domain en las 7 zonas. La caída es más severa en `puna_noa`, la única
 zona con peso real de la clase `B` (0% en entrenamiento). Ver
 `notebooks/eval_ood_zones.ipynb` para matrices de confusión, accuracy por
 posición y el detalle completo.
+
+## v2: embeddings comprimidos (`TrajectoryAutoencoder`)
+
+> 🚧 **En construcción.** El pipeline de esta sección (arquitectura, datos,
+> scripts) está implementado y probado, pero el modelo final todavía no está
+> entrenado a escala completa -- ver "Cómo correr el barrido" más abajo.
+
+La v1 (`GPTDecoder`) predice el próximo estado, pero nunca está obligada a
+resumir una trayectoria completa en un vector: no sirve para obtener un
+*embedding* por parcela. `land2vec.model.TrajectoryAutoencoder` sí:
+comprime los 23 años de una trayectoria (2000-2022) en un vector `z` de
+`embed_dim` dimensiones y la reconstruye a partir de ese único vector.
+
+Diferencias clave con `GPTDecoder`:
+
+- **Encoder y decoder bidireccionales** (`Block(..., is_causal=False)`), no
+  autorregresivos: el decoder recibe únicamente `z` (difundido a las 23
+  posiciones + position embedding), nunca ve los tokens de entrada. Así toda
+  la señal de reconstrucción está forzada a pasar por el cuello de botella
+  -- un decoder autorregresivo podría reconstruir usando contexto local e
+  ignorar `z` casi por completo.
+- `encode(x) -> z` (pooling `"mean"` o `"query"`, un query aprendido con
+  atención de una sola cabeza) y `decode(z) -> logits` son métodos
+  separados; `forward(x)` es `decode(encode(x))`.
+- `CausalSelfAttention`/`Block` (`model.py`) ahora aceptan `is_causal: bool
+  = True` -- se reutilizan tal cual para ambas arquitecturas; `GPTDecoder`
+  no cambia de comportamiento (default `True`).
+
+### Cargar cualquiera de los dos modelos
+
+`Config` suma `arch: Literal["gpt_decoder", "seq_autoencoder"]` (default
+`"gpt_decoder"`, así los `config.json` de antes de la v2 siguen cargando
+sin tocarlos), más `embed_dim` y `pooling` para la v2. `load_model()`
+despacha según `config.arch`:
+
+```python
+from land2vec.utils import load_config, load_model
+
+config = load_config("models/autoencoder_v2")
+model = load_model(config, "models/autoencoder_v2")  # TrajectoryAutoencoder
+z = model.encode(tokens)  # (B, embed_dim)
+```
+
+### Datos de entrenamiento
+
+Adrede **distintos** de las 7 zonas de evaluación out-of-domain (que quedan
+intactas como benchmark held-out): Chaco-Santiago original + 7 zonas nuevas
+en las mismas ecorregiones, construidas con
+`scripts/build_eval_zones.py --zone-set train`:
+
+| Zona train | Mezcla dominante | Misma ecorregión que (zona de eval) |
+|---|---|---|
+| `puna_salta_catamarca` | `B`=58.3%, `Sh`=21.2%, `Sp`=19.7% | `puna_noa` |
+| `patagonia_santacruz` | `Sp`=52.0%, `Sh`=39.2% | `patagonia_estepa` |
+| `periurbano_gba` | `U`=54.8%, `A`=16.5%, `Wa`=14.1% | `periurbano_cordoba` |
+| `corrientes_humedal` | `F`=39.5%, `Wt`=33.9% | `ibera` |
+| `delta_oeste` | `Wt`=53.4%, `A`=35.6% | `delta_parana` |
+| `pampa_deprimida` | `A`=81.6%, `G`=14.1% | `pampa_nucleo` |
+| `yungas` | `F`=62.5%, `A`=27.3%, `Sh`=9.4% | `misiones_selva` |
+
+Todas verificadas geográficamente disjuntas entre sí, del área de
+entrenamiento original y de las 7 zonas de evaluación
+(`build_eval_zones.py` corta con error si detecta solapamiento). Además,
+como la inmensa mayoría de los píxeles de cualquier zona no cambia nunca en
+23 años (ver "Evaluación out-of-domain" más arriba), `extract.subsample_constant_sequences()`
+submuestrea las secuencias constantes a lo sumo al 15% del dataset final,
+tanto en estas 7 zonas nuevas como en Chaco-Santiago al combinarlas para
+entrenar -- si no, el autoencoder aprende poco más que reconstruir "23 años
+de lo mismo".
+
+### Cómo correr el barrido
+
+El modelo es chico, pero barrer dimensión + hiperparámetros a escala
+completa (~400K secuencias combinadas) se estimó en 8-15+ horas en CPU --
+impráctico fuera de una GPU. Correr en Colab, igual que el resto del
+proyecto:
+
+```bash
+# barrido primario: dimensión del embedding, d en {4,8,12,16,32}
+python scripts/train_autoencoder.py --sweep dim --out-dir models/sweep_dim
+
+# barrido secundario (lr, n_layer, pooling, pesos de clase) al mejor d
+python scripts/train_autoencoder.py --sweep secondary --embed-dim <mejor_d> --out-dir models/sweep_secondary
+
+# modelo final con la mejor configuración
+python scripts/train_autoencoder.py --embed-dim <d> --n-layer <n> --pooling <p> --out models/autoencoder_v2
+```
+
+Cada corrida guarda `config.json` + `model.pt` + `train_data.csv` (misma
+convención que los modelos de la v1). `d` se elige en el codo de la curva
+de reconstrucción out-of-domain (no el valor más alto) -- ver la sección
+"1a. Curva de compresión" de `notebooks/eval_embeddings_v2.ipynb`, que
+también cubre clustering/tipología de trayectorias, probing (`z` vs. la
+secuencia cruda vs. el estado oculto de la v1 pooleado) y visualización
+2D. Ese notebook está listo para correr pero necesita los resultados del
+barrido (`models/sweep_dim/`, `models/sweep_secondary/`,
+`models/autoencoder_v2/`) para producir números reales.
+
+Extraer embeddings de una zona ya construida, con el modelo final:
+
+```bash
+python scripts/extract_embeddings.py --model models/autoencoder_v2 --zone ibera
+# -> data/embeddings_ibera.zip (columnas ID, z0..z<embed_dim-1>)
+```
 
 ## Modelos entrenados incluidos
 

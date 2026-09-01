@@ -11,6 +11,12 @@ class Config:
     n_layer: int = 4
     dropout: float = 0.1
 
+    # arquitectura: "gpt_decoder" (v1, GPTDecoder) o "seq_autoencoder"
+    # (v2, TrajectoryAutoencoder). embed_dim/pooling solo aplican a este último.
+    arch: Literal["gpt_decoder", "seq_autoencoder"] = "gpt_decoder"
+    embed_dim: int | None = None
+    pooling: Literal["mean", "query"] = "mean"
+
     # training
     epochs: int = 25
     lr: float = 1e-3
