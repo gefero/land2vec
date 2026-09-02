@@ -1,0 +1,132 @@
+Cargando y combinando secuencias de entrenamiento...
+  400,460 secuencias (Chaco-Santiago submuestreado + 7 zonas nuevas)
+
+=== d=4 -> models/sweep_dim/d4 ===
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 400460/400460 [00:03<00:00, 118038.98it/s]
+  epoch  0 train_loss=0.8989 val_loss=0.2034 val_acc=0.9066 val_macro_f1=0.7780 (284s)
+  epoch  1 train_loss=0.1464 val_loss=0.0852 val_acc=0.9719 val_macro_f1=0.8305 (286s)
+  epoch  2 train_loss=0.0627 val_loss=0.0434 val_acc=0.9872 val_macro_f1=0.8537 (286s)
+  epoch  3 train_loss=0.0442 val_loss=0.0357 val_acc=0.9900 val_macro_f1=0.8671 (286s)
+  epoch  4 train_loss=0.0313 val_loss=0.0230 val_acc=0.9930 val_macro_f1=0.8705 (286s)
+  epoch  5 train_loss=0.0273 val_loss=0.0189 val_acc=0.9941 val_macro_f1=0.8715 (286s)
+  epoch  6 train_loss=0.0361 val_loss=0.0875 val_acc=0.9806 val_macro_f1=0.8539 (286s)
+  epoch  7 train_loss=0.0255 val_loss=0.0148 val_acc=0.9943 val_macro_f1=0.8772 (286s)
+  epoch  8 train_loss=0.0159 val_loss=0.0126 val_acc=0.9947 val_macro_f1=0.8749 (286s)
+  epoch  9 train_loss=0.0140 val_loss=0.0125 val_acc=0.9959 val_macro_f1=0.8804 (286s)
+  epoch 10 train_loss=0.0188 val_loss=0.0089 val_acc=0.9965 val_macro_f1=0.8815 (286s)
+  epoch 11 train_loss=0.0112 val_loss=0.0088 val_acc=0.9968 val_macro_f1=0.8872 (286s)
+  epoch 12 train_loss=0.0196 val_loss=0.0224 val_acc=0.9918 val_macro_f1=0.8782 (286s)
+  epoch 13 train_loss=0.0141 val_loss=0.0070 val_acc=0.9977 val_macro_f1=0.8893 (286s)
+  epoch 14 train_loss=0.0088 val_loss=0.0077 val_acc=0.9976 val_macro_f1=0.8891 (286s)
+  epoch 15 train_loss=0.0088 val_loss=0.0066 val_acc=0.9979 val_macro_f1=0.8913 (286s)
+  epoch 16 train_loss=0.0073 val_loss=0.0066 val_acc=0.9981 val_macro_f1=0.8919 (286s)
+  epoch 17 train_loss=0.4509 val_loss=0.2306 val_acc=0.9016 val_macro_f1=0.7677 (286s)
+  epoch 18 train_loss=0.1461 val_loss=0.0806 val_acc=0.9776 val_macro_f1=0.8313 (287s)
+  epoch 19 train_loss=0.0550 val_loss=0.0401 val_acc=0.9870 val_macro_f1=0.8518 (286s)
+  epoch 20 train_loss=0.0356 val_loss=0.0283 val_acc=0.9914 val_macro_f1=0.8640 (286s)
+  epoch 21 train_loss=0.0273 val_loss=0.0215 val_acc=0.9928 val_macro_f1=0.8672 (286s)
+  early stopping en epoch 21 (patience=5)
+Config saved to models/sweep_dim/d4/config.json
+Model saved to models/sweep_dim/d4/model.pt
+Train data saved to models/sweep_dim/d4/train_data.csv
+
+=== d=8 -> models/sweep_dim/d8 ===
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 400460/400460 [00:03<00:00, 114120.00it/s]
+  epoch  0 train_loss=0.7827 val_loss=0.1975 val_acc=0.9077 val_macro_f1=0.7880 (287s)
+  epoch  1 train_loss=0.1406 val_loss=0.0621 val_acc=0.9788 val_macro_f1=0.8438 (287s)
+  epoch  2 train_loss=0.0434 val_loss=0.0250 val_acc=0.9900 val_macro_f1=0.8744 (286s)
+  epoch  3 train_loss=0.0412 val_loss=0.0176 val_acc=0.9934 val_macro_f1=0.8796 (286s)
+  epoch  4 train_loss=0.0167 val_loss=0.0110 val_acc=0.9954 val_macro_f1=0.8853 (286s)
+  epoch  5 train_loss=0.0125 val_loss=0.0090 val_acc=0.9967 val_macro_f1=0.8844 (286s)
+  epoch  6 train_loss=0.0098 val_loss=0.0075 val_acc=0.9967 val_macro_f1=0.8873 (286s)
+  epoch  7 train_loss=0.0086 val_loss=0.0058 val_acc=0.9983 val_macro_f1=0.8939 (285s)
+  epoch  8 train_loss=0.0075 val_loss=0.0048 val_acc=0.9984 val_macro_f1=0.8936 (286s)
+  epoch  9 train_loss=0.0063 val_loss=0.0051 val_acc=0.9984 val_macro_f1=0.8928 (285s)
+  epoch 10 train_loss=0.0062 val_loss=0.0052 val_acc=0.9980 val_macro_f1=0.8920 (285s)
+  epoch 11 train_loss=0.3093 val_loss=0.1192 val_acc=0.9691 val_macro_f1=0.8193 (286s)
+  epoch 12 train_loss=0.0598 val_loss=0.0250 val_acc=0.9915 val_macro_f1=0.8694 (286s)
+  early stopping en epoch 12 (patience=5)
+Config saved to models/sweep_dim/d8/config.json
+Model saved to models/sweep_dim/d8/model.pt
+Train data saved to models/sweep_dim/d8/train_data.csv
+
+=== d=12 -> models/sweep_dim/d12 ===
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 400460/400460 [00:03<00:00, 119550.45it/s]
+  epoch  0 train_loss=0.6870 val_loss=0.1541 val_acc=0.9395 val_macro_f1=0.8043 (286s)
+  epoch  1 train_loss=0.0944 val_loss=0.0502 val_acc=0.9857 val_macro_f1=0.8536 (286s)
+  epoch  2 train_loss=0.0411 val_loss=0.0238 val_acc=0.9924 val_macro_f1=0.8714 (286s)
+  epoch  3 train_loss=0.0231 val_loss=0.0144 val_acc=0.9960 val_macro_f1=0.8843 (286s)
+  epoch  4 train_loss=0.0151 val_loss=0.0094 val_acc=0.9975 val_macro_f1=0.8873 (286s)
+  epoch  5 train_loss=0.0117 val_loss=0.0103 val_acc=0.9973 val_macro_f1=0.8865 (286s)
+  epoch  6 train_loss=0.0240 val_loss=0.0108 val_acc=0.9974 val_macro_f1=0.8870 (286s)
+  epoch  7 train_loss=0.0081 val_loss=0.0053 val_acc=0.9984 val_macro_f1=0.8935 (286s)
+  epoch  8 train_loss=0.0063 val_loss=0.0044 val_acc=0.9992 val_macro_f1=0.8965 (286s)
+  epoch  9 train_loss=0.0048 val_loss=0.0037 val_acc=0.9988 val_macro_f1=0.8956 (286s)
+  epoch 10 train_loss=0.0039 val_loss=0.0029 val_acc=0.9992 val_macro_f1=0.8960 (286s)
+  epoch 11 train_loss=0.0035 val_loss=0.0025 val_acc=0.9994 val_macro_f1=0.8971 (286s)
+  epoch 12 train_loss=0.3843 val_loss=0.1564 val_acc=0.9491 val_macro_f1=0.7904 (287s)
+  epoch 13 train_loss=0.1182 val_loss=0.0835 val_acc=0.9707 val_macro_f1=0.8233 (286s)
+  epoch 14 train_loss=0.0649 val_loss=0.0559 val_acc=0.9754 val_macro_f1=0.8342 (286s)
+  epoch 15 train_loss=0.0388 val_loss=0.0280 val_acc=0.9908 val_macro_f1=0.8648 (286s)
+  epoch 16 train_loss=0.0354 val_loss=0.0218 val_acc=0.9934 val_macro_f1=0.8719 (286s)
+  early stopping en epoch 16 (patience=5)
+Config saved to models/sweep_dim/d12/config.json
+Model saved to models/sweep_dim/d12/model.pt
+Train data saved to models/sweep_dim/d12/train_data.csv
+
+=== d=16 -> models/sweep_dim/d16 ===
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 400460/400460 [00:03<00:00, 107737.02it/s]
+  epoch  0 train_loss=0.5854 val_loss=0.1364 val_acc=0.9542 val_macro_f1=0.8078 (286s)
+  epoch  1 train_loss=0.0855 val_loss=0.0463 val_acc=0.9888 val_macro_f1=0.8581 (286s)
+  epoch  2 train_loss=0.0467 val_loss=0.0258 val_acc=0.9933 val_macro_f1=0.8704 (286s)
+  epoch  3 train_loss=0.0242 val_loss=0.0167 val_acc=0.9950 val_macro_f1=0.8770 (286s)
+  epoch  4 train_loss=0.0199 val_loss=0.0174 val_acc=0.9942 val_macro_f1=0.8807 (286s)
+  epoch  5 train_loss=0.0121 val_loss=0.0077 val_acc=0.9978 val_macro_f1=0.8921 (286s)
+  epoch  6 train_loss=0.0086 val_loss=0.0060 val_acc=0.9984 val_macro_f1=0.8921 (286s)
+  epoch  7 train_loss=0.1372 val_loss=0.0662 val_acc=0.9783 val_macro_f1=0.8469 (286s)
+  epoch  8 train_loss=0.0350 val_loss=0.0183 val_acc=0.9943 val_macro_f1=0.8804 (286s)
+  epoch  9 train_loss=0.0193 val_loss=0.0114 val_acc=0.9965 val_macro_f1=0.8867 (286s)
+  epoch 10 train_loss=0.0139 val_loss=0.0089 val_acc=0.9969 val_macro_f1=0.8866 (286s)
+  early stopping en epoch 10 (patience=5)
+Config saved to models/sweep_dim/d16/config.json
+Model saved to models/sweep_dim/d16/model.pt
+Train data saved to models/sweep_dim/d16/train_data.csv
+
+=== d=32 -> models/sweep_dim/d32 ===
+100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 400460/400460 [00:03<00:00, 114357.76it/s]
+  epoch  0 train_loss=0.5532 val_loss=0.1623 val_acc=0.9271 val_macro_f1=0.7952 (287s)
+  epoch  1 train_loss=0.0781 val_loss=0.0305 val_acc=0.9890 val_macro_f1=0.8666 (287s)
+  epoch  2 train_loss=0.0283 val_loss=0.0164 val_acc=0.9945 val_macro_f1=0.8813 (287s)
+  epoch  3 train_loss=0.0160 val_loss=0.0093 val_acc=0.9972 val_macro_f1=0.8900 (286s)
+  epoch  4 train_loss=0.0489 val_loss=0.0624 val_acc=0.9793 val_macro_f1=0.8529 (286s)
+  epoch  5 train_loss=0.0224 val_loss=0.0113 val_acc=0.9950 val_macro_f1=0.8813 (286s)
+  epoch  6 train_loss=0.0100 val_loss=0.0066 val_acc=0.9977 val_macro_f1=0.8912 (286s)
+  epoch  7 train_loss=0.0070 val_loss=0.0050 val_acc=0.9983 val_macro_f1=0.8930 (285s)
+  epoch  8 train_loss=0.0062 val_loss=0.0043 val_acc=0.9983 val_macro_f1=0.8940 (285s)
+  epoch  9 train_loss=0.0091 val_loss=0.0039 val_acc=0.9987 val_macro_f1=0.8960 (285s)
+  epoch 10 train_loss=0.0040 val_loss=0.0031 val_acc=0.9986 val_macro_f1=0.8960 (285s)
+  epoch 11 train_loss=0.0029 val_loss=0.0031 val_acc=0.9984 val_macro_f1=0.8971 (285s)
+  epoch 12 train_loss=0.0027 val_loss=0.0024 val_acc=0.9992 val_macro_f1=0.8964 (285s)
+  epoch 13 train_loss=0.0020 val_loss=0.0015 val_acc=0.9995 val_macro_f1=0.8976 (285s)
+  epoch 14 train_loss=0.0018 val_loss=0.0022 val_acc=0.9989 val_macro_f1=0.8961 (285s)
+  epoch 15 train_loss=0.0022 val_loss=0.0016 val_acc=0.9995 val_macro_f1=0.8976 (285s)
+  epoch 16 train_loss=0.0029 val_loss=0.0028 val_acc=0.9991 val_macro_f1=0.8965 (285s)
+  epoch 17 train_loss=0.0015 val_loss=0.0012 val_acc=0.9996 val_macro_f1=0.8983 (285s)
+  epoch 18 train_loss=0.4314 val_loss=0.1048 val_acc=0.9470 val_macro_f1=0.8021 (286s)
+  epoch 19 train_loss=0.0821 val_loss=0.0669 val_acc=0.9686 val_macro_f1=0.8252 (286s)
+  epoch 20 train_loss=0.0592 val_loss=0.0510 val_acc=0.9760 val_macro_f1=0.8377 (286s)
+  epoch 21 train_loss=0.0407 val_loss=0.0273 val_acc=0.9894 val_macro_f1=0.8599 (286s)
+  epoch 22 train_loss=0.0271 val_loss=0.0172 val_acc=0.9934 val_macro_f1=0.8724 (286s)
+  early stopping en epoch 22 (patience=5)
+Config saved to models/sweep_dim/d32/config.json
+Model saved to models/sweep_dim/d32/model.pt
+Train data saved to models/sweep_dim/d32/train_data.csv
+
+Resumen barrido dim:
+   embed_dim  best_val_macro_f1  n_epochs
+0          4           0.891896        22
+1          8           0.893862        13
+2         12           0.897098        17
+3         16           0.892146        11
+4         32           0.898286        23
+
