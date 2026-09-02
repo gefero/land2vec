@@ -1,0 +1,19 @@
+{
+  "block_size": 23,
+  "n_embd": 128,
+  "n_head": 4,
+  "n_layer": 2,
+  "dropout": 0.1,
+  "arch": "seq_autoencoder",
+  "embed_dim": 8,
+  "pooling": "query",
+  "epochs": 25,
+  "lr": 0.001,
+  "patience": 5,
+  "min_lr": 1e-06,
+  "weight_decay": 0.01,
+  "num_workers": 0,
+  "batch_size": 2048,
+  "device": "cuda",
+  "seed": 42
+}
