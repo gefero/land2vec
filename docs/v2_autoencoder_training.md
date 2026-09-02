@@ -335,17 +335,63 @@ sin pasos adicionales.
 
 ## 6. Resultados de la corrida final
 
-> **[PENDIENTE — completar cuando termine `models/autoencoder_v2/`]**
+Modelo entrenado con la config de la sección 5
+(`models/autoencoder_v2/config.json` + `model.pt` + `train_data.csv`).
 
-- Macro F1 de reconstrucción (mejor época):
-- Accuracy de reconstrucción (mejor época):
-- Número de épocas hasta `early stopping` (o si llegó al tope de 25):
-- Tiempo total de entrenamiento:
-- Curva de `train_data.csv` (loss / accuracy / macro F1 por época):
-- Comparación contra `lr_bajo` (0.8989) y el resto del barrido secundario:
+- **Macro F1 de reconstrucción (mejor época)**: **0.8971** (época 17).
+- **Accuracy de reconstrucción (mejor época)**: **0.9993**.
+- **Épocas**: corrió **23** (0 a 22) y activó `early stopping` en la
+  época 22 (`patience=5`: la 17 fue la mejor, y de la 18 a la 22 —5
+  épocas— no volvió a superarla). No llegó al tope de 25.
+- **Tiempo total de entrenamiento**: no quedó un log con el tiempo por
+  época de esta corrida puntual (`train_data.csv` no lo registra); usando
+  el ritmo medido para esta misma configuración en el barrido secundario
+  (`n_layer_2_query`, ~145s/época), **23 épocas ≈ 56 minutos** — es una
+  estimación por analogía, no una medición directa de esta corrida.
+- **Parámetros**: 798,216 (coincide con `sweep_secondary/n_layer_2_query`,
+  misma arquitectura).
 
-Próximos pasos una vez completado este modelo: extraer embeddings sobre
-las 7 zonas de evaluación con `scripts/extract_embeddings.py` y correr
-`notebooks/eval_embeddings_v2.ipynb` (fidelidad de reconstrucción por
-clase, clustering/tipología de trayectorias, probing contra la v1, y
-visualización 2D del espacio latente).
+![Curvas de loss, accuracy y macro F1 por época del modelo final](../imgs/v2_final_model_training_curve.png)
+
+*Generado a partir de `models/autoencoder_v2/train_data.csv`. El panel
+izquierdo (loss, escala log) y el derecho (accuracy/macro F1) muestran el
+mismo patrón que ya se había visto en el barrido secundario: converge
+rápido en las primeras ~10 épocas y después entra en una meseta ruidosa
+(picos de loss en las épocas 7, 12 y 21, que se recuperan al toque) sin
+una tendencia de mejora sostenida — consistente con la lectura de la
+sección 3.2 de que el `early stopping` tardío no es señal de que "le
+faltaba entrenar".*
+
+### Comparación contra el resto del barrido
+
+| Corrida | macro F1 | Diferencia vs. este modelo |
+|---|---:|---:|
+| `sweep_secondary/lr_bajo` (la mejor del barrido, 4 capas) | 0.8989 | +0.0018 |
+| `sweep_secondary/n_layer_2_query` (misma config, corrida del barrido) | 0.8985 | +0.0014 |
+| **`autoencoder_v2` (este modelo, corrida final)** | **0.8971** | — |
+| `sweep_dim/d8` (mismo `d`, config del barrido primario: 4 capas, mean) | 0.8939 | -0.0032 |
+| `sweep_dim/d32` (control no-compresivo) | 0.8983 | +0.0012 |
+
+El modelo final queda 0.0014 por debajo de su propia corrida gemela en el
+barrido secundario (misma config exacta: `d=8, n_layer=2, pooling=query`)
+— una diferencia bien adentro del ruido de ±0.002-0.003 que se observó en
+todas las curvas de esta etapa, no una señal de que algo haya cambiado
+entre una corrida y la otra (incluso con la misma semilla, hay fuentes de
+no-determinismo en GPU — orden de reducción en operaciones paralelas,
+kernels no deterministas de cuDNN/CUDA — que pueden mover el resultado en
+ese rango). Confirma lo esperado: reconstruye casi tan bien como el
+control no-compresivo (`d=32`, -0.0012) con 8 dimensiones y menos de la
+mitad de los parámetros de las corridas de 4 capas.
+
+## 7. Próximos pasos
+
+Con el modelo final entrenado, lo que sigue:
+
+1. Extraer embeddings sobre las 7 zonas de evaluación con
+   `scripts/extract_embeddings.py`.
+2. Correr `notebooks/eval_embeddings_v2.ipynb`: fidelidad de
+   reconstrucción por clase (no solo macro F1 global), clustering/
+   tipología de trayectorias con coherencia espacial, probing contra la
+   v1 (embeddings de este autoencoder vs. estado oculto promediado de
+   `GPTDecoder`), y visualización 2D (PCA/UMAP) del espacio latente de 8
+   dimensiones.
