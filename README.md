@@ -10,6 +10,12 @@ frontera agrícola). La idea es análoga a *word2vec*, pero en vez de predecir
 palabras a partir de su contexto, el modelo predice el próximo estado de uso
 del suelo de una parcela a partir de su historial de estados anteriores.
 
+Además de ese modelo predictivo (v1, `GPTDecoder`), el repo incluye una
+segunda arquitectura (v2, `TrajectoryAutoencoder`) que comprime cada
+trayectoria completa en un embedding de baja dimensión -- ver la sección
+["v2: embeddings comprimidos"](#v2-embeddings-comprimidos-trajectoryautoencoder)
+más abajo.
+
 ## Estructura del repo
 
 ```
@@ -283,9 +289,11 @@ posición y el detalle completo.
 
 ## v2: embeddings comprimidos (`TrajectoryAutoencoder`)
 
-> 🚧 **En construcción.** El pipeline de esta sección (arquitectura, datos,
-> scripts) está implementado y probado, pero el modelo final todavía no está
-> entrenado a escala completa -- ver "Cómo correr el barrido" más abajo.
+Modelo final entrenado (`models/autoencoder_v2/`) -- ver
+[`docs/v2_autoencoder_training.md`](docs/v2_autoencoder_training.md) para
+el detalle completo (arquitectura, los dos barridos de tuneo con sus
+resultados, zonas de entrenamiento con mapa, y las curvas de la corrida
+final).
 
 La v1 (`GPTDecoder`) predice el próximo estado, pero nunca está obligada a
 resumir una trayectoria completa en un vector: no sirve para obtener un
@@ -330,15 +338,19 @@ intactas como benchmark held-out): Chaco-Santiago original + 7 zonas nuevas
 en las mismas ecorregiones, construidas con
 `scripts/build_eval_zones.py --zone-set train`:
 
-| Zona train | Mezcla dominante | Misma ecorregión que (zona de eval) |
-|---|---|---|
-| `puna_salta_catamarca` | `B`=58.3%, `Sh`=21.2%, `Sp`=19.7% | `puna_noa` |
-| `patagonia_santacruz` | `Sp`=52.0%, `Sh`=39.2% | `patagonia_estepa` |
-| `periurbano_gba` | `U`=54.8%, `A`=16.5%, `Wa`=14.1% | `periurbano_cordoba` |
-| `corrientes_humedal` | `F`=39.5%, `Wt`=33.9% | `ibera` |
-| `delta_oeste` | `Wt`=53.4%, `A`=35.6% | `delta_parana` |
-| `pampa_deprimida` | `A`=81.6%, `G`=14.1% | `pampa_nucleo` |
-| `yungas` | `F`=62.5%, `A`=27.3%, `Sh`=9.4% | `misiones_selva` |
+| Zona train | n (filas) | Mezcla dominante (post-submuestreo) | Misma ecorregión que (zona de eval) |
+|---|---:|---|---|
+| `puna_salta_catamarca` | 31,518 | `B`=65.2%, `Sp`=25.0%, `Sh`=6.4% | `puna_noa` |
+| `patagonia_santacruz` | 20,821 | `Sp`=56.6%, `G`=24.5%, `Sh`=11.7% | `patagonia_estepa` |
+| `periurbano_gba` | 4,003 | `U`=48.2%, `A`=29.9%, `F`=10.6% | `periurbano_cordoba` |
+| `corrientes_humedal` | 17,314 | `F`=35.3%, `Wt`=32.3%, `Sh`=15.3% | `ibera` |
+| `delta_oeste` | 3,561 | `Wt`=56.0%, `F`=18.9%, `A`=17.2% | `delta_parana` |
+| `pampa_deprimida` | 704 | `A`=58.2%, `U`=13.5%, `Sh`=10.2% | `pampa_nucleo` |
+| `yungas` | 20,505 | `F`=40.6%, `A`=33.4%, `Sh`=24.8% | `misiones_selva` |
+
+(Porcentajes calculados sobre las secuencias tal como quedaron después del
+submuestreo de constantes -- lo que el modelo efectivamente ve. Detalle
+completo, con mapa, en `docs/v2_autoencoder_training.md`.)
 
 Todas verificadas geográficamente disjuntas entre sí, del área de
 entrenamiento original y de las 7 zonas de evaluación
@@ -350,47 +362,78 @@ tanto en estas 7 zonas nuevas como en Chaco-Santiago al combinarlas para
 entrenar -- si no, el autoencoder aprende poco más que reconstruir "23 años
 de lo mismo".
 
-### Cómo correr el barrido
+### Mapa de zonas de entrenamiento y evaluación
+
+![Zonas de entrenamiento (Chaco-Santiago + 7 nuevas) y de evaluación out-of-domain (7, held-out)](imgs/v2_train_eval_zones.png)
+
+Generado con `scripts/plot_v2_zones.py` a partir de las coordenadas reales
+por píxel. Las 7 zonas de evaluación (azul) son las mismas que ya se usan
+como benchmark de la v1 y **nunca se tocan para entrenar la v2**; las 7
+nuevas de entrenamiento (verde) están en las mismas ecorregiones, con
+bboxes disjuntos.
+
+### El barrido de tuneo, en dos etapas
 
 El modelo es chico, pero barrer dimensión + hiperparámetros a escala
 completa (~400K secuencias combinadas) se estimó en 8-15+ horas en CPU --
-impráctico fuera de una GPU. Correr en Colab, igual que el resto del
-proyecto:
+impráctico fuera de una GPU (en una GTX 1060 de 6GB, ~145-285s/época según
+`n_layer`). Se corrió en dos etapas secuenciales, cada una con `d`/config
+fija del resto:
 
 ```bash
-# barrido primario: dimensión del embedding, d en {4,8,12,16,32}
+# 1) barrido primario: dimensión del embedding, d en {4,8,12,16,32}
 python scripts/train_autoencoder.py --sweep dim --out-dir models/sweep_dim
 
-# barrido secundario (lr, n_layer, pooling, pesos de clase) al mejor d
-python scripts/train_autoencoder.py --sweep secondary --embed-dim <mejor_d> --out-dir models/sweep_secondary
+# 2) barrido secundario (lr, n_layer, pooling, pesos de clase), con d=8 fijo
+python scripts/train_autoencoder.py --sweep secondary --embed-dim 8 --out-dir models/sweep_secondary
 
-# modelo final con la mejor configuración
-python scripts/train_autoencoder.py --embed-dim <d> --n-layer <n> --pooling <p> --out models/autoencoder_v2
+# 3) modelo final con la config ganadora
+python scripts/train_autoencoder.py --embed-dim 8 --n-layer 2 --pooling query --out models/autoencoder_v2
 ```
 
+**Barrido primario** (`models/sweep_dim/summary.csv`): `d=8` fue el codo
+de la curva (macro F1 de reconstrucción 0.8939, a solo 0.0044 del control
+no-compresivo `d=32`=0.8983).
+
+**Barrido secundario** (`models/sweep_secondary/summary.csv`, con `d=8`
+fijo): `n_layer_2_query` (`lr=1e-3`, `n_layer=2`, `pooling=query`) empató
+en la práctica con la mejor corrida (`lr_bajo`, 0.8989 vs. 0.8985) con la
+mitad de las capas y la mitad del tiempo por época -- elegida por ese
+motivo, no por ser matemáticamente la mejor (ver
+`docs/v2_autoencoder_training.md` para la nota completa sobre por qué
+comparar corridas con distinto número de épocas no es del todo justo).
+
+**Modelo final** (`models/autoencoder_v2/`): macro F1 0.8971, accuracy
+0.9993, `early stopping` en la época 22 (mejor en la 17), 798,216
+parámetros. Detalle completo, con curvas de entrenamiento, en
+[`docs/v2_autoencoder_training.md`](docs/v2_autoencoder_training.md).
+
 Cada corrida guarda `config.json` + `model.pt` + `train_data.csv` (misma
-convención que los modelos de la v1). `d` se elige en el codo de la curva
-de reconstrucción out-of-domain (no el valor más alto) -- ver la sección
-"1a. Curva de compresión" de `notebooks/eval_embeddings_v2.ipynb`, que
-también cubre clustering/tipología de trayectorias, probing (`z` vs. la
-secuencia cruda vs. el estado oculto de la v1 pooleado) y visualización
-2D. Ese notebook está listo para correr pero necesita los resultados del
-barrido (`models/sweep_dim/`, `models/sweep_secondary/`,
-`models/autoencoder_v2/`) para producir números reales.
+convención que los modelos de la v1). `notebooks/eval_embeddings_v2.ipynb`
+está listo para correr sobre `models/autoencoder_v2/` (fidelidad de
+reconstrucción por clase, clustering/tipología de trayectorias, probing
+`z` vs. secuencia cruda vs. estado oculto de la v1 pooleado, y
+visualización 2D) -- pendiente de ejecutar.
 
 Extraer embeddings de una zona ya construida, con el modelo final:
 
 ```bash
 python scripts/extract_embeddings.py --model models/autoencoder_v2 --zone ibera
-# -> data/embeddings_ibera.zip (columnas ID, z0..z<embed_dim-1>)
+# -> data/embeddings_ibera.zip (columnas ID, z0..z7)
 ```
 
 ## Modelos entrenados incluidos
 
+**v1 (`GPTDecoder`)**:
 - `models/full_model/` — modelo final, entrenado sobre el dataset completo y evaluado en el test set held-out (ver `test_1.ipynb`).
 - `models/balanced_1/` — modelo entrenado sobre un dataset balanceado, con secuencias completas sin ventaneo (ver `prueba_3.ipynb`).
 - `models/2026-05-20/` — checkpoint intermedio de una corrida anterior (ver `prueba_2.ipynb`).
 - `models/first-test.pt` — checkpoint suelto de una prueba temprana.
+
+**v2 (`TrajectoryAutoencoder`)**:
+- `models/autoencoder_v2/` — modelo final (`d=8, n_layer=2, pooling=query`), ver `docs/v2_autoencoder_training.md`.
+- `models/sweep_dim/d{4,8,12,16,32}/` — las 5 corridas del barrido primario (dimensión del embedding).
+- `models/sweep_secondary/<nombre>/` — las 8 corridas del barrido secundario (lr/capas/pooling/pesos), con `d=8` fijo.
 
 Cada carpeta de modelo incluye `config.json` (hiperparámetros usados),
 `model.pt` (pesos) y `train_data.csv` (historial de loss/métricas por época).
