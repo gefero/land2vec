@@ -18,6 +18,16 @@ submuestras al 80% (bootstrap), pero cada submuestra se recorta a lo sumo a
 `boot_cap` filas -- sin ese techo, reajustar KMeans/HDBSCAN/jerárquico decenas
 de veces por corrida del barrido, sobre las 107k secuencias con transición, no
 termina en tiempo razonable en CPU. `boot_cap=20000` es el default.
+
+Nota sobre el jerárquico: a diferencia de las otras tres familias, no se ajusta
+directo sobre las 107k filas -- ni el Ward canónico de scipy (O(n^2) en
+distancias) ni una versión restringida a un grafo de conectividad k-NN
+(probada y descartada: esta base tiene tantas trayectorias idénticas que el
+grafo queda fragmentado en cientos de componentes, y reconectarlos resultó
+igual de costoso) terminan en tiempo razonable acá. `run_hierarchical_config`
+en cambio ajusta sobre una submuestra estratificada por zona y extiende las
+etiquetas al resto por centroide más cercano -- la mitigación estándar para
+Ward a esta escala, no un atajo menos riguroso que las otras familias.
 """
 
 from __future__ import annotations
@@ -33,7 +43,7 @@ from scipy.cluster.hierarchy import cophenet, fcluster
 from scipy.cluster.hierarchy import linkage as scipy_linkage
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import pdist
-from sklearn.cluster import HDBSCAN, AgglomerativeClustering, KMeans
+from sklearn.cluster import HDBSCAN, KMeans
 from sklearn.metrics import (
     adjusted_rand_score,
     calinski_harabasz_score,
@@ -42,7 +52,7 @@ from sklearn.metrics import (
     silhouette_score,
 )
 from sklearn.mixture import GaussianMixture
-from sklearn.neighbors import NearestNeighbors, kneighbors_graph
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler, normalize
 
 from land2vec.extract import constant_mask
@@ -292,22 +302,6 @@ def fit_hdbscan(z: np.ndarray, min_cluster_size: int, min_samples: int | None = 
     return ClusterFit(labels, centers)
 
 
-def fit_hierarchical_ward_knn(z: np.ndarray, k: int, n_neighbors: int = 15, seed: int = 42) -> ClusterFit:
-    """Ward con conectividad de k-NN: el único jerárquico que corre sobre el dataset
-    completo. `kneighbors_graph` da un grafo dirigido (i -> sus k vecinos, no
-    necesariamente recíproco) que suele quedar desconectado en varios componentes;
-    sin simetrizar, sklearn cae a un fallback (`_fix_connectivity`) que intenta
-    reconectarlos con un costo cercano a O(n^2) -- disparador real de un cuelgue
-    por tiempo/memoria detectado en el smoke test de este módulo, no un caso
-    límite hipotético. Simetrizar la conectividad (unión, no intersección) es la
-    práctica estándar para este uso y evita ese fallback."""
-    connectivity = kneighbors_graph(z, n_neighbors=n_neighbors, include_self=False)
-    connectivity = connectivity.maximum(connectivity.T)
-    model = AgglomerativeClustering(n_clusters=k, linkage="ward", connectivity=connectivity).fit(z)
-    centers = _labeled_centroids(z, model.labels_)
-    return ClusterFit(model.labels_, centers)
-
-
 def hierarchical_linkage(z: np.ndarray, method: str) -> np.ndarray:
     """Matriz de linkage de scipy -- el paso caro (O(n^2) en distancias). Se calcula
     una sola vez por (submuestra, method) y sirve para cualquier `k` vía
@@ -344,12 +338,13 @@ def cophenetic_correlation(z: np.ndarray, Z: np.ndarray) -> float:
 def fit_hierarchical_full(z: np.ndarray, k: int, method: str) -> ClusterFit:
     """Ward/average/complete canónico vía scipy, sin restricción de conectividad.
 
-    Solo pensado para una submuestra (`Pool.sample`) -- la matriz condensada de
-    distancias es O(n^2), inviable sobre las 107k secuencias con transición.
-    Recalcula el linkage en cada llamada (lo necesita `run_config`/`stability_ari`,
-    que refitea sobre submuestras nuevas en cada bootstrap); `--sweep hierarchical`
-    usa `hierarchical_linkage`/`hierarchical_from_linkage` directo para evitar
-    ese recálculo repetido dentro de un mismo barrido de `k`.
+    Solo pensado para una submuestra chica (unos pocos miles de filas) -- la
+    matriz condensada de distancias es O(n^2), inviable sobre las 107k
+    secuencias con transición. `run_hierarchical_config` es el punto de entrada
+    real: ajusta esto sobre una submuestra estratificada y extiende las
+    etiquetas al resto del pool por centroide más cercano (ver su docstring
+    para por qué -- una restricción de conectividad k-NN sobre el dataset
+    completo se probó y resultó igual de inviable en este entorno).
     """
     Z = hierarchical_linkage(z, method)
     fit = hierarchical_from_linkage(z, Z, k)
@@ -358,19 +353,13 @@ def fit_hierarchical_full(z: np.ndarray, k: int, method: str) -> ClusterFit:
 
 
 def dispatch_fit(algo: str, z: np.ndarray, params: dict, seed: int = 42) -> ClusterFit:
+    "Despacho común a las familias que ajustan directo sobre el pool completo -- no cubre 'hierarchical', ver run_hierarchical_config."
     if algo == "kmeans":
         return fit_kmeans(z, k=params["k"], seed=seed)
     if algo == "gmm":
         return fit_gmm(z, k=params["k"], covariance_type=params.get("covariance_type", "full"), seed=seed)
     if algo == "hdbscan":
         return fit_hdbscan(z, min_cluster_size=params["min_cluster_size"], min_samples=params.get("min_samples"))
-    if algo == "hierarchical":
-        variant = params.get("variant", "ward_knn")
-        if variant == "ward_knn":
-            return fit_hierarchical_ward_knn(z, k=params["k"], n_neighbors=params.get("n_neighbors", 15), seed=seed)
-        if variant == "submuestra":
-            return fit_hierarchical_full(z, k=params["k"], method=params["method"])
-        raise ValueError(f"variant desconocida para hierarchical: {variant!r}")
     raise ValueError(f"algo desconocido: {algo!r}")
 
 
@@ -542,7 +531,7 @@ class ClusterRunResult:
 
 def run_config(
     pool: Pool,
-    algo: str,
+    algo: Literal["kmeans", "gmm", "hdbscan"],
     params: dict,
     space: Space,
     model: torch.nn.Module,
@@ -551,6 +540,7 @@ def run_config(
     n_boot: int = 5,
     boot_cap: int = 20000,
 ) -> ClusterRunResult:
+    "Ajusta y evalúa kmeans/gmm/hdbscan, los tres directo sobre `pool` completo. Para 'hierarchical' ver run_hierarchical_config."
     z_fit, transform = fit_space(pool.z, space)
     fit = dispatch_fit(algo, z_fit, params, seed=seed)
     labels = fit.labels
@@ -573,12 +563,90 @@ def run_config(
         **fit.extra,
     }
 
-    variant = params.get("variant")
-    eligible = algo in ("kmeans", "gmm", "hdbscan") or (algo == "hierarchical" and variant == "ward_knn")
-
     param_str = "_".join(f"{k}={v}" for k, v in sorted(params.items()))
     run_id = f"{algo}__{param_str}__space={space}"
-    return ClusterRunResult(run_id, algo, params, space, labels, fit.centers, raw_centers, transform, metrics, eligible)
+    return ClusterRunResult(run_id, algo, params, space, labels, fit.centers, raw_centers, transform, metrics, eligible=True)
+
+
+def run_hierarchical_config(
+    eval_pool: Pool,
+    method: str,
+    k: int,
+    space: Space,
+    fit_sample_size: int,
+    model: torch.nn.Module,
+    device: str = "cpu",
+    seed: int = 42,
+    n_boot: int = 5,
+    boot_cap: int = 20000,
+    linkage_cache: dict[str, np.ndarray] | None = None,
+) -> ClusterRunResult:
+    """Ward/average/complete jerárquico, evaluado en igualdad de condiciones con
+    kmeans/gmm/hdbscan pese a no poder ajustarse sobre las 107k filas del pool
+    completo: la matriz condensada de distancias de scipy es O(n^2) (inviable
+    directo), y restringir la conectividad a un grafo k-NN -- la mitigación
+    habitual para eso -- se probó en este módulo y resultó igual de costosa,
+    porque las muchísimas trayectorias idénticas de esta base fragmentan ese
+    grafo en cientos de componentes que `AgglomerativeClustering` no logra
+    resolver en tiempo razonable incluso ya reconectados.
+
+    La solución estándar en su lugar: ajustar sobre una submuestra estratificada
+    por zona (`fit_sample_size`, tratable -- unos segundos incluso en 25k filas)
+    y extender las etiquetas al resto del pool por centroide más cercano
+    (`assign_by_centroid`), igual que ya hace falta para HDBSCAN/jerárquico
+    cuando se etiqueta el pool con constantes submuestreadas en `--select`. Por
+    eso, a diferencia de la primera versión de este módulo, esta config SÍ es
+    elegible como ganadora -- ya no es solo diagnóstico.
+
+    `linkage_cache`, si se pasa, evita recalcular `hierarchical_linkage` (el
+    paso caro) para cada `k` de un mismo `method` dentro de un barrido.
+    """
+    fit_pool = eval_pool.sample(fit_sample_size, seed=seed, stratify_by_zone=True)
+    z_fit_sub, transform = fit_space(fit_pool.z, space)
+
+    if linkage_cache is not None and method in linkage_cache:
+        Z = linkage_cache[method]
+    else:
+        Z = hierarchical_linkage(z_fit_sub, method)
+        if linkage_cache is not None:
+            linkage_cache[method] = Z
+
+    sub_fit = hierarchical_from_linkage(z_fit_sub, Z, k)
+    z_eval_fit = transform.apply(eval_pool.z)
+    labels = assign_by_centroid(z_eval_fit, sub_fit.centers)
+    raw_centers = _labeled_centroids(eval_pool.z, labels)
+
+    def _fit_labels(z_sub: np.ndarray) -> np.ndarray:
+        "Reajusta el mismo procedimiento (submuestra + linkage + corte) sobre una submuestra bootstrap y extiende al resto de esa submuestra."
+        rng = np.random.default_rng(seed)
+        n_fit = min(fit_sample_size, len(z_sub))
+        fit_idx = rng.choice(len(z_sub), size=n_fit, replace=False)
+        Zb = hierarchical_linkage(z_sub[fit_idx], method)
+        labels_fit = hierarchical_from_linkage(z_sub[fit_idx], Zb, k).labels
+        centers_fit = _labeled_centroids(z_sub[fit_idx], labels_fit)
+        return assign_by_centroid(z_sub, centers_fit)
+
+    sil_mean, sil_std = silhouette_repeated(z_eval_fit, labels)
+    metrics = {
+        "n_fit": len(fit_pool),
+        "silhouette_mean": sil_mean,
+        "silhouette_std": sil_std,
+        "calinski_harabasz": safe_calinski_harabasz(z_eval_fit, labels),
+        "davies_bouldin": safe_davies_bouldin(z_eval_fit, labels),
+        "stability_ari": stability_ari(z_eval_fit, _fit_labels, n_boot=n_boot, boot_cap=boot_cap, seed=seed),
+        "prototype_fidelity": prototype_fidelity(model, eval_pool.seqs, labels, raw_centers, device=device),
+        "spatial_coherence": spatial_coherence(eval_pool.lat, eval_pool.lon, eval_pool.zone, labels),
+        "cophenetic_corr": cophenetic_correlation(z_fit_sub, Z),
+        **sub_fit.extra,  # merge_gap
+        **size_stats(labels),
+    }
+
+    params = {"k": k, "method": method, "fit_sample_size": fit_sample_size}
+    param_str = "_".join(f"{key}={val}" for key, val in sorted(params.items()))
+    run_id = f"hierarchical__{param_str}__space={space}"
+    return ClusterRunResult(
+        run_id, "hierarchical", params, space, labels, sub_fit.centers, raw_centers, transform, metrics, eligible=True
+    )
 
 
 def to_jsonable(obj):
