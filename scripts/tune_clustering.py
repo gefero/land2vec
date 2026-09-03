@@ -15,7 +15,7 @@ Uso:
     python scripts/tune_clustering.py --sweep hdbscan      --out-dir models/cluster_v2
     python scripts/tune_clustering.py --sweep hierarchical --out-dir models/cluster_v2
 
-    # elige la config ganadora (ver criterio en compute_metrics.py) y etiqueta
+    # elige la config ganadora (ver select_winner() más abajo) y etiqueta
     # las dinámicas + el pool con constantes submuestreadas al 15%
     python scripts/tune_clustering.py --select --out-dir models/cluster_v2
 
@@ -139,60 +139,36 @@ def sweep_hdbscan(pool, model, args) -> list[dict]:
 
 
 def sweep_hierarchical(pool, model, args) -> list[dict]:
+    """Ward/average/complete, ajustados sobre una submuestra estratificada
+    (`args.hier_sample`) y evaluados sobre el pool completo de 107k filas por
+    centroide más cercano -- ver el docstring de `land2vec.cluster.
+    run_hierarchical_config` para por qué (Ward directo sobre el pool completo,
+    con o sin restricción de conectividad k-NN, se probó infeasible en este
+    entorno). El linkage se calcula una sola vez por `method` (cacheado) y se
+    reusa para todo el barrido de `k`, ya que el árbol completo no depende de k."""
     rows = []
-
-    # ward_knn: sobre el dataset completo, elegible como config ganadora.
-    for k in args.k_values:
-        t0 = time.time()
-        result = C.run_config(
-            pool, "hierarchical", {"k": k, "variant": "ward_knn", "n_neighbors": args.hier_neighbors},
-            args.hier_space, model, device=args.device, seed=args.seed, n_boot=args.n_boot, boot_cap=args.boot_cap,
-        )
-        rows.append(result_row(result))
-        print(f"  hierarchical/ward_knn k={k:>2d} "
-              f"silhouette={result.metrics['silhouette_mean']:.4f} "
-              f"stability_ari={result.metrics['stability_ari']:.4f} "
-              f"proto_fidelity={result.metrics['prototype_fidelity']:.4f} ({time.time() - t0:.1f}s)")
-
-    # submuestra ward/average/complete: solo diagnóstico (comparar linkages entre
-    # sí y contra ward_knn vía cophenetic_corr) -- nunca elegibles como ganadora,
-    # así que se saltan las métricas caras (stability_ari, prototype_fidelity,
-    # spatial_coherence) y se calcula el linkage UNA vez por method, no por k
-    # (ver docstring de hierarchical_linkage en land2vec.cluster).
-    sub_pool = pool.sample(args.hier_sample, seed=args.seed, stratify_by_zone=True)
-    print(f"  submuestra jerárquica: {len(sub_pool):,} filas (estratificada por zona)")
-    z_fit, transform = C.fit_space(sub_pool.z, args.hier_space)
-
     dendrogram_payload = None
     best_coph = -1.0
-    for method in args.hier_linkages:
-        t0 = time.time()
-        Z = C.hierarchical_linkage(z_fit, method)
-        coph_corr = C.cophenetic_correlation(z_fit, Z)
-        print(f"  hierarchical/submuestra method={method:<9s} cophenetic_corr={coph_corr:.4f} ({time.time() - t0:.1f}s)")
-        if coph_corr > best_coph:
-            best_coph = coph_corr
-            dendrogram_payload = (method, Z)
+    linkage_cache: dict[str, np.ndarray] = {}
 
+    for method in args.hier_linkages:
+        linkage_cache.clear()
         for k in args.k_values:
-            fit = C.hierarchical_from_linkage(z_fit, Z, k)
-            sil_mean, sil_std = C.silhouette_repeated(z_fit, fit.labels)
-            metrics = {
-                "n_fit": len(sub_pool),
-                "silhouette_mean": sil_mean,
-                "silhouette_std": sil_std,
-                "calinski_harabasz": C.safe_calinski_harabasz(z_fit, fit.labels),
-                "davies_bouldin": C.safe_davies_bouldin(z_fit, fit.labels),
-                "cophenetic_corr": coph_corr,
-                **fit.extra,
-                **C.size_stats(fit.labels),
-            }
-            params = {"k": k, "variant": "submuestra", "method": method}
-            run_id = f"hierarchical__k={k}_method={method}_variant=submuestra__space={args.hier_space}"
-            rows.append({
-                "run_id": run_id, "algo": "hierarchical", "space": args.hier_space,
-                "params": json.dumps(params, sort_keys=True), "eligible": False, **metrics,
-            })
+            t0 = time.time()
+            result = C.run_hierarchical_config(
+                pool, method, k, args.hier_space, args.hier_sample, model,
+                device=args.device, seed=args.seed, n_boot=args.n_boot, boot_cap=args.boot_cap,
+                linkage_cache=linkage_cache,
+            )
+            rows.append(result_row(result))
+            print(f"  hierarchical method={method:<9s} k={k:>2d} "
+                  f"silhouette={result.metrics['silhouette_mean']:.4f} "
+                  f"cophenetic_corr={result.metrics['cophenetic_corr']:.4f} "
+                  f"stability_ari={result.metrics['stability_ari']:.4f} "
+                  f"proto_fidelity={result.metrics['prototype_fidelity']:.4f} ({time.time() - t0:.1f}s)")
+            if result.metrics["cophenetic_corr"] > best_coph:
+                best_coph = result.metrics["cophenetic_corr"]
+                dendrogram_payload = (method, linkage_cache[method])
 
     if dendrogram_payload is not None and args.dendrogram_out is not None:
         plot_dendrogram(dendrogram_payload, args.dendrogram_out)
@@ -221,8 +197,8 @@ def plot_selection_curves(summary: pd.DataFrame, out_path: Path) -> None:
     df["k"] = parsed_params.apply(lambda p: p.get("k"))
     df = df[df["k"].notna()].copy()
     df["k"] = df["k"].astype(int)
-    variant_suffix = parsed_params.apply(lambda p: f"/{p['variant']}" if "variant" in p else "")
-    df["series"] = df["algo"] + "/" + df["space"].fillna("") + variant_suffix[df.index]
+    method_suffix = parsed_params.apply(lambda p: f"/{p['method']}" if "method" in p else "")
+    df["series"] = df["algo"] + "/" + df["space"].fillna("") + method_suffix[df.index]
 
     metrics = ["silhouette_mean", "stability_ari", "prototype_fidelity", "spatial_coherence"]
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
@@ -287,10 +263,16 @@ def run_select(args) -> None:
     model, dyn_pool = load_model_and_dynamic_pool(args.model, args.data_dir, args.device)
 
     print("Reajustando la config ganadora (con más bootstraps para el número final de estabilidad)...")
-    final = C.run_config(
-        dyn_pool, winner["algo"], params, winner["space"], model,
-        device=args.device, seed=args.seed, n_boot=args.select_n_boot, boot_cap=args.boot_cap,
-    )
+    if winner["algo"] == "hierarchical":
+        final = C.run_hierarchical_config(
+            dyn_pool, params["method"], params["k"], winner["space"], params["fit_sample_size"], model,
+            device=args.device, seed=args.seed, n_boot=args.select_n_boot, boot_cap=args.boot_cap,
+        )
+    else:
+        final = C.run_config(
+            dyn_pool, winner["algo"], params, winner["space"], model,
+            device=args.device, seed=args.seed, n_boot=args.select_n_boot, boot_cap=args.boot_cap,
+        )
     print(f"  stability_ari (n_boot={args.select_n_boot}): {final.metrics['stability_ari']:.4f}")
 
     chosen = {
@@ -345,8 +327,7 @@ def main():
     parser.add_argument("--min-cluster-sizes", type=int, nargs="+", default=[250, 500, 1000, 2500])
     parser.add_argument("--min-samples", nargs="+", default=["none", "25"])
     parser.add_argument("--hier-space", choices=["raw", "standard", "l2"], default="standard")
-    parser.add_argument("--hier-neighbors", type=int, default=15)
-    parser.add_argument("--hier-sample", type=int, default=25000, help="tamaño de la submuestra para ward/average/complete canónicos")
+    parser.add_argument("--hier-sample", type=int, default=25000, help="tamaño de la submuestra estratificada para ajustar ward/average/complete (se extiende al pool completo por centroide más cercano)")
     parser.add_argument("--hier-linkages", nargs="+", default=["ward", "average", "complete"])
     parser.add_argument("--dendrogram-out", type=Path, default=IMGS_DIR / "v2_cluster_dendrogram.png")
 
