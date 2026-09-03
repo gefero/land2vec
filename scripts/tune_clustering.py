@@ -327,7 +327,7 @@ def main():
     parser.add_argument("--min-cluster-sizes", type=int, nargs="+", default=[250, 500, 1000, 2500])
     parser.add_argument("--min-samples", nargs="+", default=["none", "25"])
     parser.add_argument("--hier-space", choices=["raw", "standard", "l2"], default="standard")
-    parser.add_argument("--hier-sample", type=int, default=25000, help="tamaño de la submuestra estratificada para ajustar ward/average/complete (se extiende al pool completo por centroide más cercano)")
+    parser.add_argument("--hier-sample", type=int, default=5000, help="tamaño de la submuestra estratificada para ajustar ward/average/complete (se extiende al pool completo por centroide más cercano) -- 25000 midió memoria estable en una corrida aislada pero la acumuló sin liberarla a través de las ~6 refit de estabilidad por config del barrido completo, hasta hacer OOM-kill (ver commit); 5000 mantiene el RSS plano y cada config en ~27s")
     parser.add_argument("--hier-linkages", nargs="+", default=["ward", "average", "complete"])
     parser.add_argument("--dendrogram-out", type=Path, default=IMGS_DIR / "v2_cluster_dendrogram.png")
 
