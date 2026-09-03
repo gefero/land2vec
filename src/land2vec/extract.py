@@ -81,13 +81,19 @@ def extract_zone(
     return lat_long_df, seqs_df
 
 
-def _constant_mask(seqs_df: pd.DataFrame, seq_col: str) -> pd.Series:
+def constant_mask(seqs_df: pd.DataFrame, seq_col: str = "seqs") -> pd.Series:
+    "True para las filas cuya secuencia no cambia en ninguno de los 23 años."
     return seqs_df[seq_col].str.split("-").apply(lambda states: len(set(states)) == 1)
+
+
+# Alias interno retrocompatible -- mantenido por si algo más lo importa con el
+# nombre anterior; el nombre público a usar de acá en más es constant_mask().
+_constant_mask = constant_mask
 
 
 def drop_constant_sequences(seqs_df: pd.DataFrame, seq_col: str = "seqs") -> pd.DataFrame:
     "Descarta píxeles cuya secuencia es constante en todo el período (p. ej. agua permanente)."
-    return seqs_df[~_constant_mask(seqs_df, seq_col)]
+    return seqs_df[~constant_mask(seqs_df, seq_col)]
 
 
 def subsample_constant_sequences(
