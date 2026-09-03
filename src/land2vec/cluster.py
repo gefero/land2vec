@@ -293,8 +293,16 @@ def fit_hdbscan(z: np.ndarray, min_cluster_size: int, min_samples: int | None = 
 
 
 def fit_hierarchical_ward_knn(z: np.ndarray, k: int, n_neighbors: int = 15, seed: int = 42) -> ClusterFit:
-    "Ward con conectividad de k-NN: el único jerárquico que corre sobre el dataset completo."
+    """Ward con conectividad de k-NN: el único jerárquico que corre sobre el dataset
+    completo. `kneighbors_graph` da un grafo dirigido (i -> sus k vecinos, no
+    necesariamente recíproco) que suele quedar desconectado en varios componentes;
+    sin simetrizar, sklearn cae a un fallback (`_fix_connectivity`) que intenta
+    reconectarlos con un costo cercano a O(n^2) -- disparador real de un cuelgue
+    por tiempo/memoria detectado en el smoke test de este módulo, no un caso
+    límite hipotético. Simetrizar la conectividad (unión, no intersección) es la
+    práctica estándar para este uso y evita ese fallback."""
     connectivity = kneighbors_graph(z, n_neighbors=n_neighbors, include_self=False)
+    connectivity = connectivity.maximum(connectivity.T)
     model = AgglomerativeClustering(n_clusters=k, linkage="ward", connectivity=connectivity).fit(z)
     centers = _labeled_centroids(z, model.labels_)
     return ClusterFit(model.labels_, centers)
