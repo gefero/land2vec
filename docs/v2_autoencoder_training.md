@@ -383,15 +383,118 @@ ese rango). Confirma lo esperado: reconstruye casi tan bien como el
 control no-compresivo (`d=32`, -0.0012) con 8 dimensiones y menos de la
 mitad de los parámetros de las corridas de 4 capas.
 
-## 7. Próximos pasos
+## 7. Resultados de la evaluación de embeddings (`eval_embeddings_v2.ipynb`)
 
-Con el modelo final entrenado, lo que sigue:
+Con el modelo final entrenado, se extrajeron embeddings sobre las 7 zonas
+de evaluación out-of-domain (`scripts/extract_embeddings.py`) y se corrió
+`notebooks/eval_embeddings_v2.ipynb` completo: fidelidad de reconstrucción
+por zona, clustering/tipología de trayectorias, probing contra la v1, y
+visualización 2D.
 
-1. Extraer embeddings sobre las 7 zonas de evaluación con
-   `scripts/extract_embeddings.py`.
-2. Correr `notebooks/eval_embeddings_v2.ipynb`: fidelidad de
-   reconstrucción por clase (no solo macro F1 global), clustering/
-   tipología de trayectorias con coherencia espacial, probing contra la
-   v1 (embeddings de este autoencoder vs. estado oculto promediado de
-   `GPTDecoder`), y visualización 2D (PCA/UMAP) del espacio latente de 8
-   dimensiones.
+### 7.1 Reconstrucción por zona -- y un hallazgo metodológico
+
+| Zona | Accuracy | Macro F1 |
+|---|---:|---:|
+| `puna_noa` | 0.9996 | 0.8985 |
+| `patagonia_estepa` | 0.9999 | 0.8577 |
+| `periurbano_cordoba` | 0.9995 | 0.8949 |
+| `ibera` | 0.9998 | 0.8941 |
+| `delta_parana` | 0.9998 | 0.8926 |
+| `pampa_nucleo` | 0.9999 | 0.8976 |
+| `misiones_selva` | 0.9999 | 0.6992 |
+
+![Matrices de confusión de reconstrucción por zona](../imgs/v2_eval_confusion_zones.png)
+
+A primera vista, `misiones_selva` parece la zona más difícil por mucho
+margen. Mirando su matriz de confusión, sin embargo, la diagonal está en
+~1.00 en **todas** las clases que efectivamente aparecen ahí -- la
+reconstrucción es prácticamente perfecta también en esa zona. Lo que pasa
+es que `compute_metrics` (fix de una sesión anterior, para que las
+comparaciones entre corridas del barrido con distinta composición de
+clases fueran justas) promedia el F1 sobre las **10 clases del vocabulario
+completo**, y una clase sin ninguna muestra en el ground truth de una zona
+cuenta como F1=0 en ese promedio (`zero_division=0`). `misiones_selva`
+tiene 3 de 10 clases con soporte cero (`Sp`, `B`, `Nd`):
+`(7 clases×1.0 + 3 clases×0) / 10 = 0.70`, exactamente el número
+reportado. El mismo patrón explica el resto de las zonas (todas con 9/10
+clases presentes, así que el descuento es de solo una clase ausente
+-- macro F1 ≈0.86-0.90).
+
+**Conclusión corregida**: la varianza de macro F1 entre zonas refleja casi
+enteramente cuántas de las 10 clases del vocabulario aparecen en cada
+zona, no una diferencia real en la calidad de reconstrucción -- el modelo
+generaliza de forma consistentemente buena en las 7 zonas out-of-domain.
+Esto no invalida las comparaciones *entre modelos* del barrido (sección 3),
+que usan siempre el mismo `pooled_seqs` para todas las corridas y por lo
+tanto no están afectadas por este problema -- solo invalida comparar el
+macro F1 de una zona *contra otra*. El mismo artefacto contamina el
+desglose constante/transición: la reconstrucción en secuencias con
+transición tiene accuracy 0.986-0.998 (alta) pero macro F1 más bajo
+(0.69-0.89) por el mismo motivo, no porque el modelo falle
+específicamente en las transiciones.
+
+### 7.2 Clustering / tipología de trayectorias
+
+Filtrado a las secuencias con al menos una transición (3.2% del pool,
+107,362 de 3,344,976 -- el resto son trayectorias constantes, triviales de
+agrupar y que antes de este filtro ahogaban cualquier tipología real, ver
+nota metodológica de una sesión anterior). Con `k=8`: silhouette 0.43.
+
+![Clusters de trayectoria, solo secuencias con transición, por zona](../imgs/v2_eval_cluster_map.png)
+
+Los clusters forman parches espacialmente coherentes dentro de cada zona
+(frontera este-oeste nítida en `puna_noa`, banda diagonal en `ibera`,
+región dominada por un cluster en `misiones_selva`) -- evidencia de que el
+embedding captura tipologías de trayectoria geográficamente reales, no
+ruido. Las trayectorias prototípicas (centroide de cada cluster,
+decodificado) son variadas e interpretables: `F→Wt` (deforestación a
+humedal), `Wt→B→Sp` (humedal a pastizal/estepa), `F↔A` oscilante (frontera
+agrícola), `F→Sh`, `B→Sp`, `F→G→Sp`, entre otras -- no clases constantes
+triviales.
+
+### 7.3 Probing: `z` vs. secuencia cruda vs. estado oculto de la v1
+
+| Tarea | `z` (v2, 8 dims) | one-hot crudo (253 dims) | hidden v1 pooled (128 dims) |
+|---|---:|---:|---:|
+| Clase dominante | 0.9998 | 0.9999 | 0.9995 |
+| Hubo transición | **0.9665** | 0.9926 | 0.9889 |
+| Ecorregión | 0.7918 | 0.7992 | 0.7953 |
+
+En 2 de las 3 tareas, el embedding de 8 dimensiones empata en la práctica
+con representaciones 16-30x más grandes -- señal fuerte de que la
+compresión no pierde la información relevante para identificar la clase
+dominante ni la ecorregión de origen (las tres representaciones tocan el
+mismo techo de ~80% en ecorregión, probablemente un límite intrínseco de
+la tarea -- hay trayectorias legítimamente ambiguas entre zonas -- más que
+una limitación de `z`). La brecha real está en "hubo transición" (-2.6
+puntos contra el one-hot crudo): es la señal más rara del dataset (3.2%
+positivos) y la más fácil de atenuar en un cuello de botella optimizado
+sobre todo para reconstruir la secuencia completa -- el costo de
+compresión más honesto que aparece en todo el análisis.
+
+### 7.4 Visualización 2D (PCA)
+
+![PCA de z a 2D, coloreado por zona y por clase dominante](../imgs/v2_eval_pca.png)
+
+2 componentes principales capturan 75.8% de la varianza de `z`. Coloreado
+por clase dominante, el plano separa grupos con bastante claridad;
+coloreado por zona se mezcla mucho más -- consistente con el probing
+(clase dominante ~100% de accuracy, ecorregión ~80%).
+
+## 8. Próximos pasos
+
+1. **Optimizar el proceso de clustering** (prioridad siguiente): `k=8` fue
+   elegido arbitrariamente, no por un criterio de selección de modelo.
+   Concretamente: barrer `k` con silhouette/elbow sobre las secuencias con
+   transición para elegir un número de clusters basado en datos; probar
+   alternativas que no requieren fijar `k` de antemano ni asumen clusters
+   esféricos (`HDBSCAN`, `GaussianMixture` con selección por BIC); evaluar
+   si conviene estandarizar `z` antes de clusterizar (las 8 dimensiones no
+   tienen por qué compartir escala); y, si se busca una tipología más
+   fina, generar prototipos por cluster desagregados por zona (hoy el
+   centroide se decodifica una sola vez de forma global).
+2. Calcular una versión de macro F1 restringida a las clases con soporte
+   real en cada subconjunto (por zona, o constante/transición) -- ver
+   7.1 -- para tener una comparación de fidelidad de reconstrucción entre
+   zonas que no esté sesgada por cuántas clases del vocabulario aparecen
+   en cada una.

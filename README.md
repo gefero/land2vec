@@ -409,11 +409,32 @@ parámetros. Detalle completo, con curvas de entrenamiento, en
 [`docs/v2_autoencoder_training.md`](docs/v2_autoencoder_training.md).
 
 Cada corrida guarda `config.json` + `model.pt` + `train_data.csv` (misma
-convención que los modelos de la v1). `notebooks/eval_embeddings_v2.ipynb`
-está listo para correr sobre `models/autoencoder_v2/` (fidelidad de
-reconstrucción por clase, clustering/tipología de trayectorias, probing
-`z` vs. secuencia cruda vs. estado oculto de la v1 pooleado, y
-visualización 2D) -- pendiente de ejecutar.
+convención que los modelos de la v1).
+
+### Evaluación de embeddings (`eval_embeddings_v2.ipynb`)
+
+Ejecutado sobre las 7 zonas de evaluación out-of-domain -- ver
+[`docs/v2_autoencoder_training.md`](docs/v2_autoencoder_training.md#7-resultados-de-la-evaluación-de-embeddings-eval_embeddings_v2ipynb)
+para el detalle completo (matrices de confusión, mapa de clusters, tabla
+de probing, PCA). Resumen:
+
+- **Reconstrucción por zona**: accuracy ≥0.9995 en las 7 zonas; el macro
+  F1 (0.70-0.90) varía sobre todo por cuántas de las 10 clases del
+  vocabulario aparecen en cada zona (no por diferencias reales de calidad
+  -- ver el detalle en el doc), así que no es directamente comparable
+  entre zonas.
+- **Clustering** (filtrado a las secuencias con transición, 3.2% del
+  pool): `k=8`, silhouette 0.43, clusters espacialmente coherentes y
+  trayectorias prototípicas interpretables.
+- **Probing** (`z` de 8 dims vs. one-hot crudo de 253 dims vs. hidden
+  state pooled de la v1, 128 dims): `z` empata en la práctica con las
+  representaciones mucho más grandes en "clase dominante" (0.9998) y
+  "ecorregión" (0.7918); pierde 2.6 puntos en "hubo transición" (0.9665
+  vs. 0.9926 del one-hot) -- el costo de compresión más claro del
+  análisis.
+- **Próximo paso**: optimizar el proceso de clustering (elegir `k` con un
+  criterio de datos en vez de fijarlo arbitrariamente, y probar
+  alternativas como `HDBSCAN`/`GaussianMixture`).
 
 Extraer embeddings de una zona ya construida, con el modelo final:
 
