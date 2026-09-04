@@ -456,8 +456,13 @@ total, evaluadas con:
    trayectoria prototípica decodificada de su cluster -- un cluster sirve
    si su prototipo es una descripción honesta de sus miembros, no solo si
    está bien separado de los demás.
-4. **Coherencia espacial**: fracción de vecinos geográficos que comparten
-   cluster, contra una línea de base de etiquetas permutadas.
+4. **Coherencia espacial**: fracción de vecinos geográficos (excluyendo
+   pares donde alguno de los dos quedó como ruido de HDBSCAN) que comparten
+   cluster, contra una línea de base de etiquetas permutadas -- sin excluir
+   el ruido, dos vecinos "sin asignar" contarían como si compartieran un
+   cluster real, inflando la métrica en las configs con más ruido por la
+   sola contigüidad espacial de las zonas ambiguas sin tipificar, no por una
+   tipología genuina.
 
 El jerárquico no pudo ajustarse directamente sobre las 107k filas: la
 matriz condensada de distancias de scipy es O(n²) (inviable), y restringir
@@ -477,8 +482,9 @@ del ruido, por menor `k`.
 
 **Ganadora sin restricciones -- HDBSCAN, `min_cluster_size=250`**: k=115
 clusters (11% de las filas quedan sin asignar, como ruido de HDBSCAN),
-silhouette 0.92, `stability_ari` 0.89 y `prototype_fidelity` 0.95 -- muy
-por encima de cualquier config de KMeans/GMM/jerárquico, cuyo
+silhouette 0.92, `stability_ari` 0.89, `prototype_fidelity` 0.95 y
+`spatial_coherence` 0.60 -- muy por encima de cualquier config de
+KMeans/GMM/jerárquico, cuyo
 `prototype_fidelity` no pasó de ~0.23 aun con `k` grande. HDBSCAN no fuerza
 los puntos "difíciles" a un cluster, así que los que sí forma son mucho
 más homogéneos -- pero 115 tipos no es una tipología legible para un mapa
@@ -486,7 +492,8 @@ o una narrativa.
 
 **Ganadora interpretable (mismo criterio, con `k_effective <= 20`) --
 HDBSCAN, `min_cluster_size=2500`**: k=12, silhouette 0.78,
-`prototype_fidelity` 0.86, pero `stability_ari` **0.69** al reajustar con
+`prototype_fidelity` 0.86, `spatial_coherence` 0.45, pero `stability_ari`
+**0.69** al reajustar con
 más bootstraps para el número final (`n_boot=10`, contra el `n_boot=3` del
 barrido, que había medido 0.99) -- por debajo del umbral de 0.75 del
 propio criterio. Es exactamente el tipo de sobreajuste al ruido de una
@@ -505,8 +512,9 @@ antes que forzarlo a uno de los 12 tipos.
 
 Ambos niveles forman parches espacialmente coherentes dentro de cada zona
 (frontera este-oeste nítida en `puna_noa`, banda diagonal en `ibera`) --
-evidencia de que el embedding captura tipologías de trayectoria
-geográficamente reales, no ruido. Las trayectorias prototípicas (centroide
+`spatial_coherence` 0.60 (fina) y 0.45 (gruesa) -- evidencia de que el
+embedding captura tipologías de trayectoria geográficamente reales, no
+ruido. Las trayectorias prototípicas (centroide
 de cada cluster en `z` crudo, decodificado) son variadas e interpretables:
 `F→Wt` (deforestación a humedal), `Wt→B→Sp` (humedal a pastizal/estepa),
 `F↔A` oscilante (frontera agrícola), `F→Sh`, `B→Sp`, `F→G→Sp`, entre otras

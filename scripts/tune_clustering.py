@@ -191,11 +191,16 @@ def plot_dendrogram(payload: tuple[str, np.ndarray], out_path: Path) -> None:
 
 
 def plot_selection_curves(summary: pd.DataFrame, out_path: Path) -> None:
-    "Curvas de las métricas principales vs. k, un panel por métrica, una línea por (algo, space/variant)."
+    """Curvas de las métricas principales vs. k_effective, un panel por métrica, una
+    línea por (algo, space/variant). Usa `k_effective` (calculado por
+    `land2vec.cluster.size_stats` para las 4 familias) en vez de `params["k"]` --
+    HDBSCAN no tiene una clave "k" en sus params (solo min_cluster_size/min_samples),
+    así que extraer "k" de params lo dejaba afuera del gráfico por completo pese a
+    ser la familia ganadora (ver docs/v2_autoencoder_training.md §7.2)."""
     df = summary.copy()
     parsed_params = df["params"].apply(json.loads)
-    df["k"] = parsed_params.apply(lambda p: p.get("k"))
-    df = df[df["k"].notna()].copy()
+    df["k"] = df["k_effective"]
+    df = df[df["k"].notna() & (df["k"] > 0)].copy()
     df["k"] = df["k"].astype(int)
     method_suffix = parsed_params.apply(lambda p: f"/{p['method']}" if "method" in p else "")
     df["series"] = df["algo"] + "/" + df["space"].fillna("") + method_suffix[df.index]
@@ -210,11 +215,11 @@ def plot_selection_curves(summary: pd.DataFrame, out_path: Path) -> None:
             if sub[metric].notna().sum() == 0:
                 continue
             ax.plot(sub["k"], sub[metric], marker="o", markersize=3, label=series, alpha=0.8)
-        ax.set_xlabel("k")
+        ax.set_xlabel("k efectivo")
         ax.set_ylabel(metric)
         ax.grid(True, alpha=0.3)
     axes.flat[0].legend(fontsize=6, ncol=2, loc="best")
-    fig.suptitle("Barrido de clustering: métricas de selección vs. k")
+    fig.suptitle("Barrido de clustering: métricas de selección vs. k efectivo")
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)
@@ -227,15 +232,21 @@ def select_winner(summary: pd.DataFrame, k_max: int | None = None) -> tuple[pd.S
     config elegibles con stability_ari >= STABILITY_THRESHOLD (y, si `k_max` no
     es None, con k_effective <= k_max -- usado para la selección "gruesa"
     interpretable, ver select_coarse_winner), la de mejor prototype_fidelity;
-    desempate por silhouette_mean y, dentro del ruido, por menor k. Si ninguna
-    alcanza el umbral, cae a la de mayor stability_ari entre las candidatas
-    (fallback=True, hay que revisarlo a mano)."""
+    desempate por silhouette_mean y, dentro del ruido, por menor k_effective. Si
+    ninguna alcanza el umbral, cae a la de mayor stability_ari entre las
+    candidatas (fallback=True, hay que revisarlo a mano).
+
+    El desempate final usa `k_effective` (no `params["k"]`): HDBSCAN no tiene una
+    clave "k" en sus params, así que desempatar por `params["k"]` la dejaba con
+    NaN y, por cómo ordena pandas, siempre al final del desempate -- aunque en la
+    práctica nunca se llegó a necesitar (HDBSCAN ganó por prototype_fidelity sin
+    empates), ver docs/v2_autoencoder_training.md §7.2."""
     elig = summary[summary["eligible"].astype(bool)].dropna(subset=["stability_ari", "prototype_fidelity"]).copy()
     if k_max is not None:
         elig = elig[elig["k_effective"] <= k_max]
     if elig.empty:
         raise ValueError(f"summary.csv no tiene ninguna corrida elegible con métricas completas (k_max={k_max})")
-    elig["k"] = elig["params"].apply(lambda p: json.loads(p).get("k", np.nan))
+    elig["k"] = elig["k_effective"]
 
     stable = elig[elig["stability_ari"] >= STABILITY_THRESHOLD]
     fallback = stable.empty

@@ -471,13 +471,19 @@ def spatial_coherence(
     lat: np.ndarray, lon: np.ndarray, zone: np.ndarray, labels: np.ndarray, k_neighbors: int = 8, seed: int = 42
 ) -> float:
     """Fracción de los `k_neighbors` vecinos geográficos más próximos (dentro de
-    la misma zona) que comparten cluster, menos la misma fracción con etiquetas
-    permutadas al azar (línea de base de "vecinos comparten cluster por puro
-    tamaño relativo de cada cluster", no por contigüidad real)."""
+    la misma zona, excluyendo ruido de HDBSCAN) que comparten cluster, menos la
+    misma fracción con etiquetas permutadas al azar (línea de base de "vecinos
+    comparten cluster por puro tamaño relativo de cada cluster", no por
+    contigüidad real). Los puntos con label==-1 (ruido) se excluyen antes de
+    buscar vecinos: sin este filtro, dos vecinos geográficos ambos "sin
+    asignar" contarían como si compartieran un cluster real, inflando la
+    métrica en las configs con mucho ruido (HDBSCAN con `min_cluster_size`
+    alto) por la sola contigüidad espacial de las zonas ambiguas sin
+    tipificar, no por una tipología genuina."""
     rng = np.random.default_rng(seed)
     same_scores, baseline_scores = [], []
     for z_name in np.unique(zone):
-        m = zone == z_name
+        m = (zone == z_name) & (labels != -1)
         if m.sum() < k_neighbors + 1:
             continue
         coords = np.column_stack([lat[m], lon[m]])
