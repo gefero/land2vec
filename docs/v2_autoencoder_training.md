@@ -477,8 +477,26 @@ de estabilidad por config del barrido completo, hasta un OOM-kill real) y
 se extiende al resto por centroide más cercano.
 
 **Criterio de decisión**: entre las configuraciones con `stability_ari >=
-0.75`, la de mejor `prototype_fidelity`; desempate por silhouette y, dentro
-del ruido, por menor `k`.
+0.75` y `noise_frac` por debajo de un tope (`--max-noise-frac`, default 0.5
+para la fina y 0.25 para la gruesa/interpretable, `--coarse-max-noise-frac`),
+la de mejor `prototype_fidelity`; desempate por silhouette y, dentro del
+ruido, por menor `k`. El tope de `noise_frac` existe porque
+`prototype_fidelity` solo se calcula sobre los miembros no-ruido de cada cluster --
+sin él, el criterio recompensa mecánicamente a HDBSCAN por descartar como
+ruido los puntos difíciles, no solo por tener una estructura de cluster
+genuinamente mejor (ver `select_winner()` en `scripts/tune_clustering.py`).
+
+> ⚠️ **En revisión**: además del tope de `noise_frac` recién agregado, el
+> barrido de `gmm`/`hdbscan`/`hierarchical` se está re-corriendo con tres
+> fixes adicionales -- las 3 familias ahora barren `raw`/`standard`/`l2`
+> (antes solo `standard`, a diferencia de `kmeans` que ya las barría),
+> `GaussianMixture` usa `n_init=10` (antes 1, sin paridad con KMeans), y el
+> bootstrap de estabilidad del jerárquico estratifica por zona (antes
+> muestreo simple). Los números de "ganadora sin restricciones" y "ganadora
+> interpretable" de acá abajo corresponden a la ronda anterior (antes de
+> estos cuatro cambios) y van a actualizarse cuando termine el re-barrido --
+> con el tope de `noise_frac` solo, la ganadora gruesa documentada más abajo
+> (`min_cluster_size=2500`, 44.6% de ruido) ya no calificaría.
 
 **Ganadora sin restricciones -- HDBSCAN, `min_cluster_size=250`**: k=115
 clusters (11% de las filas quedan sin asignar, como ruido de HDBSCAN),
@@ -527,6 +545,24 @@ las dos configs elegidas (`models/cluster_v2/chosen.json` /
 `data/clusters_pooled_subsampled{,_coarse}.zip` -- este último con las
 secuencias constantes submuestreadas al 15% en vez de excluidas, para que
 el mapa cubra el pool completo y no solo el 3,2% con transición).
+
+**Nota metodológica -- ruido honesto vs. mapa completo**: los dos archivos
+de etiquetas de cada nivel no tratan el ruido de HDBSCAN de la misma forma,
+a propósito. `clusters_dynamic{,_coarse}.zip` preserva la etiqueta `-1`
+donde HDBSCAN la asignó -- es la lectura "honesta" del clustering, la que
+efectivamente se evaluó con `prototype_fidelity`/`stability_ari`.
+`clusters_pooled_subsampled{,_coarse}.zip`, en cambio, asigna *todos* los
+puntos (incluidas las constantes submuestreadas al 15%) a su centroide más
+cercano vía `assign_pool()`/`assign_by_centroid()` -- sin bucket de ruido --
+para que el mapa cubra el pool completo en vez de dejar el 96,8% del
+territorio sin colorear. La consecuencia: en ese segundo archivo, un punto
+que HDBSCAN habría marcado como "difícil de tipificar" queda igual
+asignado a algún cluster, sin distinción visible respecto a un punto que sí
+encajó bien. Es una decisión de diseño deliberada (priorizar cobertura del
+mapa sobre fidelidad al criterio de selección en ese archivo puntual), no
+un descuido -- pero hay que leer `clusters_pooled_subsampled{,_coarse}.zip`
+sabiendo que sobrestima cuánto territorio está genuinamente bien tipificado
+respecto a lo que dice `clusters_dynamic{,_coarse}.zip`.
 
 ### 7.3 Probing: `z` vs. secuencia cruda vs. estado oculto de la v1
 

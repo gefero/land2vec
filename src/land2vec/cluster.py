@@ -77,6 +77,18 @@ LABEL_NAMES = [Tokenizer.REVERSE_VOCAB[i] for i in VALID_LABELS]
 # ---------------------------------------------------------------------------
 
 
+def _stratified_indices(zone: np.ndarray, n: int, rng: np.random.Generator) -> np.ndarray:
+    "Índices de una submuestra de tamaño ~n estratificada por zona (asignación proporcional, redondeada por zona)."
+    frac = n / len(zone)
+    chunks = []
+    for z_name in np.unique(zone):
+        zone_idx = np.flatnonzero(zone == z_name)
+        take = max(1, round(len(zone_idx) * frac))
+        take = min(take, len(zone_idx))
+        chunks.append(rng.choice(zone_idx, size=take, replace=False))
+    return np.concatenate(chunks)
+
+
 @dataclass
 class Pool:
     "Filas alineadas por posición: mismo orden en ids/seqs/z/zone/lat/lon."
@@ -109,14 +121,7 @@ class Pool:
         if not stratify_by_zone:
             idx = rng.choice(len(self), size=n, replace=False)
             return self.subset(np.isin(np.arange(len(self)), idx))
-        frac = n / len(self)
-        chunks = []
-        for z_name in np.unique(self.zone):
-            zone_idx = np.flatnonzero(self.zone == z_name)
-            take = max(1, round(len(zone_idx) * frac))
-            take = min(take, len(zone_idx))
-            chunks.append(rng.choice(zone_idx, size=take, replace=False))
-        idx = np.concatenate(chunks)
+        idx = _stratified_indices(self.zone, n, rng)
         mask = np.zeros(len(self), dtype=bool)
         mask[idx] = True
         return self.subset(mask)
@@ -290,7 +295,8 @@ def fit_kmeans(z: np.ndarray, k: int, seed: int = 42) -> ClusterFit:
 
 
 def fit_gmm(z: np.ndarray, k: int, covariance_type: str = "full", seed: int = 42) -> ClusterFit:
-    model = GaussianMixture(n_components=k, covariance_type=covariance_type, random_state=seed).fit(z)
+    "n_init=10 para paridad con KMeans (fit_kmeans) -- el default de sklearn es 1, mucho más propenso a un óptimo local pobre."
+    model = GaussianMixture(n_components=k, covariance_type=covariance_type, n_init=10, random_state=seed).fit(z)
     labels = model.predict(z)
     return ClusterFit(labels, model.means_, {"bic": float(model.bic(z)), "aic": float(model.aic(z))})
 
@@ -410,16 +416,23 @@ def safe_davies_bouldin(z: np.ndarray, labels: np.ndarray) -> float:
 
 def stability_ari(
     z: np.ndarray,
-    fit_labels_fn: Callable[[np.ndarray], np.ndarray],
+    fit_labels_fn: Callable[[np.ndarray, np.ndarray | None], np.ndarray],
     n_boot: int = 5,
     frac: float = 0.8,
     boot_cap: int = 20000,
     seed: int = 42,
+    groups: np.ndarray | None = None,
 ) -> float:
     """ARI entre dos reajustes independientes del mismo clustering sobre pares de
     submuestras al `frac` (recortadas a `boot_cap` filas, ver docstring del
     módulo), comparados en la intersección de índices. Defensa contra un `k`
-    que solo se sostiene por el azar de la muestra."""
+    que solo se sostiene por el azar de la muestra.
+
+    `fit_labels_fn` recibe `(z_sub, groups_sub)` -- `groups_sub` es `None` si no
+    se pasa `groups` acá. Lo usa `run_hierarchical_config` para que su resample
+    interno (submuestra + linkage + corte) estratifique por zona igual que el
+    ajuste real (`Pool.sample(..., stratify_by_zone=True)`); las demás familias
+    (kmeans/gmm/hdbscan) no lo necesitan y simplemente lo ignoran."""
     rng = np.random.default_rng(seed)
     n = len(z)
     size = min(int(frac * n), boot_cap)
@@ -430,8 +443,10 @@ def stability_ari(
         common, pos_a, pos_b = np.intersect1d(idx_a, idx_b, return_indices=True)
         if len(common) < 50:
             continue
-        labels_a = fit_labels_fn(z[idx_a])[pos_a]
-        labels_b = fit_labels_fn(z[idx_b])[pos_b]
+        groups_a = groups[idx_a] if groups is not None else None
+        groups_b = groups[idx_b] if groups is not None else None
+        labels_a = fit_labels_fn(z[idx_a], groups_a)[pos_a]
+        labels_b = fit_labels_fn(z[idx_b], groups_b)[pos_b]
         scores.append(adjusted_rand_score(labels_a, labels_b))
     return float(np.mean(scores)) if scores else float("nan")
 
@@ -552,7 +567,7 @@ def run_config(
     labels = fit.labels
     raw_centers = _labeled_centroids(pool.z, labels)
 
-    def _fit_labels(z_sub: np.ndarray) -> np.ndarray:
+    def _fit_labels(z_sub: np.ndarray, _groups: np.ndarray | None = None) -> np.ndarray:
         return dispatch_fit(algo, z_sub, params, seed=seed).labels
 
     sil_mean, sil_std = silhouette_repeated(z_fit, labels)
@@ -622,11 +637,18 @@ def run_hierarchical_config(
     labels = assign_by_centroid(z_eval_fit, sub_fit.centers)
     raw_centers = _labeled_centroids(eval_pool.z, labels)
 
-    def _fit_labels(z_sub: np.ndarray) -> np.ndarray:
-        "Reajusta el mismo procedimiento (submuestra + linkage + corte) sobre una submuestra bootstrap y extiende al resto de esa submuestra."
+    def _fit_labels(z_sub: np.ndarray, zone_sub: np.ndarray | None) -> np.ndarray:
+        """Reajusta el mismo procedimiento (submuestra + linkage + corte) sobre una
+        submuestra bootstrap y extiende al resto de esa submuestra. Estratifica el
+        resample interno por zona cuando se dispone de `zone_sub` -- espeja
+        exactamente el ajuste real (`eval_pool.sample(..., stratify_by_zone=True)`
+        arriba), en vez de un muestreo simple que no lo hacía."""
         rng = np.random.default_rng(seed)
         n_fit = min(fit_sample_size, len(z_sub))
-        fit_idx = rng.choice(len(z_sub), size=n_fit, replace=False)
+        if zone_sub is not None:
+            fit_idx = _stratified_indices(zone_sub, n_fit, rng)
+        else:
+            fit_idx = rng.choice(len(z_sub), size=n_fit, replace=False)
         Zb = hierarchical_linkage(z_sub[fit_idx], method)
         labels_fit = hierarchical_from_linkage(z_sub[fit_idx], Zb, k).labels
         centers_fit = _labeled_centroids(z_sub[fit_idx], labels_fit)
@@ -639,7 +661,9 @@ def run_hierarchical_config(
         "silhouette_std": sil_std,
         "calinski_harabasz": safe_calinski_harabasz(z_eval_fit, labels),
         "davies_bouldin": safe_davies_bouldin(z_eval_fit, labels),
-        "stability_ari": stability_ari(z_eval_fit, _fit_labels, n_boot=n_boot, boot_cap=boot_cap, seed=seed),
+        "stability_ari": stability_ari(
+            z_eval_fit, _fit_labels, n_boot=n_boot, boot_cap=boot_cap, seed=seed, groups=eval_pool.zone
+        ),
         "prototype_fidelity": prototype_fidelity(model, eval_pool.seqs, labels, raw_centers, device=device),
         "spatial_coherence": spatial_coherence(eval_pool.lat, eval_pool.lon, eval_pool.zone, labels),
         "cophenetic_corr": cophenetic_correlation(z_fit_sub, Z),
