@@ -222,23 +222,27 @@ def plot_selection_curves(summary: pd.DataFrame, out_path: Path) -> None:
     print(f"Curvas guardadas: {out_path}")
 
 
-def select_winner(summary: pd.DataFrame) -> tuple[pd.Series, bool]:
+def select_winner(summary: pd.DataFrame, k_max: int | None = None) -> tuple[pd.Series, bool]:
     """Aplica el criterio de docs/v2_autoencoder_training.md §7.2: entre las
-    config elegibles con stability_ari >= STABILITY_THRESHOLD, la de mejor
-    prototype_fidelity; desempate por silhouette_mean y, dentro del ruido, por
-    menor k. Si ninguna alcanza el umbral, cae a la de mayor stability_ari
-    entre las elegibles (fallback=True, hay que revisarlo a mano)."""
+    config elegibles con stability_ari >= STABILITY_THRESHOLD (y, si `k_max` no
+    es None, con k_effective <= k_max -- usado para la selección "gruesa"
+    interpretable, ver select_coarse_winner), la de mejor prototype_fidelity;
+    desempate por silhouette_mean y, dentro del ruido, por menor k. Si ninguna
+    alcanza el umbral, cae a la de mayor stability_ari entre las candidatas
+    (fallback=True, hay que revisarlo a mano)."""
     elig = summary[summary["eligible"].astype(bool)].dropna(subset=["stability_ari", "prototype_fidelity"]).copy()
+    if k_max is not None:
+        elig = elig[elig["k_effective"] <= k_max]
     if elig.empty:
-        raise ValueError("summary.csv no tiene ninguna corrida elegible con métricas completas")
+        raise ValueError(f"summary.csv no tiene ninguna corrida elegible con métricas completas (k_max={k_max})")
     elig["k"] = elig["params"].apply(lambda p: json.loads(p).get("k", np.nan))
 
     stable = elig[elig["stability_ari"] >= STABILITY_THRESHOLD]
     fallback = stable.empty
     pool_for_pick = elig if fallback else stable
     if fallback:
-        print(f"AVISO: ninguna config elegible alcanza stability_ari >= {STABILITY_THRESHOLD}; "
-              f"se elige por mayor stability_ari entre las elegibles. Revisar a mano.")
+        print(f"AVISO: ninguna config candidata (k_max={k_max}) alcanza stability_ari >= {STABILITY_THRESHOLD}; "
+              f"se elige por mayor stability_ari entre las candidatas. Revisar a mano.")
         pool_for_pick = pool_for_pick.sort_values("stability_ari", ascending=False)
     else:
         pool_for_pick = pool_for_pick.sort_values(
@@ -247,22 +251,30 @@ def select_winner(summary: pd.DataFrame) -> tuple[pd.Series, bool]:
     return pool_for_pick.iloc[0], fallback
 
 
-def run_select(args) -> None:
-    out_dir = args.out_dir
-    summary_path = out_dir / "summary.csv"
-    if not summary_path.exists():
-        raise FileNotFoundError(f"{summary_path} no existe -- corré al menos un --sweep antes de --select")
-    summary = pd.read_csv(summary_path)
-    winner, fallback = select_winner(summary)
+def select_coarse_winner(summary: pd.DataFrame, k_max: int) -> tuple[pd.Series, bool]:
+    """La ganadora fina (select_winner sin tope) puede tener un k grande y poco
+    legible como tipología resumida (HDBSCAN con min_cluster_size chico, p. ej.,
+    encuentra ~100+ clusters finos pero de alta fidelidad). Esta variante aplica
+    el mismo criterio restringido a k_effective <= k_max, para tener también una
+    versión "gruesa" pensada para mapas/narrativa en vez de solo precisión."""
+    return select_winner(summary, k_max=k_max)
+
+
+def refit_and_save(
+    label: str, winner: pd.Series, fallback: bool, model, dyn_pool: "C.Pool", args, suffix: str
+) -> None:
+    """Reajusta una fila ganadora de summary.csv (con más bootstraps, para un
+    número de estabilidad más confiable en la config final que en el barrido) y
+    guarda chosen{suffix}.json + clusters_dynamic{suffix}.zip +
+    clusters_pooled_subsampled{suffix}.zip. `suffix` distingue el nivel fino
+    ("") del grueso interpretable ("_coarse") -- ver select_coarse_winner."""
     params = json.loads(winner["params"])
-    print(f"Ganadora: {winner['run_id']}")
+    print(f"\nGanadora ({label}): {winner['run_id']}")
     print(f"  algo={winner['algo']} space={winner['space']} params={params}")
     print(f"  silhouette={winner['silhouette_mean']:.4f} stability_ari={winner['stability_ari']:.4f} "
           f"prototype_fidelity={winner['prototype_fidelity']:.4f} spatial_coherence={winner['spatial_coherence']:.4f}")
 
-    model, dyn_pool = load_model_and_dynamic_pool(args.model, args.data_dir, args.device)
-
-    print("Reajustando la config ganadora (con más bootstraps para el número final de estabilidad)...")
+    print("Reajustando (con más bootstraps para el número final de estabilidad)...")
     if winner["algo"] == "hierarchical":
         final = C.run_hierarchical_config(
             dyn_pool, params["method"], params["k"], winner["space"], params["fit_sample_size"], model,
@@ -276,6 +288,7 @@ def run_select(args) -> None:
     print(f"  stability_ari (n_boot={args.select_n_boot}): {final.metrics['stability_ari']:.4f}")
 
     chosen = {
+        "level": label,
         "run_id": final.run_id,
         "algo": final.algo,
         "params": final.params,
@@ -287,12 +300,12 @@ def run_select(args) -> None:
         "fallback": fallback,
         "stability_threshold": STABILITY_THRESHOLD,
     }
-    chosen_path = out_dir / "chosen.json"
+    chosen_path = args.out_dir / f"chosen{suffix}.json"
     chosen_path.write_text(json.dumps(chosen, indent=2))
     print(f"Config elegida guardada: {chosen_path}")
 
     dyn_out = pd.DataFrame({"ID": dyn_pool.ids, "zone": dyn_pool.zone, "cluster": final.labels})
-    dyn_out_path = args.data_dir / "clusters_dynamic.zip"
+    dyn_out_path = args.data_dir / f"clusters_dynamic{suffix}.zip"
     dyn_out.to_csv(dyn_out_path, index=False, compression="zip")
     print(f"Etiquetas (dinámicas): {dyn_out_path} ({len(dyn_out):,} filas)")
 
@@ -300,9 +313,29 @@ def run_select(args) -> None:
     pooled = C.load_pool_subsampled(C.ZONES, args.data_dir, max_fraction=0.15, seed=args.seed)
     pooled_labels = C.assign_pool(pooled.z, final.transform, final.centers)
     pooled_out = pd.DataFrame({"ID": pooled.ids, "zone": pooled.zone, "cluster": pooled_labels})
-    pooled_out_path = args.data_dir / "clusters_pooled_subsampled.zip"
+    pooled_out_path = args.data_dir / f"clusters_pooled_subsampled{suffix}.zip"
     pooled_out.to_csv(pooled_out_path, index=False, compression="zip")
     print(f"Etiquetas (pool submuestreado): {pooled_out_path} ({len(pooled_out):,} filas)")
+
+
+def run_select(args) -> None:
+    out_dir = args.out_dir
+    summary_path = out_dir / "summary.csv"
+    if not summary_path.exists():
+        raise FileNotFoundError(f"{summary_path} no existe -- corré al menos un --sweep antes de --select")
+    summary = pd.read_csv(summary_path)
+
+    fine_winner, fine_fallback = select_winner(summary)
+    coarse_winner, coarse_fallback = select_coarse_winner(summary, k_max=args.coarse_k_max)
+    same_winner = fine_winner["run_id"] == coarse_winner["run_id"]
+    if same_winner:
+        print(f"La ganadora fina ya cumple k_effective <= {args.coarse_k_max}: un solo nivel, no hace falta el grueso.")
+
+    model, dyn_pool = load_model_and_dynamic_pool(args.model, args.data_dir, args.device)
+
+    refit_and_save("fina", fine_winner, fine_fallback, model, dyn_pool, args, suffix="")
+    if not same_winner:
+        refit_and_save("gruesa (k<=%d)" % args.coarse_k_max, coarse_winner, coarse_fallback, model, dyn_pool, args, suffix="_coarse")
 
     plot_selection_curves(summary, IMGS_DIR / "v2_cluster_selection.png")
 
@@ -330,6 +363,9 @@ def main():
     parser.add_argument("--hier-sample", type=int, default=5000, help="tamaño de la submuestra estratificada para ajustar ward/average/complete (se extiende al pool completo por centroide más cercano) -- 25000 midió memoria estable en una corrida aislada pero la acumuló sin liberarla a través de las ~6 refit de estabilidad por config del barrido completo, hasta hacer OOM-kill (ver commit); 5000 mantiene el RSS plano y cada config en ~27s")
     parser.add_argument("--hier-linkages", nargs="+", default=["ward", "average", "complete"])
     parser.add_argument("--dendrogram-out", type=Path, default=IMGS_DIR / "v2_cluster_dendrogram.png")
+    parser.add_argument("--coarse-k-max", type=int, default=20,
+                         help="--select también elige, aparte de la ganadora sin tope, la mejor config con "
+                              "k_effective <= este valor -- una tipología gruesa/interpretable además de la fina")
 
     parser.add_argument("--n-boot", type=int, default=3, help="bootstraps de stability_ari durante el barrido (menos que en --select por tiempo de cómputo)")
     parser.add_argument("--select-n-boot", type=int, default=10, help="bootstraps de stability_ari al re-ajustar la config ganadora en --select")

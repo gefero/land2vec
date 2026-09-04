@@ -423,18 +423,24 @@ de probing, PCA). Resumen:
   vocabulario aparecen en cada zona (no por diferencias reales de calidad
   -- ver el detalle en el doc), así que no es directamente comparable
   entre zonas.
-- **Clustering** (filtrado a las secuencias con transición, 3.2% del
-  pool): `k=8`, silhouette 0.43, clusters espacialmente coherentes y
-  trayectorias prototípicas interpretables.
+- **Clustering** (`scripts/tune_clustering.py`, barrido de 120 configs sobre
+  KMeans/GMM/HDBSCAN/jerárquico x preprocesado de `z`, elegidas por
+  silhouette + estabilidad por bootstrap + fidelidad del prototipo
+  decodificado + coherencia espacial -- ver el detalle completo en el doc):
+  dos niveles. La ganadora sin restricciones es **HDBSCAN** (`k=115`,
+  silhouette 0.92, fidelidad de prototipo 0.95) -- muy fina pero poco
+  legible. La mejor con `k<=20` es HDBSCAN (`k=12`, fidelidad 0.86), aunque
+  su estabilidad bajó de 0.99 a 0.69 al reajustarla con más bootstraps
+  (documentada igual, como tipología exploratoria -- ver el doc para el
+  detalle de por qué).
 - **Probing** (`z` de 8 dims vs. one-hot crudo de 253 dims vs. hidden
   state pooled de la v1, 128 dims): `z` empata en la práctica con las
   representaciones mucho más grandes en "clase dominante" (0.9998) y
   "ecorregión" (0.7918); pierde 2.6 puntos en "hubo transición" (0.9665
   vs. 0.9926 del one-hot) -- el costo de compresión más claro del
   análisis.
-- **Próximo paso**: optimizar el proceso de clustering (elegir `k` con un
-  criterio de datos en vez de fijarlo arbitrariamente, y probar
-  alternativas como `HDBSCAN`/`GaussianMixture`).
+- **Próximo paso**: macro F1 restringido a clases con soporte por
+  subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
 
 Extraer embeddings de una zona ya construida, con el modelo final:
 

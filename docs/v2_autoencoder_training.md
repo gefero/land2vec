@@ -438,19 +438,87 @@ específicamente en las transiciones.
 Filtrado a las secuencias con al menos una transición (3.2% del pool,
 107,362 de 3,344,976 -- el resto son trayectorias constantes, triviales de
 agrupar y que antes de este filtro ahogaban cualquier tipología real, ver
-nota metodológica de una sesión anterior). Con `k=8`: silhouette 0.43.
+nota metodológica de una sesión anterior). El `k=8` de la ronda anterior
+era arbitrario (silhouette 0.43 se calculó *después*, como reporte, no
+como criterio de selección). Esta ronda lo reemplaza por un barrido
+explícito -- `scripts/tune_clustering.py` (`src/land2vec/cluster.py`) -- de
+4 familias (KMeans, GaussianMixture, HDBSCAN, jerárquico/aglomerativo) x
+preprocesado de `z` (crudo / estandarizado / L2), 120 configuraciones en
+total, evaluadas con:
 
-![Clusters de trayectoria, solo secuencias con transición, por zona](../imgs/v2_eval_cluster_map.png)
+1. **Métricas internas**: silhouette (promediada sobre 5 semillas, no un
+   solo número), Calinski-Harabasz, Davies-Bouldin.
+2. **Estabilidad**: ARI entre reajustes sobre pares de submuestras al 80%
+   (bootstrap) -- la ronda anterior no tenía ninguna defensa contra un `k`
+   que solo se sostiene por el azar de una muestra puntual.
+3. **Fidelidad del prototipo**: macro F1 (restringido a las clases con
+   soporte>0 en cada cluster) de comparar cada secuencia real contra la
+   trayectoria prototípica decodificada de su cluster -- un cluster sirve
+   si su prototipo es una descripción honesta de sus miembros, no solo si
+   está bien separado de los demás.
+4. **Coherencia espacial**: fracción de vecinos geográficos que comparten
+   cluster, contra una línea de base de etiquetas permutadas.
 
-Los clusters forman parches espacialmente coherentes dentro de cada zona
-(frontera este-oeste nítida en `puna_noa`, banda diagonal en `ibera`,
-región dominada por un cluster en `misiones_selva`) -- evidencia de que el
-embedding captura tipologías de trayectoria geográficamente reales, no
-ruido. Las trayectorias prototípicas (centroide de cada cluster,
-decodificado) son variadas e interpretables: `F→Wt` (deforestación a
-humedal), `Wt→B→Sp` (humedal a pastizal/estepa), `F↔A` oscilante (frontera
-agrícola), `F→Sh`, `B→Sp`, `F→G→Sp`, entre otras -- no clases constantes
-triviales.
+El jerárquico no pudo ajustarse directamente sobre las 107k filas: la
+matriz condensada de distancias de scipy es O(n²) (inviable), y restringir
+la conectividad a un grafo k-NN -- la mitigación habitual -- resultó igual
+de costosa en este entorno, porque las muchísimas trayectorias idénticas
+de esta base fragmentan ese grafo en cientos de componentes que
+`AgglomerativeClustering` no logra reconectar en tiempo razonable. Se
+ajusta en cambio sobre una submuestra estratificada por zona
+(`--hier-sample`, 5.000 filas -- 25.000 midió memoria estable en una
+corrida aislada pero la acumuló sin liberarla a través de las ~6 reajustes
+de estabilidad por config del barrido completo, hasta un OOM-kill real) y
+se extiende al resto por centroide más cercano.
+
+**Criterio de decisión**: entre las configuraciones con `stability_ari >=
+0.75`, la de mejor `prototype_fidelity`; desempate por silhouette y, dentro
+del ruido, por menor `k`.
+
+**Ganadora sin restricciones -- HDBSCAN, `min_cluster_size=250`**: k=115
+clusters (11% de las filas quedan sin asignar, como ruido de HDBSCAN),
+silhouette 0.92, `stability_ari` 0.89 y `prototype_fidelity` 0.95 -- muy
+por encima de cualquier config de KMeans/GMM/jerárquico, cuyo
+`prototype_fidelity` no pasó de ~0.23 aun con `k` grande. HDBSCAN no fuerza
+los puntos "difíciles" a un cluster, así que los que sí forma son mucho
+más homogéneos -- pero 115 tipos no es una tipología legible para un mapa
+o una narrativa.
+
+**Ganadora interpretable (mismo criterio, con `k_effective <= 20`) --
+HDBSCAN, `min_cluster_size=2500`**: k=12, silhouette 0.78,
+`prototype_fidelity` 0.86, pero `stability_ari` **0.69** al reajustar con
+más bootstraps para el número final (`n_boot=10`, contra el `n_boot=3` del
+barrido, que había medido 0.99) -- por debajo del umbral de 0.75 del
+propio criterio. Es exactamente el tipo de sobreajuste al ruido de una
+sola corrida que la estabilidad por bootstrap está pensada para exponer, y
+confirma que vale la pena recalcularla con más repeticiones antes de
+reportar un número final. Se documenta igual como la tipología gruesa
+-- sigue siendo la mejor opción interpretable disponible (fidelidad y
+cohesión siguen siendo buenas) -- pero hay que leerla como *exploratoria*,
+no tan firme como la fina. También tiene mucho más ruido (45% vs. 11%):
+con `min_cluster_size` alto, HDBSCAN deja más territorio sin tipificar
+antes que forzarlo a uno de los 12 tipos.
+
+![Clusters de trayectoria, nivel fino (k=115), por zona](../imgs/v2_eval_cluster_map_fina.png)
+
+![Clusters de trayectoria, nivel grueso (k=12), por zona](../imgs/v2_eval_cluster_map_gruesa.png)
+
+Ambos niveles forman parches espacialmente coherentes dentro de cada zona
+(frontera este-oeste nítida en `puna_noa`, banda diagonal en `ibera`) --
+evidencia de que el embedding captura tipologías de trayectoria
+geográficamente reales, no ruido. Las trayectorias prototípicas (centroide
+de cada cluster en `z` crudo, decodificado) son variadas e interpretables:
+`F→Wt` (deforestación a humedal), `Wt→B→Sp` (humedal a pastizal/estepa),
+`F↔A` oscilante (frontera agrícola), `F→Sh`, `B→Sp`, `F→G→Sp`, entre otras
+-- no clases constantes triviales. El detalle completo del barrido
+(`models/cluster_v2/summary.csv`), las curvas de las métricas vs. `k`
+(`imgs/v2_cluster_selection.png`) y el dendrograma de la mejor corrida
+jerárquica (`imgs/v2_cluster_dendrogram.png`) quedan versionados junto con
+las dos configs elegidas (`models/cluster_v2/chosen.json` /
+`chosen_coarse.json`) y sus etiquetas (`data/clusters_dynamic{,_coarse}.zip`,
+`data/clusters_pooled_subsampled{,_coarse}.zip` -- este último con las
+secuencias constantes submuestreadas al 15% en vez de excluidas, para que
+el mapa cubra el pool completo y no solo el 3,2% con transición).
 
 ### 7.3 Probing: `z` vs. secuencia cruda vs. estado oculto de la v1
 
@@ -483,18 +551,19 @@ coloreado por zona se mezcla mucho más -- consistente con el probing
 
 ## 8. Próximos pasos
 
-1. **Optimizar el proceso de clustering** (prioridad siguiente): `k=8` fue
-   elegido arbitrariamente, no por un criterio de selección de modelo.
-   Concretamente: barrer `k` con silhouette/elbow sobre las secuencias con
-   transición para elegir un número de clusters basado en datos; probar
-   alternativas que no requieren fijar `k` de antemano ni asumen clusters
-   esféricos (`HDBSCAN`, `GaussianMixture` con selección por BIC); evaluar
-   si conviene estandarizar `z` antes de clusterizar (las 8 dimensiones no
-   tienen por qué compartir escala); y, si se busca una tipología más
-   fina, generar prototipos por cluster desagregados por zona (hoy el
-   centroide se decodifica una sola vez de forma global).
-2. Calcular una versión de macro F1 restringida a las clases con soporte
+1. Calcular una versión de macro F1 restringida a las clases con soporte
    real en cada subconjunto (por zona, o constante/transición) -- ver
    7.1 -- para tener una comparación de fidelidad de reconstrucción entre
    zonas que no esté sesgada por cuántas clases del vocabulario aparecen
-   en cada una.
+   en cada una. (`land2vec.cluster.prototype_fidelity` ya implementa esta
+   misma corrección de soporte para el clustering -- reusar el patrón.)
+2. La tipología gruesa (HDBSCAN, k=12) quedó documentada con una
+   estabilidad por debajo del umbral propio del criterio (`stability_ari`
+   0.69 vs. 0.75, ver 7.2) -- si se la va a usar en análisis posteriores,
+   vale la pena re-barrer `min_cluster_size` alrededor de 2500 con más
+   bootstraps desde el inicio (no solo al reajustar la ganadora) para ver
+   si hay una config vecina genuinamente estable con `k` igual de chico.
+3. Prototipos por cluster desagregados por zona (hoy el centroide se
+   decodifica una sola vez de forma global) -- útil sobre todo para la
+   tipología fina (k=115), donde un mismo cluster puede tener composición
+   de zona mixta.
