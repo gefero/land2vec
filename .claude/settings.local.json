@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(df -T /home/vscode 2>&1; echo \"---\"; df -T ~ 2>&1; echo \"---whoami/home---\"; echo $HOME; ls -ld /home/vscode 2>&1)",
+      "Read(//home/vscode/**)"
+    ]
+  }
+}

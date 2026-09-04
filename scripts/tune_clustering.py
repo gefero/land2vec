@@ -107,34 +107,36 @@ def sweep_kmeans(pool, model, args) -> list[dict]:
 
 def sweep_gmm(pool, model, args) -> list[dict]:
     rows = []
-    for cov in args.covariance_types:
-        for k in args.k_values:
-            t0 = time.time()
-            result = C.run_config(
-                pool, "gmm", {"k": k, "covariance_type": cov}, args.gmm_space, model,
-                device=args.device, seed=args.seed, n_boot=args.n_boot, boot_cap=args.boot_cap,
-            )
-            rows.append(result_row(result))
-            print(f"  gmm k={k:>2d} cov={cov:<5s} "
-                  f"silhouette={result.metrics['silhouette_mean']:.4f} bic={result.metrics.get('bic'):.0f} "
-                  f"stability_ari={result.metrics['stability_ari']:.4f} ({time.time() - t0:.1f}s)")
+    for space in args.gmm_space:
+        for cov in args.covariance_types:
+            for k in args.k_values:
+                t0 = time.time()
+                result = C.run_config(
+                    pool, "gmm", {"k": k, "covariance_type": cov}, space, model,
+                    device=args.device, seed=args.seed, n_boot=args.n_boot, boot_cap=args.boot_cap,
+                )
+                rows.append(result_row(result))
+                print(f"  gmm k={k:>2d} cov={cov:<5s} space={space:<8s} "
+                      f"silhouette={result.metrics['silhouette_mean']:.4f} bic={result.metrics.get('bic'):.0f} "
+                      f"stability_ari={result.metrics['stability_ari']:.4f} ({time.time() - t0:.1f}s)")
     return rows
 
 
 def sweep_hdbscan(pool, model, args) -> list[dict]:
     rows = []
     min_samples_values = _parse_min_samples(args.min_samples)
-    for mcs in args.min_cluster_sizes:
-        for ms in min_samples_values:
-            t0 = time.time()
-            result = C.run_config(
-                pool, "hdbscan", {"min_cluster_size": mcs, "min_samples": ms}, args.hdbscan_space, model,
-                device=args.device, seed=args.seed, n_boot=args.n_boot, boot_cap=args.boot_cap,
-            )
-            rows.append(result_row(result))
-            print(f"  hdbscan min_cluster_size={mcs:>5d} min_samples={str(ms):<5s} "
-                  f"k_effective={result.metrics['k_effective']} noise_frac={result.metrics['noise_frac']:.3f} "
-                  f"silhouette={result.metrics['silhouette_mean']:.4f} ({time.time() - t0:.1f}s)")
+    for space in args.hdbscan_space:
+        for mcs in args.min_cluster_sizes:
+            for ms in min_samples_values:
+                t0 = time.time()
+                result = C.run_config(
+                    pool, "hdbscan", {"min_cluster_size": mcs, "min_samples": ms}, space, model,
+                    device=args.device, seed=args.seed, n_boot=args.n_boot, boot_cap=args.boot_cap,
+                )
+                rows.append(result_row(result))
+                print(f"  hdbscan min_cluster_size={mcs:>5d} min_samples={str(ms):<5s} space={space:<8s} "
+                      f"k_effective={result.metrics['k_effective']} noise_frac={result.metrics['noise_frac']:.3f} "
+                      f"silhouette={result.metrics['silhouette_mean']:.4f} ({time.time() - t0:.1f}s)")
     return rows
 
 
@@ -144,31 +146,33 @@ def sweep_hierarchical(pool, model, args) -> list[dict]:
     centroide más cercano -- ver el docstring de `land2vec.cluster.
     run_hierarchical_config` para por qué (Ward directo sobre el pool completo,
     con o sin restricción de conectividad k-NN, se probó infeasible en este
-    entorno). El linkage se calcula una sola vez por `method` (cacheado) y se
-    reusa para todo el barrido de `k`, ya que el árbol completo no depende de k."""
+    entorno). El linkage se calcula una sola vez por (method, space) -- cacheado
+    en un dict nuevo por cada `space`, ya que el árbol depende de en qué espacio
+    se ajustó -- y se reusa para todo el barrido de `k`, ya que el árbol
+    completo no depende de k."""
     rows = []
     dendrogram_payload = None
     best_coph = -1.0
-    linkage_cache: dict[str, np.ndarray] = {}
 
-    for method in args.hier_linkages:
-        linkage_cache.clear()
-        for k in args.k_values:
-            t0 = time.time()
-            result = C.run_hierarchical_config(
-                pool, method, k, args.hier_space, args.hier_sample, model,
-                device=args.device, seed=args.seed, n_boot=args.n_boot, boot_cap=args.boot_cap,
-                linkage_cache=linkage_cache,
-            )
-            rows.append(result_row(result))
-            print(f"  hierarchical method={method:<9s} k={k:>2d} "
-                  f"silhouette={result.metrics['silhouette_mean']:.4f} "
-                  f"cophenetic_corr={result.metrics['cophenetic_corr']:.4f} "
-                  f"stability_ari={result.metrics['stability_ari']:.4f} "
-                  f"proto_fidelity={result.metrics['prototype_fidelity']:.4f} ({time.time() - t0:.1f}s)")
-            if result.metrics["cophenetic_corr"] > best_coph:
-                best_coph = result.metrics["cophenetic_corr"]
-                dendrogram_payload = (method, linkage_cache[method])
+    for space in args.hier_space:
+        linkage_cache: dict[str, np.ndarray] = {}
+        for method in args.hier_linkages:
+            for k in args.k_values:
+                t0 = time.time()
+                result = C.run_hierarchical_config(
+                    pool, method, k, space, args.hier_sample, model,
+                    device=args.device, seed=args.seed, n_boot=args.n_boot, boot_cap=args.boot_cap,
+                    linkage_cache=linkage_cache,
+                )
+                rows.append(result_row(result))
+                print(f"  hierarchical method={method:<9s} k={k:>2d} space={space:<8s} "
+                      f"silhouette={result.metrics['silhouette_mean']:.4f} "
+                      f"cophenetic_corr={result.metrics['cophenetic_corr']:.4f} "
+                      f"stability_ari={result.metrics['stability_ari']:.4f} "
+                      f"proto_fidelity={result.metrics['prototype_fidelity']:.4f} ({time.time() - t0:.1f}s)")
+                if result.metrics["cophenetic_corr"] > best_coph:
+                    best_coph = result.metrics["cophenetic_corr"]
+                    dendrogram_payload = (f"{method}/{space}", linkage_cache[method])
 
     if dendrogram_payload is not None and args.dendrogram_out is not None:
         plot_dendrogram(dendrogram_payload, args.dendrogram_out)
@@ -227,14 +231,26 @@ def plot_selection_curves(summary: pd.DataFrame, out_path: Path) -> None:
     print(f"Curvas guardadas: {out_path}")
 
 
-def select_winner(summary: pd.DataFrame, k_max: int | None = None) -> tuple[pd.Series, bool]:
+def select_winner(
+    summary: pd.DataFrame, k_max: int | None = None, max_noise_frac: float | None = None
+) -> tuple[pd.Series, bool]:
     """Aplica el criterio de docs/v2_autoencoder_training.md §7.2: entre las
-    config elegibles con stability_ari >= STABILITY_THRESHOLD (y, si `k_max` no
-    es None, con k_effective <= k_max -- usado para la selección "gruesa"
-    interpretable, ver select_coarse_winner), la de mejor prototype_fidelity;
-    desempate por silhouette_mean y, dentro del ruido, por menor k_effective. Si
-    ninguna alcanza el umbral, cae a la de mayor stability_ari entre las
-    candidatas (fallback=True, hay que revisarlo a mano).
+    config elegibles con stability_ari >= STABILITY_THRESHOLD (con k_effective
+    <= k_max si se pasa -- usado para la selección "gruesa" interpretable, ver
+    select_coarse_winner -- y noise_frac <= max_noise_frac si se pasa), la de
+    mejor prototype_fidelity; desempate por silhouette_mean y, dentro del
+    ruido, por menor k_effective. Si ninguna alcanza el umbral de estabilidad,
+    cae a la de mayor stability_ari entre las candidatas (fallback=True, hay
+    que revisarlo a mano).
+
+    `max_noise_frac` existe porque `prototype_fidelity` solo se calcula sobre
+    los miembros no-ruido de cada cluster (ver `land2vec.cluster.
+    prototype_fidelity`) -- sin un tope, el criterio recompensa mecánicamente a
+    HDBSCAN por descartar como ruido los puntos difíciles (hasta 45% de las
+    filas en configs con `min_cluster_size` alto), no solo por tener una
+    estructura de cluster genuinamente mejor. El tope filtra esas configs
+    *antes* de rankear por fidelidad, para que la comparación entre familias
+    sea más pareja.
 
     El desempate final usa `k_effective` (no `params["k"]`): HDBSCAN no tiene una
     clave "k" en sus params, así que desempatar por `params["k"]` la dejaba con
@@ -244,16 +260,22 @@ def select_winner(summary: pd.DataFrame, k_max: int | None = None) -> tuple[pd.S
     elig = summary[summary["eligible"].astype(bool)].dropna(subset=["stability_ari", "prototype_fidelity"]).copy()
     if k_max is not None:
         elig = elig[elig["k_effective"] <= k_max]
+    if max_noise_frac is not None:
+        elig = elig[elig["noise_frac"].fillna(0.0) <= max_noise_frac]
     if elig.empty:
-        raise ValueError(f"summary.csv no tiene ninguna corrida elegible con métricas completas (k_max={k_max})")
+        raise ValueError(
+            f"summary.csv no tiene ninguna corrida elegible con métricas completas "
+            f"(k_max={k_max}, max_noise_frac={max_noise_frac})"
+        )
     elig["k"] = elig["k_effective"]
 
     stable = elig[elig["stability_ari"] >= STABILITY_THRESHOLD]
     fallback = stable.empty
     pool_for_pick = elig if fallback else stable
     if fallback:
-        print(f"AVISO: ninguna config candidata (k_max={k_max}) alcanza stability_ari >= {STABILITY_THRESHOLD}; "
-              f"se elige por mayor stability_ari entre las candidatas. Revisar a mano.")
+        print(f"AVISO: ninguna config candidata (k_max={k_max}, max_noise_frac={max_noise_frac}) alcanza "
+              f"stability_ari >= {STABILITY_THRESHOLD}; se elige por mayor stability_ari entre las candidatas. "
+              f"Revisar a mano.")
         pool_for_pick = pool_for_pick.sort_values("stability_ari", ascending=False)
     else:
         pool_for_pick = pool_for_pick.sort_values(
@@ -262,13 +284,14 @@ def select_winner(summary: pd.DataFrame, k_max: int | None = None) -> tuple[pd.S
     return pool_for_pick.iloc[0], fallback
 
 
-def select_coarse_winner(summary: pd.DataFrame, k_max: int) -> tuple[pd.Series, bool]:
-    """La ganadora fina (select_winner sin tope) puede tener un k grande y poco
-    legible como tipología resumida (HDBSCAN con min_cluster_size chico, p. ej.,
-    encuentra ~100+ clusters finos pero de alta fidelidad). Esta variante aplica
-    el mismo criterio restringido a k_effective <= k_max, para tener también una
-    versión "gruesa" pensada para mapas/narrativa en vez de solo precisión."""
-    return select_winner(summary, k_max=k_max)
+def select_coarse_winner(summary: pd.DataFrame, k_max: int, max_noise_frac: float | None = None) -> tuple[pd.Series, bool]:
+    """La ganadora fina (select_winner sin tope de k) puede tener un k grande y
+    poco legible como tipología resumida (HDBSCAN con min_cluster_size chico,
+    p. ej., encuentra ~100+ clusters finos pero de alta fidelidad). Esta
+    variante aplica el mismo criterio restringido a k_effective <= k_max, para
+    tener también una versión "gruesa" pensada para mapas/narrativa en vez de
+    solo precisión."""
+    return select_winner(summary, k_max=k_max, max_noise_frac=max_noise_frac)
 
 
 def refit_and_save(
@@ -336,8 +359,10 @@ def run_select(args) -> None:
         raise FileNotFoundError(f"{summary_path} no existe -- corré al menos un --sweep antes de --select")
     summary = pd.read_csv(summary_path)
 
-    fine_winner, fine_fallback = select_winner(summary)
-    coarse_winner, coarse_fallback = select_coarse_winner(summary, k_max=args.coarse_k_max)
+    fine_winner, fine_fallback = select_winner(summary, max_noise_frac=args.max_noise_frac)
+    coarse_winner, coarse_fallback = select_coarse_winner(
+        summary, k_max=args.coarse_k_max, max_noise_frac=args.coarse_max_noise_frac
+    )
     same_winner = fine_winner["run_id"] == coarse_winner["run_id"]
     if same_winner:
         print(f"La ganadora fina ya cumple k_effective <= {args.coarse_k_max}: un solo nivel, no hace falta el grueso.")
@@ -365,18 +390,27 @@ def main():
     parser.add_argument("--k-values", type=int, nargs="+", default=DEFAULT_K_VALUES)
     parser.add_argument("--spaces", choices=["raw", "standard", "l2"], nargs="+", default=["raw", "standard", "l2"],
                          help="usado por --sweep kmeans")
-    parser.add_argument("--gmm-space", choices=["raw", "standard", "l2"], default="standard")
+    parser.add_argument("--gmm-space", choices=["raw", "standard", "l2"], nargs="+", default=["raw", "standard", "l2"])
     parser.add_argument("--covariance-types", nargs="+", default=["full", "diag"])
-    parser.add_argument("--hdbscan-space", choices=["raw", "standard", "l2"], default="standard")
+    parser.add_argument("--hdbscan-space", choices=["raw", "standard", "l2"], nargs="+", default=["raw", "standard", "l2"])
     parser.add_argument("--min-cluster-sizes", type=int, nargs="+", default=[250, 500, 1000, 2500])
     parser.add_argument("--min-samples", nargs="+", default=["none", "25"])
-    parser.add_argument("--hier-space", choices=["raw", "standard", "l2"], default="standard")
+    parser.add_argument("--hier-space", choices=["raw", "standard", "l2"], nargs="+", default=["raw", "standard", "l2"])
     parser.add_argument("--hier-sample", type=int, default=5000, help="tamaño de la submuestra estratificada para ajustar ward/average/complete (se extiende al pool completo por centroide más cercano) -- 25000 midió memoria estable en una corrida aislada pero la acumuló sin liberarla a través de las ~6 refit de estabilidad por config del barrido completo, hasta hacer OOM-kill (ver commit); 5000 mantiene el RSS plano y cada config en ~27s")
     parser.add_argument("--hier-linkages", nargs="+", default=["ward", "average", "complete"])
     parser.add_argument("--dendrogram-out", type=Path, default=IMGS_DIR / "v2_cluster_dendrogram.png")
     parser.add_argument("--coarse-k-max", type=int, default=20,
                          help="--select también elige, aparte de la ganadora sin tope, la mejor config con "
                               "k_effective <= este valor -- una tipología gruesa/interpretable además de la fina")
+    parser.add_argument("--max-noise-frac", type=float, default=0.5,
+                         help="--select descarta de la ganadora fina cualquier config con noise_frac por encima de "
+                              "este valor, antes de rankear por prototype_fidelity -- sin este tope, HDBSCAN gana "
+                              "en parte por poder descartar como ruido los puntos difíciles (prototype_fidelity solo "
+                              "se calcula sobre miembros no-ruido), no solo por tener mejor estructura de cluster")
+    parser.add_argument("--coarse-max-noise-frac", type=float, default=0.25,
+                         help="igual que --max-noise-frac pero para la ganadora gruesa/interpretable (k<=coarse-k-max) "
+                              "-- más estricto porque una tipología pensada para mapas/narrativa pierde sentido si "
+                              "una fracción grande del territorio queda sin tipificar")
 
     parser.add_argument("--n-boot", type=int, default=3, help="bootstraps de stability_ari durante el barrido (menos que en --select por tiempo de cómputo)")
     parser.add_argument("--select-n-boot", type=int, default=10, help="bootstraps de stability_ari al re-ajustar la config ganadora en --select")
