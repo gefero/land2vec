@@ -443,7 +443,7 @@ era arbitrario (silhouette 0.43 se calculó *después*, como reporte, no
 como criterio de selección). Esta ronda lo reemplaza por un barrido
 explícito -- `scripts/tune_clustering.py` (`src/land2vec/cluster.py`) -- de
 4 familias (KMeans, GaussianMixture, HDBSCAN, jerárquico/aglomerativo) x
-preprocesado de `z` (crudo / estandarizado / L2), 120 configuraciones en
+preprocesado de `z` (crudo / estandarizado / L2), 276 configuraciones en
 total, evaluadas con:
 
 1. **Métricas internas**: silhouette (promediada sobre 5 semillas, no un
@@ -486,51 +486,44 @@ sin él, el criterio recompensa mecánicamente a HDBSCAN por descartar como
 ruido los puntos difíciles, no solo por tener una estructura de cluster
 genuinamente mejor (ver `select_winner()` en `scripts/tune_clustering.py`).
 
-> ⚠️ **En revisión**: además del tope de `noise_frac` recién agregado, el
-> barrido de `gmm`/`hdbscan`/`hierarchical` se está re-corriendo con tres
-> fixes adicionales -- las 3 familias ahora barren `raw`/`standard`/`l2`
-> (antes solo `standard`, a diferencia de `kmeans` que ya las barría),
-> `GaussianMixture` usa `n_init=10` (antes 1, sin paridad con KMeans), y el
-> bootstrap de estabilidad del jerárquico estratifica por zona (antes
-> muestreo simple). Los números de "ganadora sin restricciones" y "ganadora
-> interpretable" de acá abajo corresponden a la ronda anterior (antes de
-> estos cuatro cambios) y van a actualizarse cuando termine el re-barrido --
-> con el tope de `noise_frac` solo, la ganadora gruesa documentada más abajo
-> (`min_cluster_size=2500`, 44.6% de ruido) ya no calificaría.
+**Ganadora sin restricciones -- HDBSCAN, `min_cluster_size=250`, espacio
+L2**: k=118 clusters (9,8% de las filas quedan sin asignar, como ruido de
+HDBSCAN), silhouette 0.91, `stability_ari` 0.91, `prototype_fidelity` 0.96
+y `spatial_coherence` 0.60 -- muy por encima de cualquier config de
+KMeans/GMM/jerárquico, cuyo `prototype_fidelity` no pasó de ~0.25 aun con
+`k` grande. HDBSCAN no fuerza los puntos "difíciles" a un cluster, así que
+los que sí forma son mucho más homogéneos -- pero 118 tipos no es una
+tipología legible para un mapa o una narrativa. El espacio L2 desplazó por
+poco a `standard` (que había ganado en la primera pasada, antes de barrer
+`raw`/`l2` también en GMM/HDBSCAN/jerárquico): mismo `min_cluster_size`,
+mejora marginal en los cuatro números (silhouette 0.916→0.913 es la única
+que baja, y por menos de un punto).
 
-**Ganadora sin restricciones -- HDBSCAN, `min_cluster_size=250`**: k=115
-clusters (11% de las filas quedan sin asignar, como ruido de HDBSCAN),
-silhouette 0.92, `stability_ari` 0.89, `prototype_fidelity` 0.95 y
-`spatial_coherence` 0.60 -- muy por encima de cualquier config de
-KMeans/GMM/jerárquico, cuyo
-`prototype_fidelity` no pasó de ~0.23 aun con `k` grande. HDBSCAN no fuerza
-los puntos "difíciles" a un cluster, así que los que sí forma son mucho
-más homogéneos -- pero 115 tipos no es una tipología legible para un mapa
-o una narrativa.
+**Ganadora interpretable (mismo criterio, con `k_effective <= 20` y
+`noise_frac <= 0.25`) -- HDBSCAN, `min_cluster_size=2500, min_samples=25`,
+espacio L2**: k=17, silhouette 0.58, `prototype_fidelity` 0.74,
+`spatial_coherence` 0.59, ruido 20,4% -- bajó a la mitad del 44,6% de la
+config que ganaba antes de agregar el tope de `noise_frac` (`min_samples`
+por defecto, sin ese tope), que quedó excluida directamente por superar el
+0.25 permitido pese a tener mejor fidelidad (0.86) en el papel: sin el
+tope, el criterio recompensaba a HDBSCAN por descartar como ruido a los
+puntos difíciles, no por tener una estructura de cluster genuinamente
+mejor (ver el docstring de `select_winner()`). Aun así, `stability_ari`
+**0.72** al reajustar con más bootstraps para el número final (`n_boot=10`,
+contra el `n_boot=3` del barrido, que había medido 0.77) -- de nuevo por
+debajo del umbral de 0.75 del propio criterio, aunque menos lejos que la
+config anterior (0.69). Se documenta igual como la tipología gruesa --
+sigue siendo la mejor opción interpretable disponible tras aplicar el tope
+de ruido -- pero, como antes, hay que leerla como *exploratoria*, no tan
+firme como la fina.
 
-**Ganadora interpretable (mismo criterio, con `k_effective <= 20`) --
-HDBSCAN, `min_cluster_size=2500`**: k=12, silhouette 0.78,
-`prototype_fidelity` 0.86, `spatial_coherence` 0.45, pero `stability_ari`
-**0.69** al reajustar con
-más bootstraps para el número final (`n_boot=10`, contra el `n_boot=3` del
-barrido, que había medido 0.99) -- por debajo del umbral de 0.75 del
-propio criterio. Es exactamente el tipo de sobreajuste al ruido de una
-sola corrida que la estabilidad por bootstrap está pensada para exponer, y
-confirma que vale la pena recalcularla con más repeticiones antes de
-reportar un número final. Se documenta igual como la tipología gruesa
--- sigue siendo la mejor opción interpretable disponible (fidelidad y
-cohesión siguen siendo buenas) -- pero hay que leerla como *exploratoria*,
-no tan firme como la fina. También tiene mucho más ruido (45% vs. 11%):
-con `min_cluster_size` alto, HDBSCAN deja más territorio sin tipificar
-antes que forzarlo a uno de los 12 tipos.
+![Clusters de trayectoria, nivel fino (k=118), por zona](../imgs/v2_eval_cluster_map_fina.png)
 
-![Clusters de trayectoria, nivel fino (k=115), por zona](../imgs/v2_eval_cluster_map_fina.png)
-
-![Clusters de trayectoria, nivel grueso (k=12), por zona](../imgs/v2_eval_cluster_map_gruesa.png)
+![Clusters de trayectoria, nivel grueso (k=17), por zona](../imgs/v2_eval_cluster_map_gruesa.png)
 
 Ambos niveles forman parches espacialmente coherentes dentro de cada zona
 (frontera este-oeste nítida en `puna_noa`, banda diagonal en `ibera`) --
-`spatial_coherence` 0.60 (fina) y 0.45 (gruesa) -- evidencia de que el
+`spatial_coherence` 0.60 (fina) y 0.59 (gruesa) -- evidencia de que el
 embedding captura tipologías de trayectoria geográficamente reales, no
 ruido. Las trayectorias prototípicas (centroide
 de cada cluster en `z` crudo, decodificado) son variadas e interpretables:
@@ -601,13 +594,15 @@ coloreado por zona se mezcla mucho más -- consistente con el probing
    zonas que no esté sesgada por cuántas clases del vocabulario aparecen
    en cada una. (`land2vec.cluster.prototype_fidelity` ya implementa esta
    misma corrección de soporte para el clustering -- reusar el patrón.)
-2. La tipología gruesa (HDBSCAN, k=12) quedó documentada con una
+2. La tipología gruesa (HDBSCAN, k=17) quedó documentada con una
    estabilidad por debajo del umbral propio del criterio (`stability_ari`
-   0.69 vs. 0.75, ver 7.2) -- si se la va a usar en análisis posteriores,
-   vale la pena re-barrer `min_cluster_size` alrededor de 2500 con más
-   bootstraps desde el inicio (no solo al reajustar la ganadora) para ver
-   si hay una config vecina genuinamente estable con `k` igual de chico.
+   0.72 vs. 0.75, ver 7.2) -- el tope de `noise_frac` ya mejoró esto (era
+   0.69 con la config anterior, 44,6% de ruido) pero no lo resolvió. Si se
+   la va a usar en análisis posteriores, vale la pena re-barrer
+   `min_cluster_size` alrededor de 2500 con más bootstraps desde el inicio
+   (no solo al reajustar la ganadora) para ver si hay una config vecina
+   genuinamente estable con `k` igual de chico y ruido igual de bajo.
 3. Prototipos por cluster desagregados por zona (hoy el centroide se
    decodifica una sola vez de forma global) -- útil sobre todo para la
-   tipología fina (k=115), donde un mismo cluster puede tener composición
+   tipología fina (k=118), donde un mismo cluster puede tener composición
    de zona mixta.
