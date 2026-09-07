@@ -15,8 +15,10 @@ Uso:
     python scripts/tune_clustering.py --sweep hdbscan      --out-dir models/cluster_v2
     python scripts/tune_clustering.py --sweep hierarchical --out-dir models/cluster_v2
 
-    # elige la config ganadora (ver select_winner() más abajo) y etiqueta
-    # las dinámicas + el pool con constantes submuestreadas al 15%
+    # elige ganadoras (ver select_winner() y run_select() más abajo): matriz de
+    # 3 niveles de granularidad (fina / media k<=40 / gruesa k<=20) x 2 familias
+    # (HDBSCAN / no-HDBSCAN), y para cada una etiqueta las dinámicas + el pool con
+    # constantes submuestreadas al 15% -> chosen{_medium,_coarse}{,_parametric}.json
     python scripts/tune_clustering.py --select --out-dir models/cluster_v2
 
 Smoke test rápido antes de un barrido completo:
@@ -240,8 +242,8 @@ def select_winner(
 ) -> tuple[pd.Series, bool]:
     """Aplica el criterio de docs/v2_autoencoder_training.md §7.2: entre las
     config elegibles con stability_ari >= STABILITY_THRESHOLD (con k_effective
-    <= k_max si se pasa -- usado para la selección "gruesa" interpretable, ver
-    select_coarse_winner -- y noise_frac <= max_noise_frac si se pasa), la de
+    <= k_max si se pasa -- usado por run_select para los niveles medio/grueso --
+    y noise_frac <= max_noise_frac si se pasa), la de
     mejor prototype_fidelity; desempate por silhouette_mean y, dentro del
     ruido, por menor k_effective. Si ninguna alcanza el umbral de estabilidad,
     cae a la de mayor stability_ari entre las candidatas (fallback=True, hay
@@ -288,24 +290,16 @@ def select_winner(
     return pool_for_pick.iloc[0], fallback
 
 
-def select_coarse_winner(summary: pd.DataFrame, k_max: int, max_noise_frac: float | None = None) -> tuple[pd.Series, bool]:
-    """La ganadora fina (select_winner sin tope de k) puede tener un k grande y
-    poco legible como tipología resumida (HDBSCAN con min_cluster_size chico,
-    p. ej., encuentra ~100+ clusters finos pero de alta fidelidad). Esta
-    variante aplica el mismo criterio restringido a k_effective <= k_max, para
-    tener también una versión "gruesa" pensada para mapas/narrativa en vez de
-    solo precisión."""
-    return select_winner(summary, k_max=k_max, max_noise_frac=max_noise_frac)
-
-
 def refit_and_save(
-    label: str, winner: pd.Series, fallback: bool, model, dyn_pool: "C.Pool", args, suffix: str
+    label: str, winner: pd.Series, fallback: bool, model, dyn_pool: "C.Pool", pooled: "C.Pool", args, suffix: str
 ) -> None:
     """Reajusta una fila ganadora de summary.csv (con más bootstraps, para un
     número de estabilidad más confiable en la config final que en el barrido) y
     guarda chosen{suffix}.json + clusters_dynamic{suffix}.zip +
-    clusters_pooled_subsampled{suffix}.zip. `suffix` distingue el nivel fino
-    ("") del grueso interpretable ("_coarse") -- ver select_coarse_winner."""
+    clusters_pooled_subsampled{suffix}.zip. `suffix` combina nivel de granularidad
+    ("" fina / "_medium" media / "_coarse" gruesa) y familia ("" HDBSCAN /
+    "_parametric" no-HDBSCAN) -- ver run_select. `pooled` (el pool con constantes
+    submuestreadas al 15%) se pasa ya cargado: es el mismo para las 6 celdas."""
     params = json.loads(winner["params"])
     print(f"\nGanadora ({label}): {winner['run_id']}")
     print(f"  algo={winner['algo']} space={winner['space']} params={params}")
@@ -364,7 +358,6 @@ def refit_and_save(
     print(f"Etiquetas (dinámicas): {dyn_out_path} ({len(dyn_out):,} filas)")
 
     print("Etiquetando el pool con constantes submuestreadas al 15%...")
-    pooled = C.load_pool_subsampled(C.ZONES, args.data_dir, max_fraction=0.15, seed=args.seed)
     pooled_idx, pooled_dist = C.assign_pool(
         pooled.z, final.transform, final.centers, return_dist=True
     )
@@ -385,19 +378,44 @@ def run_select(args) -> None:
         raise FileNotFoundError(f"{summary_path} no existe -- corré al menos un --sweep antes de --select")
     summary = pd.read_csv(summary_path)
 
-    fine_winner, fine_fallback = select_winner(summary, max_noise_frac=args.max_noise_frac)
-    coarse_winner, coarse_fallback = select_coarse_winner(
-        summary, k_max=args.coarse_k_max, max_noise_frac=args.coarse_max_noise_frac
-    )
-    same_winner = fine_winner["run_id"] == coarse_winner["run_id"]
-    if same_winner:
-        print(f"La ganadora fina ya cumple k_effective <= {args.coarse_k_max}: un solo nivel, no hace falta el grueso.")
+    # Matriz de 3 niveles de granularidad x 2 familias. Para cada celda se aplica
+    # el mismo criterio de select_winner (ver §7.2) restringido a ese tope de k,
+    # ese tope de ruido y esa familia. Sirve para comparar HDBSCAN (basado en
+    # densidad, con clase de ruido) contra lo mejor que da el resto (KMeans/GMM/
+    # jerárquico, que asignan todos los puntos) a granularidad pareja -- no solo
+    # sobre la fila de summary.csv sino con el tratamiento completo (prototipos
+    # decodificados, mapa del pool). Una celda se omite si su ganadora coincide
+    # con una ya guardada (p. ej. si la HDBSCAN fina ya cae bajo el tope medio).
+    level_specs = [
+        ("fina",   "",        None,               args.max_noise_frac),
+        ("media",  "_medium", args.medium_k_max,  args.medium_max_noise_frac),
+        ("gruesa", "_coarse", args.coarse_k_max,  args.coarse_max_noise_frac),
+    ]
+    family_specs = [
+        ("HDBSCAN",    "",            lambda df: df[df["algo"] == "hdbscan"]),
+        ("no-HDBSCAN", "_parametric", lambda df: df[df["algo"] != "hdbscan"]),
+    ]
 
     model, dyn_pool = load_model_and_dynamic_pool(args.model, args.data_dir, args.device)
+    print("Cargando el pool con constantes submuestreadas al 15% (una vez para las 6 celdas)...")
+    pooled = C.load_pool_subsampled(C.ZONES, args.data_dir, max_fraction=0.15, seed=args.seed)
 
-    refit_and_save("fina", fine_winner, fine_fallback, model, dyn_pool, args, suffix="")
-    if not same_winner:
-        refit_and_save("gruesa (k<=%d)" % args.coarse_k_max, coarse_winner, coarse_fallback, model, dyn_pool, args, suffix="_coarse")
+    saved: dict[str, str] = {}  # run_id -> etiqueta con la que se guardó
+    for lvl_name, lvl_suffix, k_max, max_noise in level_specs:
+        for fam_name, fam_suffix, fam_filter in family_specs:
+            k_lbl = "" if k_max is None else f" (k<={k_max})"
+            label = f"{lvl_name}{k_lbl} / {fam_name}"
+            suffix = f"{lvl_suffix}{fam_suffix}"
+            try:
+                winner, fallback = select_winner(fam_filter(summary), k_max=k_max, max_noise_frac=max_noise)
+            except ValueError as exc:
+                print(f"{label}: sin config candidata ({exc}); se omite.")
+                continue
+            if winner["run_id"] in saved:
+                print(f"{label}: la ganadora ({winner['run_id']}) ya se guardó como '{saved[winner['run_id']]}'; se omite.")
+                continue
+            refit_and_save(label, winner, fallback, model, dyn_pool, pooled, args, suffix=suffix)
+            saved[winner["run_id"]] = label
 
     plot_selection_curves(summary, IMGS_DIR / "v2_cluster_selection.png")
 
@@ -426,8 +444,14 @@ def main():
     parser.add_argument("--hier-linkages", nargs="+", default=["ward", "average", "complete"])
     parser.add_argument("--dendrogram-out", type=Path, default=IMGS_DIR / "v2_cluster_dendrogram.png")
     parser.add_argument("--coarse-k-max", type=int, default=20,
-                         help="--select también elige, aparte de la ganadora sin tope, la mejor config con "
-                              "k_effective <= este valor -- una tipología gruesa/interpretable además de la fina")
+                         help="--select elige tres niveles de tipología: fina (sin tope de k), media "
+                              "(k_effective <= --medium-k-max) y gruesa (k_effective <= este valor). La gruesa "
+                              "es la más apretada, pensada para un mapa/narrativa legible")
+    parser.add_argument("--medium-k-max", type=int, default=40,
+                         help="techo de k_effective del nivel intermedio (chosen_medium.json): entre la fina "
+                              "y la gruesa. ~30-40 clusters suele ser el sweet spot donde prototype_fidelity "
+                              "sube fuerte sin que k se vuelva ilegible. Un nivel se omite si su ganadora "
+                              "coincide con la de otro ya guardado")
     parser.add_argument("--max-noise-frac", type=float, default=0.5,
                          help="--select descarta de la ganadora fina cualquier config con noise_frac por encima de "
                               "este valor, antes de rankear por prototype_fidelity -- sin este tope, HDBSCAN gana "
@@ -437,6 +461,10 @@ def main():
                          help="igual que --max-noise-frac pero para la ganadora gruesa/interpretable (k<=coarse-k-max) "
                               "-- más estricto porque una tipología pensada para mapas/narrativa pierde sentido si "
                               "una fracción grande del territorio queda sin tipificar")
+    parser.add_argument("--medium-max-noise-frac", type=float, default=0.25,
+                         help="igual que --coarse-max-noise-frac pero para el nivel intermedio (por defecto el "
+                              "mismo tope; subilo si querés dejar entrar configs de k medio un poco más ruidosas "
+                              "pero de mayor fidelidad)")
     parser.add_argument("--untyped-dist-pct", type=float, default=95.0,
                          help="percentil de la distancia al centroide más cercano (medida sobre los puntos no-ruido "
                               "del pool dinámico) que define el tope 'sin tipificar' del mapa del pool: en "
