@@ -84,7 +84,7 @@ El vocabulario de estados (`land2vec.tokenizer.Tokenizer.VOCAB`) es:
 | `U`     | urbano |
 | `Sh`    | arbustal (shrub) |
 | `Sp`    | estado Sp |
-| `B`     | estado B |
+| `B`     | estado Bare |
 | `Wa`    | agua (water) |
 | `Nd`    | sin dato (no data) |
 
