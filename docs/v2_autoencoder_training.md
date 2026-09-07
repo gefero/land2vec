@@ -491,7 +491,12 @@ L2**: k=118 clusters (9,8% de las filas quedan sin asignar, como ruido de
 HDBSCAN), silhouette 0.91, `stability_ari` 0.91, `prototype_fidelity` 0.96
 y `spatial_coherence` 0.60 -- muy por encima de cualquier config de
 KMeans/GMM/jerárquico, cuyo `prototype_fidelity` no pasó de ~0.25 aun con
-`k` grande. HDBSCAN no fuerza los puntos "difíciles" a un cluster, así que
+`k` grande. (Los números de KMeans/GMM/jerárquico de esta sección son de la
+pasada con `k <= 20`; el barrido actual extiende `DEFAULT_K_VALUES` hasta 120
+para que esas familias tengan un contrincante al `k` efectivo de HDBSCAN --
+antes ninguna config paramétrica llegaba siquiera a la mitad de ese `k`. Los
+números se re-generan al re-correr los sweeps de esas tres familias.)
+HDBSCAN no fuerza los puntos "difíciles" a un cluster, así que
 los que sí forma son mucho más homogéneos -- pero 118 tipos no es una
 tipología legible para un mapa o una narrativa. El espacio L2 desplazó por
 poco a `standard` (que había ganado en la primera pasada, antes de barrer
@@ -544,18 +549,21 @@ de etiquetas de cada nivel no tratan el ruido de HDBSCAN de la misma forma,
 a propósito. `clusters_dynamic{,_coarse}.zip` preserva la etiqueta `-1`
 donde HDBSCAN la asignó -- es la lectura "honesta" del clustering, la que
 efectivamente se evaluó con `prototype_fidelity`/`stability_ari`.
-`clusters_pooled_subsampled{,_coarse}.zip`, en cambio, asigna *todos* los
-puntos (incluidas las constantes submuestreadas al 15%) a su centroide más
-cercano vía `assign_pool()`/`assign_by_centroid()` -- sin bucket de ruido --
-para que el mapa cubra el pool completo en vez de dejar el 96,8% del
-territorio sin colorear. La consecuencia: en ese segundo archivo, un punto
-que HDBSCAN habría marcado como "difícil de tipificar" queda igual
-asignado a algún cluster, sin distinción visible respecto a un punto que sí
-encajó bien. Es una decisión de diseño deliberada (priorizar cobertura del
-mapa sobre fidelidad al criterio de selección en ese archivo puntual), no
-un descuido -- pero hay que leer `clusters_pooled_subsampled{,_coarse}.zip`
-sabiendo que sobrestima cuánto territorio está genuinamente bien tipificado
-respecto a lo que dice `clusters_dynamic{,_coarse}.zip`.
+`clusters_pooled_subsampled{,_coarse}.zip`, en cambio, asigna los puntos
+(incluidas las constantes submuestreadas al 15%) por Voronoi a su centroide
+más cercano vía `assign_pool()` -- HDBSCAN/jerárquico no tienen centroides ni
+clase de ruido propia sobre el pool completo -- para que el mapa cubra el pool
+en vez de dejar el 96,8% del territorio sin colorear. Para que ese segundo
+archivo no sobrestime la cobertura, la asignación por Voronoi ahora lleva un
+tope de distancia: los puntos que caen más lejos de todo centroide que el
+percentil `--untyped-dist-pct` (default P95) de la distancia al centroide
+entre los puntos *no-ruido* del pool dinámico salen como `-1` ("sin
+tipificar"), calibrado a la geometría real de la config elegida (el umbral
+queda versionado en `chosen{,_coarse}.json` como `untyped_dist_threshold`).
+Sigue siendo una lectura distinta de la de `clusters_dynamic{,_coarse}.zip`
+-- el `-1` de acá es "lejos de todo centroide", no "HDBSCAN lo marcó como
+difícil" -- pero ya no asigna ciegamente cada punto a algún cluster: un punto
+genuinamente atípico del pool aparece como no tipificado en las dos lecturas.
 
 ### 7.3 Probing: `z` vs. secuencia cruda vs. estado oculto de la v1
 

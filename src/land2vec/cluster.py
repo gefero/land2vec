@@ -32,6 +32,7 @@ Ward a esta escala, no un atajo menos riguroso que las otras familias.
 
 from __future__ import annotations
 
+import gc
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal
@@ -371,13 +372,33 @@ def dispatch_fit(algo: str, z: np.ndarray, params: dict, seed: int = 42) -> Clus
 
 def assign_by_centroid(z: np.ndarray, centers: np.ndarray) -> np.ndarray:
     "Asigna cada fila de z (mismo espacio que `centers`) al centroide más cercano."
+    idx, _ = assign_by_centroid_with_dist(z, centers)
+    return idx
+
+
+def assign_by_centroid_with_dist(z: np.ndarray, centers: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Como `assign_by_centroid`, pero devuelve también la distancia de cada fila
+    a su centroide asignado. La distancia sirve para marcar como "sin tipificar"
+    los puntos que quedan lejos de todo centroide -- necesario para el mapa del
+    pool, que asigna por Voronoi incluso para HDBSCAN (que no tiene centroides ni
+    clase de ruido propia)."""
     nn = NearestNeighbors(n_neighbors=1).fit(centers)
-    _, idx = nn.kneighbors(z)
-    return idx.ravel()
+    dist, idx = nn.kneighbors(z)
+    return idx.ravel(), dist.ravel()
 
 
-def assign_pool(raw_z: np.ndarray, transform: SpaceTransform, centers: np.ndarray) -> np.ndarray:
-    "Etiqueta embeddings nuevos (z crudo) con una config ya elegida: transforma y asigna."
+def assign_pool(
+    raw_z: np.ndarray, transform: SpaceTransform, centers: np.ndarray, return_dist: bool = False
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """Etiqueta embeddings nuevos (z crudo) con una config ya elegida: transforma y asigna.
+
+    Con `return_dist=True` devuelve `(idx, dist)` en vez de solo `idx` -- la
+    distancia al centroide asignado permite marcar como "sin tipificar" (`-1`)
+    los puntos que caen lejos de todo cluster, para que el mapa del pool no
+    sobrestime la cobertura frente al ruido honesto de HDBSCAN (ver
+    `refit_and_save` en scripts/tune_clustering.py y docs §7.2)."""
+    if return_dist:
+        return assign_by_centroid_with_dist(transform.apply(raw_z), centers)
     return assign_by_centroid(transform.apply(raw_z), centers)
 
 
@@ -652,7 +673,14 @@ def run_hierarchical_config(
         Zb = hierarchical_linkage(z_sub[fit_idx], method)
         labels_fit = hierarchical_from_linkage(z_sub[fit_idx], Zb, k).labels
         centers_fit = _labeled_centroids(z_sub[fit_idx], labels_fit)
-        return assign_by_centroid(z_sub, centers_fit)
+        out = assign_by_centroid(z_sub, centers_fit)
+        # La matriz de linkage es O(n^2) en memoria; sin liberarla explícitamente
+        # se acumula a través de los ~n_boot reajustes de estabilidad por config
+        # y termina en OOM-kill sobre submuestras grandes (ver docstring de la
+        # función y el commit que bajó --hier-sample a 5000 por este motivo).
+        del Zb, labels_fit, centers_fit
+        gc.collect()
+        return out
 
     sil_mean, sil_std = silhouette_repeated(z_eval_fit, labels)
     metrics = {

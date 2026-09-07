@@ -42,7 +42,11 @@ from land2vec.utils import load_config, load_model
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 IMGS_DIR = Path(__file__).resolve().parent.parent / "imgs"
 
-DEFAULT_K_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20]
+# La banda alta (>20) existe para poder comparar KMeans/GMM/jerárquico contra el
+# k efectivo de HDBSCAN (que llega a ~120 con min_cluster_size chico) -- sin ella
+# el ganador fino de HDBSCAN no tenía contrincante a su k. Ver docs §7.2.
+DEFAULT_K_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20,
+                    25, 30, 40, 50, 65, 80, 100, 120]
 
 # Umbral de estabilidad (ARI de bootstrap) para entrar en la selección final --
 # ver criterio de decisión en docs/v2_autoencoder_training.md §7.2.
@@ -321,6 +325,20 @@ def refit_and_save(
         )
     print(f"  stability_ari (n_boot={args.select_n_boot}): {final.metrics['stability_ari']:.4f}")
 
+    # Tope "sin tipificar" para el mapa del pool: el pool se etiqueta por Voronoi
+    # (assign_pool) incluso para HDBSCAN/jerárquico, que no tienen centroides ni
+    # clase de ruido propia -- sin un tope de distancia, cada punto del pool queda
+    # asignado a *algún* cluster y el mapa sobrestima cuánto territorio está
+    # genuinamente tipificado frente a clusters_dynamic (que preserva el -1
+    # honesto de HDBSCAN). El tope se calibra sobre la geometría real de esta
+    # config: percentil `--untyped-dist-pct` de la distancia al centroide más
+    # cercano entre los puntos del pool dinámico que la config NO dejó como ruido.
+    z_fit_dyn = final.transform.apply(dyn_pool.z)
+    _, dyn_dist = C.assign_by_centroid_with_dist(z_fit_dyn, final.centers)
+    real = final.labels != -1
+    untyped_thresh = float(np.percentile(dyn_dist[real], args.untyped_dist_pct))
+    print(f"  tope 'sin tipificar' (P{args.untyped_dist_pct:g} de la dist. no-ruido): {untyped_thresh:.4f}")
+
     chosen = {
         "level": label,
         "run_id": final.run_id,
@@ -333,6 +351,8 @@ def refit_and_save(
         "metrics": C.to_jsonable(final.metrics),
         "fallback": fallback,
         "stability_threshold": STABILITY_THRESHOLD,
+        "untyped_dist_pct": args.untyped_dist_pct,
+        "untyped_dist_threshold": untyped_thresh,
     }
     chosen_path = args.out_dir / f"chosen{suffix}.json"
     chosen_path.write_text(json.dumps(chosen, indent=2))
@@ -345,7 +365,13 @@ def refit_and_save(
 
     print("Etiquetando el pool con constantes submuestreadas al 15%...")
     pooled = C.load_pool_subsampled(C.ZONES, args.data_dir, max_fraction=0.15, seed=args.seed)
-    pooled_labels = C.assign_pool(pooled.z, final.transform, final.centers)
+    pooled_idx, pooled_dist = C.assign_pool(
+        pooled.z, final.transform, final.centers, return_dist=True
+    )
+    pooled_labels = np.where(pooled_dist > untyped_thresh, -1, pooled_idx)
+    n_untyped = int((pooled_labels == -1).sum())
+    print(f"  sin tipificar (dist > {untyped_thresh:.4f}): {n_untyped:,} / {len(pooled_labels):,} "
+          f"({n_untyped / len(pooled_labels):.1%})")
     pooled_out = pd.DataFrame({"ID": pooled.ids, "zone": pooled.zone, "cluster": pooled_labels})
     pooled_out_path = args.data_dir / f"clusters_pooled_subsampled{suffix}.zip"
     pooled_out.to_csv(pooled_out_path, index=False, compression="zip")
@@ -411,6 +437,12 @@ def main():
                          help="igual que --max-noise-frac pero para la ganadora gruesa/interpretable (k<=coarse-k-max) "
                               "-- más estricto porque una tipología pensada para mapas/narrativa pierde sentido si "
                               "una fracción grande del territorio queda sin tipificar")
+    parser.add_argument("--untyped-dist-pct", type=float, default=95.0,
+                         help="percentil de la distancia al centroide más cercano (medida sobre los puntos no-ruido "
+                              "del pool dinámico) que define el tope 'sin tipificar' del mapa del pool: en "
+                              "clusters_pooled_subsampled{,_coarse}.zip, los puntos más lejos que ese tope salen "
+                              "como -1 en vez de asignados por Voronoi, para que ese archivo no sobrestime la "
+                              "cobertura frente al -1 honesto de clusters_dynamic (ver docs §7.2, Nota metodológica)")
 
     parser.add_argument("--n-boot", type=int, default=3, help="bootstraps de stability_ari durante el barrido (menos que en --select por tiempo de cómputo)")
     parser.add_argument("--select-n-boot", type=int, default=10, help="bootstraps de stability_ari al re-ajustar la config ganadora en --select")
