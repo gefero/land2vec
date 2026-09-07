@@ -1,5 +1,5 @@
 {
-  "level": "gruesa (k<=20)",
+  "level": "gruesa (k<=20) / HDBSCAN",
   "run_id": "hdbscan__min_cluster_size=2500_min_samples=25__space=l2",
   "algo": "hdbscan",
   "params": {
@@ -358,11 +358,11 @@
   ],
   "metrics": {
     "n_fit": 107362,
-    "silhouette_mean": 0.5798198061192515,
-    "silhouette_std": 0.004247804996773872,
+    "silhouette_mean": 0.5798198061194241,
+    "silhouette_std": 0.004247804997078775,
     "calinski_harabasz": 24013.034069601083,
     "davies_bouldin": 0.9366665648077309,
-    "stability_ari": 0.7188072433261616,
+    "stability_ari": 0.7187509590461542,
     "prototype_fidelity": 0.7397718760568507,
     "spatial_coherence": 0.5949838871145359,
     "largest_share": 0.14867285649053377,
@@ -371,5 +371,7 @@
     "k_effective": 17
   },
   "fallback": false,
-  "stability_threshold": 0.75
+  "stability_threshold": 0.75,
+  "untyped_dist_pct": 95.0,
+  "untyped_dist_threshold": 0.7459354474137663
 }
