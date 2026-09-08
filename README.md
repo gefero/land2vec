@@ -148,59 +148,42 @@ Argentina/provincias en `data/geo/` (Natural Earth). El área de estudio
 cae en Chaco y Santiago del Estero; el recuadro marrón en el panel derecho
 muestra dónde se superponen las parcelas de entrenamiento y de test.
 
-## Modelo
+## v1: predicción del próximo estado (`GPTDecoder`)
+
+> El primer modelo del proyecto. Predice el próximo estado de una parcela a
+> partir de su historial; **no produce un embedding por trayectoria** — para
+> eso está la [v2](#v2-embeddings-comprimidos-trajectoryautoencoder), que es
+> el foco actual. Gonzalo Jara desarrolló el código correspondiente a la v1
+> (ver [Créditos](#créditos)).
 
 `GPTDecoder` (`src/land2vec/model.py`) es un transformer decoder causal
-"desde cero": embeddings de token + posición, bloques de
-self-attention causal (`F.scaled_dot_product_attention`) + feed-forward con
-GELU, weight tying entre el embedding de entrada y la capa de salida
-(`lm_head`), y un método `generate()` con muestreo por temperatura, top-k y
-top-p.
-
-Los hiperparámetros por defecto están en `land2vec.config.Config`
-(`block_size`, `n_embd`, `n_head`, `n_layer`, `dropout`, `epochs`, `lr`,
-`patience`, `batch_size`, `device`, `seed`, ...).
-
+"desde cero": embeddings de token + posición, bloques de self-attention
+causal (`F.scaled_dot_product_attention`) + feed-forward con GELU, weight
+tying entre el embedding de entrada y la capa de salida (`lm_head`), y un
+método `generate()` con muestreo por temperatura, top-k y top-p. Los
+hiperparámetros están en `land2vec.config.Config`;
 `land2vec.model.run_epoch()` corre una época de entrenamiento o evaluación
-(según si se pasa un `optimizer`), con soporte de AMP (`torch.autocast` +
-`GradScaler`) y cross-entropy ponderada que ignora el token `[UNK]`.
+(según si se pasa un `optimizer`), con AMP (`torch.autocast` + `GradScaler`)
+y cross-entropy ponderada que ignora el token `[UNK]`. Los checkpoints se
+guardan/cargan con `save_config`/`save_model` y `load_config`/`load_model`
+(`land2vec.utils`): una carpeta por modelo en `models/` (`config.json` +
+`model.pt` + `train_data.csv`).
 
-## Entrenamiento y evaluación (uso típico)
+El modelo final, `models/full_model/` (795,520 parámetros), sale de una
+cadena de corridas en `notebooks/` (pensadas para Google Colab):
 
-```python
-from land2vec.config import Config
-from land2vec.dataset import load_data
-from land2vec.model import GPTDecoder, run_epoch
-from land2vec.tokenizer import Tokenizer
-from land2vec.utils import save_config, save_model, collect_predictions, compute_metrics
+| Notebook | Qué prueba | Modelo resultante |
+|---|---|---|
+| `prueba_1.ipynb` | Exploración inicial + primer entrenamiento con dataset ventaneado (`window=block_size`) | `models/patience_6` (no incluido) |
+| `prueba_2.ipynb` | Segunda iteración, mismo esquema ventaneado | `models/2026-05-20` |
+| `prueba_3.ipynb` | Dataset **no ventaneado** (secuencia completa por parcela) y balanceado; matriz de confusión | `models/balanced_1` |
+| `test_1.ipynb` | Retoma `balanced_1`, sigue entrenando y evalúa contra el test set held-out | `models/full_model` (final) |
 
-config = Config(block_size=22, batch_size=1024)
-dataset = load_data(file_path="data/seqs_short.csv")  # o el dataset completo
+No hay tests automatizados (`pytest` u otro framework): la validación es
+exploratoria en estos notebooks, mirando accuracy, F1 macro y matrices de
+confusión.
 
-model = GPTDecoder(
-    vocab_size=len(Tokenizer.VOCAB),
-    block_size=config.block_size,
-    n_embd=config.n_embd,
-    n_head=config.n_head,
-    n_layer=config.n_layer,
-    dropout=config.dropout,
-).to(config.device)
-
-# ... entrenar con run_epoch() en un loop con early stopping por patience ...
-
-preds, targets, loss = collect_predictions(model, val_loader, config.device, weights)
-metrics = compute_metrics(targets, preds)  # accuracy, macro F1
-```
-
-Los checkpoints se guardan/cargan con `save_model`/`load_model` y
-`save_config`/`load_config` de `land2vec.utils`, en una carpeta por modelo
-dentro de `models/` (`config.json` + `model.pt` + `train_data.csv` con el
-historial de entrenamiento).
-
-## Ejemplo de uso: inferencia con un modelo entrenado
-
-Este ejemplo carga el modelo final (`models/full_model`) y predice el
-próximo estado de uso del suelo a partir de una secuencia histórica:
+### Inferencia con el modelo final
 
 ```python
 from pathlib import Path
@@ -217,56 +200,32 @@ model = load_model(config, target_folder)  # ya queda en eval() y en config.devi
 seq = "F-Sh-F-F-F-F-F-F-F-F-F-F-F-F-F-F-F-F-F-Sh-Sh-Sh"
 tokens = torch.tensor([Tokenizer.encode(seq)], device=config.device)  # (1, T)
 
-# Predecir el próximo estado más probable
 with torch.inference_mode():
     logits = model(tokens[:, -config.block_size:])
 next_state_id = logits[0, -1].argmax().item()
 print(Tokenizer.decode(torch.tensor([next_state_id])))  # p.ej. "Sh"
 
-# Generar varios pasos hacia adelante muestreando (autoregresivo)
+# Varios pasos hacia adelante, autoregresivo
 generated = model.generate(tokens, max_new_tokens=5, temperature=0.8, top_k=5)
 print(Tokenizer.decode(generated[0]))
 ```
 
-## Notebooks / pruebas experimentales
+### Resultados in-domain
 
-Los notebooks en `notebooks/` documentan las corridas de experimentación
-(diseñados para correr en Google Colab, con carga de datos y de módulos
-adaptada a ese entorno). Cada uno sigue el flujo *cargar datos → crear/cargar
-modelo → entrenar → evaluar → predecir*:
-
-| Notebook | Qué prueba | Config relevante | Modelo resultante |
-|---|---|---|---|
-| `prueba_1.ipynb` | Exploración inicial de datos y primer entrenamiento con dataset ventaneado (`window=block_size`) | `patience=6` | `models/patience_6` (no incluido en el repo) |
-| `prueba_2.ipynb` | Segunda iteración de entrenamiento, mismo esquema ventaneado | `patience=4` | `models/2026-05-20` |
-| `prueba_3.ipynb` | Cambia a dataset **no ventaneado** (secuencia completa por parcela) y a un dataset balanceado; agrega matriz de confusión | `patience=4, batch_size=1024, block_size=22` | `models/balanced_1` |
-| `test_1.ipynb` | Retoma el modelo `balanced_1`, continúa el entrenamiento y evalúa contra el set de test held-out (`id_seqs_text_2000_2022_test_set.zip`) | Config heredada de `balanced_1`, `patience=6` | `models/full_model` (modelo final) |
-
-No hay tests automatizados (`pytest` u otro framework); la validación del
-proyecto se hace de forma exploratoria en estos notebooks, evaluando
-accuracy y F1 macro sobre datos de validación/test y revisando matrices de
-confusión.
-
-## Resultados preliminares
-
-> ⚠️ **Resultados preliminares**, obtenidos en `test_2.ipynb` evaluando el
-> modelo final (`models/full_model`) sobre el set de test held-out
-> (`data/id_seqs_text_2000_2022_test_set.zip`). Sujetos a revisión con más
+> ⚠️ **Preliminares** (`test_2.ipynb`, `models/full_model` sobre
+> `data/id_seqs_text_2000_2022_test_set.zip`). Sujetos a revisión con más
 > datos y validaciones adicionales.
 
-- Parámetros del modelo: 795,520
-- Mejor F1 macro en validación (durante entrenamiento, época 1): 0.9886
-- **Accuracy (test set)**: 0.9929
-- **Macro F1 (test set)**: 0.9005
+Sobre el test set held-out del área de estudio (Chaco/Santiago del
+Estero/frontera agrícola): accuracy **0.9929**, macro F1 **0.9005** (mejor
+F1 macro en validación durante el entrenamiento: 0.9886).
 
-## Evaluación out-of-domain
+### Evaluación out-of-domain
 
-> ⚠️ El número anterior mide generalización *dentro* del área de estudio
-> (Chaco/Santiago del Estero/frontera agrícola). `notebooks/eval_ood_zones.ipynb`
-> evalúa el mismo modelo (`models/full_model`) sobre 7 zonas de Argentina
-> geográficamente disjuntas de esa área, construidas con
-> `scripts/build_eval_zones.py` (ver `land2vec.extract`), cada una dominada
-> por una modalidad de uso de suelo distinta.
+`notebooks/eval_ood_zones.ipynb` evalúa el mismo modelo sobre 7 zonas de
+Argentina geográficamente disjuntas del área de estudio
+(`scripts/build_eval_zones.py`, ver `land2vec.extract`), cada una dominada
+por una modalidad de uso de suelo distinta:
 
 | Zona | Mezcla dominante | Accuracy | Macro F1 |
 |---|---|---:|---:|
@@ -282,10 +241,9 @@ confusión.
 El accuracy no detecta la falla de generalización (se mantiene alto porque
 la clase mayoritaria en casi cualquier parcela es "sin cambio interanual");
 el macro F1 cae entre 9 y 43 puntos porcentuales respecto al 0.9005
-in-domain en las 7 zonas. La caída es más severa en `puna_noa`, la única
-zona con peso real de la clase `B` (0% en entrenamiento). Ver
-`notebooks/eval_ood_zones.ipynb` para matrices de confusión, accuracy por
-posición y el detalle completo.
+in-domain, más severo en `puna_noa` (única zona con peso real de la clase
+`B`, 0% en entrenamiento). Ver `notebooks/eval_ood_zones.ipynb` para
+matrices de confusión, accuracy por posición y el detalle completo.
 
 ## v2: embeddings comprimidos (`TrajectoryAutoencoder`)
 
@@ -482,4 +440,7 @@ Cada carpeta de modelo incluye `config.json` (hiperparámetros usados),
 ## Créditos
 
 - **Coordinación**: Germán Rosati (CONICET-EIDAES/UNSAM)
-- **Colaboración**: Gonzalo Jara (Lic. en Ciencia de Datos - ECyT/UNSAM)
+- **Colaboración**: Gonzalo Jara (Lic. en Ciencia de Datos - ECyT/UNSAM) —
+  desarrolló el código correspondiente a la [v1](#v1-predicción-del-próximo-estado-gptdecoder)
+  (`GPTDecoder`, predicción del próximo estado). La v2
+  (`TrajectoryAutoencoder`) y el análisis de tipologías son posteriores.
