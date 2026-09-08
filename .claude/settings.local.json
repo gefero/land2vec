@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(df -T /home/vscode 2>&1; echo \"---\"; df -T ~ 2>&1; echo \"---whoami/home---\"; echo $HOME; ls -ld /home/vscode 2>&1)",
-      "Read(//home/vscode/**)"
+      "Read(//home/vscode/**)",
+      "Bash(python3 -c \"import json;json.load\\(open\\('notebooks/cluster_evaluation.ipynb'\\)\\);print\\('nb OK'\\)\")",
+      "Bash(git add *)",
+      "Bash(git check-ignore *)"
     ]
   }
 }
