@@ -451,7 +451,8 @@ de probing, PCA). Resumen:
   trayectorias distintas: disimilitud entre secuencias (Optimal Matching / DHD /
   Hamming), pseudo-R² de discrepancia, ASW en espacio de secuencias y secuencias
   representativas (`seqrplot`). El navegador se publica en GitHub Pages
-  (`.github/workflows/pages.yml`). Ver `docs/v2_autoencoder_training.md` §7.5.
+  (deploy desde `main` / `docs/`, ver `docs/typology/README.md`). Ver
+  `docs/v2_autoencoder_training.md` §7.5.
 - **Próximo paso**: macro F1 restringido a clases con soporte por
   subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
 

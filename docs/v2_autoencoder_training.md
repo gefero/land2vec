@@ -630,8 +630,8 @@ coloreado por zona se mezcla mucho más -- consistente con el probing
 *Módulos: `land2vec.typology` (descriptivo) + `land2vec.seqdist` (disimilitud
 entre secuencias). Productor: `scripts/describe_clusters.py`. Notebook:
 `notebooks/cluster_evaluation.ipynb` §5 (consume, no produce) +
-`docs/typology/index.html` (navegador estático, publicable en GitHub Pages con
-`.github/workflows/pages.yml` -- ver `docs/typology/README.md`).*
+`docs/typology/index.html` (navegador estático, publicable en GitHub Pages --
+deploy desde `main` / `docs/`, con `.nojekyll` -- ver `docs/typology/README.md`).*
 
 7.2 *valida* las seis particiones (silhouette, estabilidad, fidelidad del
 prototipo); nada de eso *lee* los clusters. `scripts/tune_clustering.py --select`

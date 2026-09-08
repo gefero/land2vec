@@ -10,8 +10,7 @@ frecuentes hasta el 80% del cluster, y las secuencias representativas
 
 ## Datos
 
-El visor consume `typology_browser.json`, que **no está versionado hasta que lo
-generás**:
+El visor consume `typology_browser.json`, que se regenera con:
 
 ```bash
 python scripts/describe_clusters.py        # escribe docs/typology/typology_browser.json
@@ -28,7 +27,8 @@ git add docs/typology/typology_browser.json && git commit && git push
   python -m http.server -d docs/typology 8000
   # -> http://localhost:8000
   ```
-- **GitHub Pages**: el workflow `.github/workflows/pages.yml` publica este
-  directorio en cada push que lo toque. Una sola vez, en el repo:
-  *Settings -> Pages -> Build and deployment -> Source: **GitHub Actions***.
-  Queda en `https://<usuario>.github.io/land2vec/`.
+- **GitHub Pages** (deploy desde branch, sin Actions):
+  *Settings -> Pages -> Build and deployment -> Source: **Deploy from a branch**,
+  Branch: **main** / **/docs***. El `.nojekyll` de `docs/` hace que se sirva tal
+  cual. Cada push a `main` que toque `docs/` actualiza el sitio.
+  Queda en **`https://<usuario>.github.io/land2vec/typology/`**.
