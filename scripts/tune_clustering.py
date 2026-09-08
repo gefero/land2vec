@@ -29,20 +29,28 @@ Smoke test rápido antes de un barrido completo:
 import argparse
 import dataclasses
 import json
+import sys
 import time
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-import torch
-import matplotlib.pyplot as plt
-from scipy.cluster.hierarchy import dendrogram
+ROOT = Path(__file__).resolve().parent.parent
+# land2vec vive en src/; corré este script directo desde el repo, sin `pip install`
+# ni PYTHONPATH (misma convención que la celda bootstrap de los notebooks, ver
+# commit f4f4700). Si además hiciste `pip install -e .`, esto es inocuo.
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
 
-from land2vec import cluster as C
-from land2vec.utils import load_config, load_model
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import torch  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+from scipy.cluster.hierarchy import dendrogram  # noqa: E402
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-IMGS_DIR = Path(__file__).resolve().parent.parent / "imgs"
+from land2vec import cluster as C  # noqa: E402
+from land2vec.utils import load_config, load_model  # noqa: E402
+
+DATA_DIR = ROOT / "data"
+IMGS_DIR = ROOT / "imgs"
 
 # La banda alta (>20) existe para poder comparar KMeans/GMM/jerárquico contra el
 # k efectivo de HDBSCAN (que llega a ~120 con min_cluster_size chico) -- sin ella

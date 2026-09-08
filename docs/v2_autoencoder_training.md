@@ -625,6 +625,107 @@ por clase dominante, el plano separa grupos con bastante claridad;
 coloreado por zona se mezcla mucho más -- consistente con el probing
 (clase dominante ~100% de accuracy, ecorregión ~80%).
 
+### 7.5 Interpretación de las tipologías (batería estilo TraMineR)
+
+*Módulos: `land2vec.typology` (descriptivo) + `land2vec.seqdist` (disimilitud
+entre secuencias). Productor: `scripts/describe_clusters.py`. Notebook:
+`notebooks/cluster_evaluation.ipynb` §5 (consume, no produce) +
+`docs/typology/index.html` (navegador estático, publicable en GitHub Pages con
+`.github/workflows/pages.yml` -- ver `docs/typology/README.md`).*
+
+7.2 *valida* las seis particiones (silhouette, estabilidad, fidelidad del
+prototipo); nada de eso *lee* los clusters. `scripts/tune_clustering.py --select`
+deja 118+120+31+40+17+18 = **344 clusters**, cada uno descrito solo por su
+prototipo decodificado, su `prototype_fidelity` y sus vecinos reales más
+cercanos al centroide.
+
+`land2vec.typology` agrega el paso siguiente al clustering en análisis de
+secuencias: describir cada grupo en el espacio de las secuencias mismas, con la
+batería de TraMineR reimplementada sobre las matrices `(n, 23)` de tokens de
+cada cluster (todo O(n·T); la disimilitud entre pares va aparte, en
+`land2vec.seqdist`, más abajo):
+
+- **cronograma** (`seqdplot`): proporción de cada estado por año -- el gráfico
+  ancla, el que muestra cuándo y hacia qué se dan las transiciones;
+- **secuencia modal** (`seqmsplot`), libre de modelo -- se compara posición a
+  posición con el prototipo decodificado; una discrepancia sistemática sería un
+  hallazgo sobre el decoder, no sobre el clustering (`modal_vs_proto` en el CSV);
+- **entropía transversal** (`seqHtplot`), **tiempo medio por estado**
+  (`seqmtplot`), **tasas de transición** (`seqtrate`);
+- **secuencias distintas más frecuentes** (`seqfplot`) y su cobertura -- responde
+  directo la pregunta abierta de 7.2 (¿GMM `diag` a `k=120` es tipología o tabla
+  de patrones frecuentes?): si la secuencia distinta más frecuente de un cluster
+  ya lo cubre casi entero, es lo segundo;
+- índices longitudinales por secuencia (nº de transiciones, índice de
+  complejidad de Gabadinho, entropía longitudinal, duración de tramos);
+- la suma de la diversidad de Gini por posición, que **es** la distancia de
+  Hamming media entre pares del cluster -- compacidad en el espacio de secuencias
+  sin salir del presupuesto O(n·T).
+
+**Etiquetado automático** (`auto_label`): de la secuencia modal y su cronograma,
+determinista, sale una etiqueta legible --
+`F»A · monotónica · ~2008 · deforestación para agricultura`,
+`A»Sh»A · oscilante · ~2011 · abandono agrícola con arbustización`,
+`Wt · estable · humedal sin cambio neto`. La `forma` (estable / monotónica /
+oscilante / múltiple) sale del DSS de la modal; el año, del salto de mayor
+variación total del cronograma; la glosa, de un diccionario a mano de los pares
+(estado inicial, estado final) del área de estudio (`land2vec.typology.GLOSSES`).
+Convierte los 344 ids numéricos en leyendas de mapa.
+
+**Comparación entre corridas**: los seis `data/clusters_dynamic*.zip` tienen las
+mismas 107.362 filas en el mismo orden, así que el acuerdo entre particiones
+(ARI, NMI) es columna contra columna. Se reporta como **medida primaria** el ARI
+sobre las filas que *ninguna* de las dos corridas dejó como ruido, con la
+cobertura de esa intersección al lado (las fracciones de ruido van de 0% a 24%
+entre corridas -- el ARI no se lee sin ella); y como secundaria, el ARI tratando
+`-1` como una etiqueta más. Es la misma doble lectura del `-1` que la Nota
+metodológica de 7.2. Los diagramas aluviales (`plot_alluvial`) muestran cómo se
+parten los clusters al bajar la granularidad y dónde HDBSCAN y GMM cortan
+distinto; `nesting_table` da, por cluster grueso, cuántos clusters medios lo
+componen y su pureza.
+
+**Disimilitud entre secuencias** (`land2vec.seqdist`): el pool dinámico tiene
+solo **1.128 trayectorias distintas** de 107.362, así que colapsado a ese
+conjunto con pesos (idéntico a operar sobre las 107k filas), toda la maquinaria
+de disimilitud de TraMineR es una matriz 1128x1128 y unos segundos de cómputo.
+`build_distance` ofrece tres métricas sobre secuencias de largo fijo 23 (años
+calendario alineados): `HAM` (Hamming), `DHD` (Hamming dinámico, costo de
+sustitución por frecuencia posicional -- simplificación del DHD de Lesnard), y
+`OM` (Optimal Matching, alineación global con indels; por defecto costos TRATE
+`c(i,j) = 2 - p(i|j) - p(j|i)` e `indel = max(c)/2`). El default de
+`describe_clusters.py` es `OM`; los indels reintroducen desalineación temporal,
+informativa acá, así que `DHD` es una alternativa razonable
+(`--seqdist-method dhd`). Con esa matriz:
+
+- **pseudo-R² de discrepancia** (`pseudo_r2`, equivalente a `TraMineR::dissassoc`):
+  `1 - SS_within/SS_total` con la suma de cuadrados de discrepancia ponderada de
+  Studer/Ritschard -- qué fracción de la variación real de trayectoria explica
+  cada partición, medida **fuera del espacio `z`** que la produjo. Es la
+  comparación en igualdad de condiciones entre las 6 corridas
+  (`models/cluster_v2/typology_seqdist.csv`, gráfico
+  `imgs/v2_typology_seqdist.png`).
+- **ASW en espacio de secuencias** (`asw`): silueta ponderada por conteo usando
+  la disimilitud entre trayectorias, no la distancia euclídea en `z` --
+  complementa el silhouette de 7.2, que se mide en `z`.
+- **secuencias representativas** (`representative_sequences`, criterio de
+  densidad de vecindad de `TraMineR::seqrplot`): por cluster, un conjunto
+  codicioso de trayectorias reales no redundantes dentro de un radio del 10% de
+  la distancia máxima, con su cobertura y la distancia media al representante más
+  cercano. Van al CSV por cluster y al navegador.
+
+El navegador (`docs/typology/index.html`) muestra además, por cluster, las
+**trayectorias distintas más frecuentes que acumulan ≥80%** de sus miembros --
+la lectura directa de si el cluster es un patrón o una nube.
+
+Salida versionada: `models/cluster_v2/typology{,_medium,_coarse}{,_parametric}.csv`
+(una fila por cluster), `models/cluster_v2/typology_chronograms.npz`,
+`models/cluster_v2/typology_crossrun.csv`,
+`models/cluster_v2/typology_seqdist.csv`, `imgs/v2_typology_atlas_*.png` (un
+atlas de cronogramas por corrida), `imgs/v2_typology_crossrun.png`,
+`imgs/v2_typology_alluvial_*.png`, `imgs/v2_typology_seqdist.png` y
+`docs/typology/typology_browser.json` (payload autocontenido del navegador,
+~1 MB, sin coordenadas por punto).
+
 ## 8. Próximos pasos
 
 1. Calcular una versión de macro F1 restringida a las clases con soporte
