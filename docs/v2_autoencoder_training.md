@@ -630,8 +630,9 @@ coloreado por zona se mezcla mucho más -- consistente con el probing
 *Módulos: `land2vec.typology` (descriptivo) + `land2vec.seqdist` (disimilitud
 entre secuencias). Productor: `scripts/describe_clusters.py`. Notebook:
 `notebooks/cluster_evaluation.ipynb` §5 (consume, no produce) +
-`docs/typology/index.html` (navegador estático, publicable en GitHub Pages --
-deploy desde `main` / `docs/`, con `.nojekyll` -- ver `docs/typology/README.md`).*
+`viz/typology/index.html` (navegador estático, **solo local por ahora** -- sus
+datos traen trayectorias textuales; ver `viz/typology/README.md` y la nota al
+final de esta sección).*
 
 7.2 *valida* las seis particiones (silhouette, estabilidad, fidelidad del
 prototipo); nada de eso *lee* los clusters. `scripts/tune_clustering.py --select`
@@ -713,18 +714,20 @@ informativa acá, así que `DHD` es una alternativa razonable
   la distancia máxima, con su cobertura y la distancia media al representante más
   cercano. Van al CSV por cluster y al navegador.
 
-El navegador (`docs/typology/index.html`) muestra además, por cluster, las
+El navegador (`viz/typology/index.html`) muestra además, por cluster, las
 **trayectorias distintas más frecuentes que acumulan ≥80%** de sus miembros --
 la lectura directa de si el cluster es un patrón o una nube.
 
-Salida versionada: `models/cluster_v2/typology{,_medium,_coarse}{,_parametric}.csv`
-(una fila por cluster), `models/cluster_v2/typology_chronograms.npz`,
-`models/cluster_v2/typology_crossrun.csv`,
-`models/cluster_v2/typology_seqdist.csv`, `imgs/v2_typology_atlas_*.png` (un
-atlas de cronogramas por corrida), `imgs/v2_typology_crossrun.png`,
-`imgs/v2_typology_alluvial_*.png`, `imgs/v2_typology_seqdist.png` y
-`docs/typology/typology_browser.json` (payload autocontenido del navegador,
-~1 MB, sin coordenadas por punto).
+**Qué se versiona y qué no.** Los `imgs/v2_typology_*.png` (atlas de cronogramas,
+heatmaps ARI/NMI, aluviales, scatter pseudo-R²) sí -- son agregados, sin
+trayectorias verbatim. **No** se versionan (gitignoreados, `models/cluster_v2/typology*`
+y `viz/typology/typology_browser.json`): los CSV por cluster y el payload del
+navegador **traen trayectorias de uso del suelo textuales con sus conteos** --
+p. ej. el JSON incluye ~566 de las 1.128 trayectorias dinámicas distintas,
+verbatim, con frecuencia por cluster y zona dominante (sin coordenadas). Eso es
+más que "solo agregados", así que por ahora se genera y se mira en local
+(`python -m http.server -d viz/typology`); publicarlo requeriría recortar
+`top_seqs_80`/`representantes`/`vecinos` a prototipos, o cifrar el payload.
 
 ## 8. Próximos pasos
 

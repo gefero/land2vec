@@ -3,7 +3,7 @@
 `docs/v2_autoencoder_training.md` §7.2 / §7.5).
 
 Es el **productor**: `notebooks/cluster_evaluation.ipynb` §5 y el navegador
-`docs/typology/index.html` consumen su salida y no recalculan nada. El trabajo
+`viz/typology/index.html` consumen su salida y no recalculan nada. El trabajo
 está en dos módulos:
 
 - `land2vec.typology` -- batería descriptiva estilo TraMineR sobre las secuencias
@@ -24,12 +24,13 @@ Prerrequisitos (los deja `tune_clustering.py --select`):
     models/cluster_v2/chosen{,_medium,_coarse}{,_parametric}.json
     data/clusters_dynamic{,_medium,_coarse}{,_parametric}.zip
 
-Escribe:
+Escribe (los `models/cluster_v2/typology*` y el JSON del navegador NO se
+versionan -- gitignoreados; contienen trayectorias textuales, no solo agregados):
     models/cluster_v2/typology{suffix}.csv        una fila por cluster (344 en total)
     models/cluster_v2/typology_chronograms.npz    tensores (k, 23, 11) por corrida
     models/cluster_v2/typology_crossrun.csv       ARI/NMI/cobertura entre corridas
     models/cluster_v2/typology_seqdist.csv        pseudo-R² / ASW por corrida (OM)
-    docs/typology/typology_browser.json           payload del navegador (GitHub Pages)
+    viz/typology/typology_browser.json            payload del navegador (local)
     imgs/v2_typology_atlas_{slug}.png             un atlas de cronogramas por corrida
     imgs/v2_typology_crossrun.png                 heatmaps ARI/NMI
     imgs/v2_typology_alluvial_{a}__{b}.png        diagramas aluviales entre corridas
@@ -61,7 +62,7 @@ from land2vec.utils import load_config, load_model  # noqa: E402
 
 DATA_DIR = ROOT / "data"
 IMGS_DIR = ROOT / "imgs"
-PAGES_DIR = ROOT / "docs" / "typology"
+VIZ_DIR = ROOT / "viz" / "typology"
 
 # nombre legible -> sufijo de archivo (combina granularidad y familia), igual que
 # LEVEL_SPECS en la celda 7 del notebook.
@@ -343,7 +344,7 @@ def compare_runs(specs: list[tuple[str, str]], out_dir: Path) -> None:
 
 
 def write_browser_json(run_infos: list[dict], seqdist_method: str | None) -> None:
-    PAGES_DIR.mkdir(parents=True, exist_ok=True)
+    VIZ_DIR.mkdir(parents=True, exist_ok=True)
     browser = {
         "generated_from": "scripts/describe_clusters.py",
         "state_colors": TY.STATE_COLORS,
@@ -356,7 +357,7 @@ def write_browser_json(run_infos: list[dict], seqdist_method: str | None) -> Non
             for ri in run_infos
         ],
     }
-    out = PAGES_DIR / "typology_browser.json"
+    out = VIZ_DIR / "typology_browser.json"
     out.write_text(json.dumps(browser, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"\n{out.relative_to(ROOT)}: {out.stat().st_size / 1e6:.2f} MB")
 

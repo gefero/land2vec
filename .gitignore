@@ -218,3 +218,9 @@ __marimo__/
 .streamlit/secrets.toml
 
 data/id_seqs_text_2000_2022_chaco_santiago_frontier.csv
+
+# Salidas de la tipología (scripts/describe_clusters.py). Contienen trayectorias
+# textuales + conteos, no solo agregados -- local por ahora, no se versionan ni
+# se publican. Ver viz/typology/README.md.
+viz/typology/typology_browser.json
+models/cluster_v2/typology*

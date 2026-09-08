@@ -443,16 +443,16 @@ de probing, PCA). Resumen:
   análisis.
 - **Interpretación de las tipologías** (`land2vec.typology` + `land2vec.seqdist`,
   `scripts/describe_clusters.py`, notebook §5 + navegador estático
-  `docs/typology/index.html`): batería descriptiva estilo TraMineR sobre las
+  `viz/typology/index.html`): batería descriptiva estilo TraMineR sobre las
   secuencias de cada uno de los 344 clusters -- cronograma, secuencia modal,
   tasas de transición, índices de complejidad -- más un etiquetado automático
   legible (`F»A · monotónica · ~2008 · deforestación para agricultura`), la
   comparación de acuerdo (ARI/NMI) entre las 6 particiones, y sobre las 1.128
   trayectorias distintas: disimilitud entre secuencias (Optimal Matching / DHD /
   Hamming), pseudo-R² de discrepancia, ASW en espacio de secuencias y secuencias
-  representativas (`seqrplot`). El navegador se publica en GitHub Pages
-  (deploy desde `main` / `docs/`, ver `docs/typology/README.md`). Ver
-  `docs/v2_autoencoder_training.md` §7.5.
+  representativas (`seqrplot`). El navegador y sus datos son **solo locales por
+  ahora** (`typology_browser.json` trae trayectorias textuales, no se versiona --
+  ver `viz/typology/README.md`). Detalle: `docs/v2_autoencoder_training.md` §7.5.
 - **Próximo paso**: macro F1 restringido a clases con soporte por
   subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
 
