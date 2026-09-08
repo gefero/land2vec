@@ -411,6 +411,11 @@ de probing, PCA). Resumen:
   representativas (`seqrplot`). El navegador y sus datos son **solo locales por
   ahora** (`typology_browser.json` trae trayectorias textuales, no se versiona --
   ver `viz/typology/README.md`). Detalle: `docs/v2_autoencoder_training.md` §7.5.
+
+  ```bash
+  python scripts/describe_clusters.py         # genera viz/typology/typology_browser.json (local, gitignoreado)
+  python -m http.server -d viz/typology 8000  # -> http://localhost:8000
+  ```
 - **Próximo paso**: macro F1 restringido a clases con soporte por
   subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
 
