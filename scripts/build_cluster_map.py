@@ -34,7 +34,9 @@ Opcional, para etiquetas legibles en la leyenda (lo deja
 Escribe (gitignoreado -- contiene coordenadas por parcela, ver
 viz/clusters/README.md):
     viz/clusters/data/index.json           manifiesto (corridas, zonas, paletas)
-    viz/clusters/data/{set}{suffix}.json   puntos por zona y por cluster
+    viz/clusters/data/{set}{suffix}.json   puntos (lat,lon,seqIdx) por zona y
+                                           cluster + `seqs` (trayectorias crudas
+                                           deduplicadas, para el popup por píxel)
     viz/clusters/data/constants_{zona}.png  raster de fondo: píxeles cuya
                                             trayectoria 2000-2022 no cambia,
                                             coloreados por su único estado
@@ -136,16 +138,46 @@ STATE_COLORS = {
 # cada par (inicio, fin) viven en src/land2vec/typology.py (GLOSSES).
 
 PROCESSES = {
-    "deforestacion":        {"label": "Deforestación (F→agro/pastizal)",           "h": 29},
-    "degradacion_forestal": {"label": "Degradación forestal (F→arbustal/esparso)", "h": 52},
-    "expansion_agricola":   {"label": "Expansión agrícola (→A)",                   "h": 74},
-    "perdida_vegetacion":   {"label": "Pérdida de vegetación / aridización",       "h": 106},
-    "revegetacion":         {"label": "Revegetación de suelo árido",               "h": 130},
-    "regeneracion_bosque":  {"label": "Regeneración de bosque (→F)",               "h": 152},
-    "dinamica_hidrica":     {"label": "Dinámica de agua / humedal",               "h": 240},
-    "urbanizacion":         {"label": "Urbanización (→U)",                         "h": 330},
-    "oscilante":            {"label": "Oscilante / múltiple",                      "h": 300, "c_scale": 0.5},
-    "otro":                 {"label": "Otro",                                      "h": 0,   "c_scale": 0.0},
+    "deforestacion": {
+        "label": "Deforestación — pérdida de bosque",
+        "gloss": "la trayectoria arranca en bosque (F→agricultura/pastizal); el impacto que la define es el bosque perdido, no en qué termina",
+        "h": 29},
+    "degradacion_forestal": {
+        "label": "Degradación forestal (F→arbustal/esparso)",
+        "gloss": "el bosque no desaparece del todo pero se abre: pasa a arbustal, cobertura esparsa o suelo desnudo",
+        "h": 52},
+    "expansion_agricola": {
+        "label": "Expansión agrícola (sobre pastizal/estepa)",
+        "gloss": "termina en agricultura y NO venía de bosque (pastizal/arbustal/esparso/suelo→A): avance de la frontera agrícola sin pérdida forestal",
+        "h": 74},
+    "perdida_vegetacion": {
+        "label": "Pérdida de vegetación / aridización",
+        "gloss": "pastizal o arbustal que pasa a suelo desnudo o cobertura esparsa (desertificación, sobrepastoreo)",
+        "h": 106},
+    "revegetacion": {
+        "label": "Revegetación de suelo árido",
+        "gloss": "suelo desnudo o esparso que gana cobertura (pasa a esparso, pastizal o arbustal)",
+        "h": 130},
+    "regeneracion_bosque": {
+        "label": "Regeneración de bosque (→F)",
+        "gloss": "cualquier cobertura no forestal que termina en bosque: rebrote, forestación, avance del monte",
+        "h": 152},
+    "dinamica_hidrica": {
+        "label": "Dinámica de agua / humedal",
+        "gloss": "agua o humedal en el inicio o el fin: anegamiento, desecación, avance/retroceso de cuerpos de agua",
+        "h": 240},
+    "urbanizacion": {
+        "label": "Urbanización (→U)",
+        "gloss": "cualquier cobertura que termina en suelo urbano",
+        "h": 330},
+    "oscilante": {
+        "label": "Oscilante / múltiple",
+        "gloss": "la trayectoria vuelve a su estado inicial o pasa por varios estados sin una dirección clara",
+        "h": 300, "c_scale": 0.5},
+    "otro": {
+        "label": "Otro",
+        "gloss": "transiciones que no caen en ninguna de las categorías anteriores",
+        "h": 0, "c_scale": 0.0},
 }
 
 _RAMP_L = (0.80, 0.50)   # OKLab L: cambio reciente -> cambio viejo
@@ -395,6 +427,15 @@ def load_zone_coords(zone: str, data_dir: Path) -> dict[str, tuple[float, float]
     return out
 
 
+def load_zone_seqs(zone: str, data_dir: Path) -> dict[str, str]:
+    """ID (str) -> secuencia de tokens cruda 'F-F-...-A' para una zona
+    (data/id_seqs_text_2000_2022_<zone>.zip). {} si falta el archivo."""
+    path = data_dir / f"id_seqs_text_2000_2022_{zone}.zip"
+    if not path.exists():
+        return {}
+    return {row["ID"]: row["seqs"] for row in read_zip_csv(path)}
+
+
 def load_typology_labels() -> dict[str, dict[int, dict]]:
     """suffix -> {cluster_id -> {etiqueta, glosa, forma, anio_cambio, inicio, fin,
     proceso, color}}. Vacío si no está viz/typology/typology_browser.json.
@@ -444,6 +485,7 @@ def build_set(
     set_name: str,
     suffix: str,
     coords_cache: dict[str, dict[str, tuple[float, float]]],
+    seqs_cache: dict[str, dict[str, str]],
     data_dir: Path,
     precision: int,
 ) -> dict | None:
@@ -454,6 +496,8 @@ def build_set(
 
     zones: dict[str, dict] = {}
     clusters_present: set[int] = set()
+    seq_index: dict[str, int] = {}   # secuencia cruda -> índice en built["seqs"]
+    seqs: list[str] = []
     n_points = 0
     n_missing = 0
 
@@ -468,9 +512,17 @@ def build_set(
             continue
         lat, lon = round(coord[0], precision), round(coord[1], precision)
 
+        if zone not in seqs_cache:
+            seqs_cache[zone] = load_zone_seqs(zone, data_dir)
+        seq = seqs_cache[zone].get(row["ID"], "")
+        si = seq_index.get(seq)
+        if si is None:
+            si = seq_index[seq] = len(seqs)
+            seqs.append(seq)
+
         z = zones.setdefault(zone, {"points": {}, "min_lat": lat, "max_lat": lat,
                                     "min_lon": lon, "max_lon": lon})
-        z["points"].setdefault(str(cid), []).extend((lat, lon))
+        z["points"].setdefault(str(cid), []).extend((lat, lon, si))
         z["min_lat"] = min(z["min_lat"], lat)
         z["max_lat"] = max(z["max_lat"], lat)
         z["min_lon"] = min(z["min_lon"], lon)
@@ -481,8 +533,8 @@ def build_set(
     for zone, z in zones.items():
         z["bounds"] = [[z.pop("min_lat"), z.pop("min_lon")],
                        [z.pop("max_lat"), z.pop("max_lon")]]
-        # cuentas por cluster, para la leyenda ordenada por tamaño
-        z["counts"] = {cid: len(pts) // 2 for cid, pts in z["points"].items()}
+        # cuentas por cluster (tripletes lat,lon,seqIdx), para la leyenda por tamaño
+        z["counts"] = {cid: len(pts) // 3 for cid, pts in z["points"].items()}
 
     if n_missing:
         print(f"  aviso: {n_missing:,} filas sin coordenada (ID no encontrado)")
@@ -493,6 +545,7 @@ def build_set(
         "name": f"{SUFFIXES[suffix]} · {SET_LABELS[set_name]}",
         "n_points": n_points,
         "clusters_present": sorted(clusters_present),
+        "seqs": seqs,
         "zones": zones,
     }
 
@@ -562,6 +615,7 @@ def main() -> None:
         print(f"nota: {TYPOLOGY_JSON.relative_to(ROOT)} no está; leyenda sin etiquetas automáticas")
 
     coords_cache: dict[str, dict[str, tuple[float, float]]] = {}
+    seqs_cache: dict[str, dict[str, str]] = {}
     runs: list[dict] = []
     zone_geo: dict[str, dict] = {}
 
@@ -574,7 +628,8 @@ def main() -> None:
             "sets": {},
         }
         for set_name in SETS:
-            built = build_set(set_name, suffix, coords_cache, args.data_dir, args.precision)
+            built = build_set(set_name, suffix, coords_cache, seqs_cache,
+                              args.data_dir, args.precision)
             if built is None:
                 continue
             out_path = args.out_dir / f"{set_name}{suffix}.json"
@@ -613,7 +668,7 @@ def main() -> None:
         "set_labels": SET_LABELS,
         "palette": PALETTE,
         "processes": {
-            k: {"label": v["label"], "color": process_color(k, 0.5)}
+            k: {"label": v["label"], "gloss": v["gloss"], "color": process_color(k, 0.5)}
             for k, v in PROCESSES.items()
         },
         "state_colors": STATE_COLORS,

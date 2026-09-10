@@ -480,27 +480,47 @@ servirlo por HTTP (el comando de arriba).
   mostrar u ocultar el `−1`, y un toggle **`fondo: trayectorias constantes`**
   (con su propio slider de opacidad).
 - **Color por proceso** (modo por defecto): cada cluster se agrupa en un
-  **proceso** conceptual (deforestación, degradación forestal, expansión
-  agrícola, pérdida de vegetación / aridización, revegetación, regeneración de
-  bosque, dinámica de agua/humedal, urbanización, oscilante, otro) según su
-  secuencia modal `inicio»fin`, y se pinta con el **hue** de ese proceso (rojo =
-  pérdida de bosque … verde = regeneración … azul = agua … magenta = urbano). La
-  **luminosidad y el croma** codifican la antigüedad del cambio (`anio_cambio`):
-  cambio reciente → claro y pálido, cambio viejo → oscuro y saturado. Los colores
-  se generan en **OKLCh** para que la rampa temporal de cada proceso tenga pasos
-  perceptualmente parejos (se valida con `scripts/check_cluster_palette.py`
-  contra la métrica de <https://color-analyzer.streamlit.app/>). La clasificación
-  es determinista (`classify_process` en `build_cluster_map.py`, derivada de
-  `modal_seq` + `forma` de `viz/typology/typology_browser.json`). El modo
-  `cluster` mantiene la paleta cualitativa cicleada por id (útil para identidad,
-  no interpretable).
+  **proceso** conceptual según su secuencia modal `inicio»fin`, y se pinta con el
+  **hue** de ese proceso. La **luminosidad y el croma** codifican la antigüedad
+  del cambio (`anio_cambio`): cambio reciente → claro y pálido, cambio viejo →
+  oscuro y saturado. Los colores se generan en **OKLCh** para que la rampa
+  temporal de cada proceso tenga pasos perceptualmente parejos (se valida con
+  `scripts/check_cluster_palette.py` contra la métrica de
+  <https://color-analyzer.streamlit.app/>). La clasificación es determinista
+  (`classify_process` en `build_cluster_map.py`, derivada de `modal_seq` +
+  `forma` de `viz/typology/typology_browser.json`). Los 10 procesos:
+
+  | proceso | qué agrupa |
+  |---|---|
+  | **Deforestación — pérdida de bosque** | arranca en bosque (F→agricultura/pastizal); lo que la define es el bosque perdido |
+  | **Degradación forestal** | el bosque se abre sin desaparecer: F→arbustal/esparso/suelo desnudo |
+  | **Expansión agrícola (sobre pastizal/estepa)** | termina en cultivo y **no** venía de bosque: avance de la frontera agrícola sin pérdida forestal |
+  | **Pérdida de vegetación / aridización** | pastizal o arbustal → suelo desnudo / esparso (desertificación, sobrepastoreo) |
+  | **Revegetación de suelo árido** | suelo desnudo o esparso que gana cobertura |
+  | **Regeneración de bosque** | cualquier cobertura no forestal que termina en bosque |
+  | **Dinámica de agua / humedal** | agua o humedal en el inicio o el fin (anegamiento, desecación) |
+  | **Urbanización** | cualquier cobertura que termina en suelo urbano |
+  | **Oscilante / múltiple** | vuelve al estado inicial o pasa por varios sin dirección clara |
+  | **Otro** | el resto |
+
+  (Deforestación y expansión agrícola se distinguen por el **origen**: la primera
+  destruye bosque, la segunda avanza sobre pastizal/estepa. El caso F→A es
+  deforestación.) El modo `cluster` mantiene la paleta cualitativa cicleada por
+  id (útil para identidad, no interpretable).
+- **Click en un píxel**: abre un popup con su trayectoria cruda de 23 años
+  (`F-F-…-A-A`), su forma colapsada (`F»A`), la etiqueta del cluster y el proceso.
+  Las secuencias van deduplicadas en `{set}{suffix}.json` (`seqs`), y cada punto
+  guarda `(lat, lon, seqIdx)`.
 - **Leyenda**: en modo `proceso`, agrupada por proceso (cabecera con el color
-  base + subtotal, filas de clusters debajo con su color y etiqueta automática
-  `F»A · monotónica · ~2008 · deforestación para agricultura`); clic en la
-  cabecera aísla el proceso entero, clic en una fila aísla ese cluster. En modo
-  `cluster`, lista plana ordenada por tamaño. "ver todos" restablece. La barra de
-  estado y los porcentajes son relativos a lo que se ve (zona, con o sin `−1`),
-  no al total de la corrida.
+  base + subtotal + la glosa del proceso al pasar el mouse, filas de clusters
+  debajo con su color y etiqueta automática `F»A · monotónica · ~2008 ·
+  deforestación para agricultura`); clic en la cabecera aísla el proceso entero,
+  clic en una fila aísla ese cluster. En modo `cluster`, lista plana ordenada por
+  tamaño. "ver todos" restablece. La barra de estado y los porcentajes son
+  relativos a lo que se ve (zona, con o sin `−1`), no al total de la corrida.
+- **Barra lateral**: se arrastra el borde derecho para cambiarle el ancho (se
+  recuerda en `localStorage`). El header y el pie de los export llevan el logo de
+  factor~data.
 - **Fondo de trayectorias constantes**: los píxeles cuya cobertura **no cambió**
   en 2000–2022 (bosque intacto, agua permanente, cultivo estable…) son el ~97% del
   territorio y no se dibujan como puntos. El toggle los muestra como un raster de

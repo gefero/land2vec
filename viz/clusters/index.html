@@ -35,6 +35,7 @@
     padding: 10px 16px; border-bottom: 1px solid var(--border);
     background: var(--surface); display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
   }
+  header .brand { align-self: center; }
   header h1 { font-size: 15px; }
   header .sub { color: var(--muted); font-size: 12px; }
   header .status { margin-left: auto; font-size: 11.5px; color: var(--faint); }
@@ -78,6 +79,7 @@
   .exportbar .btns button.alt { background: var(--surface); color: var(--accent); border: 1px solid var(--accent); }
   .hint { font-size: 11px; color: var(--faint); }
 
+  [hidden] { display: none !important; }
   .legend { display: flex; flex-direction: column; gap: 2px; }
   .legend .lh { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
   .legend .lh h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
@@ -108,18 +110,34 @@
   .tooltip b { color: var(--accent); }
   .tooltip .z { color: var(--faint); }
 
+  .pxpop .hd { font-size: 12px; }
+  .pxpop .hd b { color: var(--accent); }
+  .pxpop .pr { color: var(--faint); font-size: 11px; margin-top: 2px; }
+  .pxpop .dss { font-size: 12.5px; font-weight: 600; margin-top: 5px; }
+  .pxpop .raw { font-size: 10.5px; color: var(--muted); margin-top: 2px; word-break: break-all; }
+
   .leaflet-cluster-canvas { pointer-events: none; }
   .leaflet-image-layer { image-rendering: pixelated; image-rendering: crisp-edges; }
 
+  #resizer {
+    width: 6px; flex: none; cursor: col-resize; background: var(--border);
+    transition: background .12s;
+  }
+  #resizer:hover, #resizer.drag { background: var(--accent); }
+
+  header .brand { height: 26px; width: auto; display: block; }
+
   @media (max-width: 720px) {
     .app { flex-direction: column; }
-    .panel { width: auto; max-height: 44vh; border-right: 0; border-bottom: 1px solid var(--border); }
+    #resizer { display: none; }
+    .panel { width: auto !important; max-height: 44vh; border-right: 0; border-bottom: 1px solid var(--border); }
   }
 </style>
 </head>
 <body>
 
 <header>
+  <img class="brand" src="factordata-logo.png" alt="factor~data">
   <h1>Mapa de clusterizaciones <span class="mono" style="font-weight:400;color:var(--muted)">land2vec v2</span></h1>
   <span class="sub">7 zonas out-of-domain &middot; trayectorias de uso del suelo 2000&ndash;2022</span>
   <span class="status" id="status">cargando&hellip;</span>
@@ -215,6 +233,7 @@
     </div>
   </aside>
 
+  <div id="resizer" title="arrastrar para cambiar el ancho"></div>
   <div id="map"></div>
 </div>
 
@@ -260,6 +279,39 @@ let current = null;              // { file, data }  del run+set activo
 
 const $ = (s) => document.querySelector(s);
 const statusEl = $("#status");
+
+// logo para el pie del export (precargado; mismo origen -> no ensucia el canvas)
+const fdLogo = new Image();
+fdLogo.src = "factordata-logo.png";
+
+/* ------------------------------------------------------------------ *
+ *  Barra lateral redimensionable
+ * ------------------------------------------------------------------ */
+(function () {
+  const panel = $(".panel"), rez = $("#resizer");
+  try {
+    const w = +localStorage.getItem("l2v_panelW");
+    if (w >= 240 && w <= 640) panel.style.width = w + "px";
+  } catch (e) { /* localStorage no disponible */ }
+  let dragging = false;
+  rez.addEventListener("mousedown", (e) => {
+    dragging = true; rez.classList.add("drag");
+    document.body.style.userSelect = "none"; e.preventDefault();
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const left = $(".app").getBoundingClientRect().left;
+    const w = Math.max(240, Math.min(640, e.clientX - left));
+    panel.style.width = w + "px";
+  });
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false; rez.classList.remove("drag");
+    document.body.style.userSelect = "";
+    map.invalidateSize();
+    try { localStorage.setItem("l2v_panelW", parseInt(panel.style.width, 10)); } catch (e) {}
+  });
+})();
 
 /* ------------------------------------------------------------------ *
  *  Mapa base
@@ -351,12 +403,12 @@ const ClusterCanvas = L.Layer.extend({
         const cid = +cidStr;
         if (!clusterVisible(cid)) continue;
         ctx.fillStyle = colorFor(cid);
-        for (let i = 0; i < flat.length; i += 2) {
+        for (let i = 0; i < flat.length; i += 3) {
           const lat = flat[i], lon = flat[i + 1];
           if (lat < south || lat > north || lon < west || lon > east) continue;
           const p = map.latLngToContainerPoint([lat, lon]);
           ctx.fillRect(p.x - r, p.y - r, d, d);
-          this._drawn.push(p.x, p.y, cid, zid);
+          this._drawn.push(p.x, p.y, cid, zid, flat[i + 2]);
         }
       }
     }
@@ -365,9 +417,9 @@ const ClusterCanvas = L.Layer.extend({
   hitTest(px, py) {
     const a = this._drawn, tol = Math.max(6, (this._lastR || state.size) + 3);
     let best = null, bestD = tol * tol;
-    for (let i = 0; i < a.length; i += 4) {
+    for (let i = 0; i < a.length; i += 5) {
       const dx = a[i] - px, dy = a[i + 1] - py, dd = dx * dx + dy * dy;
-      if (dd < bestD) { bestD = dd; best = { cid: a[i + 2], zone: a[i + 3] }; }
+      if (dd < bestD) { bestD = dd; best = { cid: a[i + 2], zone: a[i + 3], si: a[i + 4] }; }
     }
     return best;
   },
@@ -650,9 +702,10 @@ function buildLegend() {
     const h = document.createElement("button");
     h.className = "legrow grp";
     h.setAttribute("aria-pressed", state.isolatedProc === key);
+    const gloss = (processes[key].gloss ? processes[key].label + " — " + processes[key].gloss : processes[key].label);
     h.innerHTML =
       `<span class="sw" style="background:${processes[key].color}"></span>` +
-      `<span class="tx" title="${esc(processes[key].label)}">${esc(processes[key].label)}</span>` +
+      `<span class="tx" title="${esc(gloss)}">${esc(processes[key].label)}</span>` +
       `<span class="ct mono">${(100 * gn / total).toFixed(1)}%</span>`;
     h.onclick = () => {
       state.isolatedProc = state.isolatedProc === key ? null : key;
@@ -783,6 +836,38 @@ map.getContainer().addEventListener("mousemove", (e) => {
 map.getContainer().addEventListener("mouseleave", () => { tt.style.display = "none"; });
 
 /* ------------------------------------------------------------------ *
+ *  Click en un píxel -> popup con su trayectoria cruda
+ * ------------------------------------------------------------------ */
+function dssText(seq) {
+  const toks = seq.split("-");
+  const out = [];
+  for (const t of toks) if (!out.length || out[out.length - 1] !== t) out.push(t);
+  return out.join("»");
+}
+
+map.on("click", (e) => {
+  if (!current) return;
+  const rect = map.getContainer().getBoundingClientRect();
+  const hit = pointLayer.hitTest(e.originalEvent.clientX - rect.left,
+                                 e.originalEvent.clientY - rect.top);
+  if (!hit) return;
+  const seq = (current.data.seqs || [])[hit.si] || "";
+  const proc = hit.cid === -1 ? null : procLabelFor(hit.cid);
+  const html =
+    `<div class="pxpop">` +
+    `<div class="hd"><b>#${hit.cid}</b> ${esc(labelFor(hit.cid))}</div>` +
+    (proc ? `<div class="pr">${esc(proc)}</div>` : "") +
+    (seq
+      ? `<div class="dss mono">${esc(dssText(seq))}</div>` +
+        `<div class="raw mono">${esc(seq)}</div>`
+      : `<div class="pr">sin secuencia</div>`) +
+    `<div class="pr">${esc(zonesMeta[hit.zone].label)} · 2000&ndash;2022</div>` +
+    `</div>`;
+  L.popup({ maxWidth: 340, className: "px-popup" })
+    .setLatLng(e.latlng).setContent(html).openOn(map);
+});
+
+/* ------------------------------------------------------------------ *
  *  Export: compositing propio (tiles + puntos + pie) en un <canvas>
  * ------------------------------------------------------------------ */
 function fillTemplate(tpl, x, y, z) {
@@ -870,7 +955,7 @@ async function exportView(fmt) {
         const cid = +cidStr;
         if (!clusterVisible(cid)) continue;
         ctx.fillStyle = colorFor(cid);
-        for (let i = 0; i < flat.length; i += 2) {
+        for (let i = 0; i < flat.length; i += 3) {
           const p = map.project([flat[i], flat[i + 1]], tileZoom);
           const x = p.x - originPx.x, y = p.y - originPx.y;
           if (x < -d || y < -d || x > W + d || y > H + d) continue;
@@ -910,6 +995,12 @@ function drawFooter(ctx, W, H, footH, s, attr) {
   ctx.textBaseline = "top";
   const zoneLabel = state.zone === "__all__" ? "7 zonas OOD" : zonesMeta[state.zone].label;
   ctx.fillText(`land2vec — ${current.data.name}`, pad, H + pad);
+
+  // logo factor~data, arriba a la derecha del pie
+  if (fdLogo.complete && fdLogo.naturalWidth) {
+    const lh = 18 * s, lw = lh * (fdLogo.naturalWidth / fdLogo.naturalHeight);
+    ctx.drawImage(fdLogo, W - pad - lw, H + pad, lw, lh);
+  }
   ctx.fillStyle = "#626c58";
   ctx.font = `${11 * s}px "IBM Plex Sans", system-ui, sans-serif`;
   ctx.fillText(`${zoneLabel} · ${scopedTotal().toLocaleString("es-AR")} parcelas · ${attr}`,
