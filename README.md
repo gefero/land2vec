@@ -418,16 +418,8 @@ de probing, PCA). Resumen:
   ```
 - **Mapa espacial de las clusterizaciones** (`scripts/build_cluster_map.py` +
   visor Leaflet `viz/clusters/index.html`): dónde cae cada cluster sobre el mapa
-  real de las 7 zonas OOD. Selector de granularidad × familia × set (`dynamic` =
-  las secuencias de ajuste / `pooled_subsampled` = todo el pool aplicado por
-  centroide más cercano), base OSM o satélite Esri, leyenda con las etiquetas
-  automáticas, y export de la vista a PNG/JPG con pie. Solo local, datos
-  gitignoreados (coordenadas por parcela) -- ver `viz/clusters/README.md`.
-
-  ```bash
-  python scripts/build_cluster_map.py         # genera viz/clusters/data/ (local, gitignoreado)
-  python -m http.server -d viz/clusters 8001  # -> http://localhost:8001
-  ```
+  real de las 7 zonas OOD, con export de la vista a PNG/JPG. Solo local -- ver
+  [§ Visor del mapa de clusters](#visor-del-mapa-de-clusters-vizclusters) más abajo.
 - **Próximo paso**: macro F1 restringido a clases con soporte por
   subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
 
@@ -437,6 +429,85 @@ Extraer embeddings de una zona ya construida, con el modelo final:
 python scripts/extract_embeddings.py --model models/autoencoder_v2 --zone ibera
 # -> data/embeddings_ibera.zip (columnas ID, z0..z7)
 ```
+
+### Visor del mapa de clusters (`viz/clusters/`)
+
+Visor estático (Leaflet vendorizado, sin build, sin CDN) para ver **dónde cae
+cada cluster** de las 6 clusterizaciones de la v2 sobre el mapa real de las 7
+zonas de evaluación out-of-domain. Complementa al navegador de tipologías
+(`viz/typology/`): aquel responde *cómo es* cada cluster (cronograma, secuencia
+modal, índices); éste, *dónde está*.
+
+**Cómo activarlo**
+
+```bash
+python scripts/build_cluster_map.py           # genera viz/clusters/data/*.json (local, gitignoreado)
+python -m http.server -d viz/clusters 8001    # -> http://localhost:8001
+```
+
+`build_cluster_map.py` solo usa la librería estándar (`csv`/`zipfile`/`json`) --
+no necesita pandas ni torch. Cruza `data/clusters_*.zip` (etiqueta de cluster por
+parcela, columnas `ID,zone,cluster`) con `data/lat_long_df_*.zip` (coordenadas,
+`ID,latitude,longitude`) por la clave `(zone, ID)` -- el `ID` es el índice
+posicional *por zona*, no es único entre zonas (ver `land2vec.cluster.
+load_zone_coords`). Salida: un JSON compacto por corrida (puntos aplanados por
+cluster y por zona, ~2 MB) más un `index.json` con el manifiesto (corridas,
+bounds de cada zona, paleta, etiquetas). Flags: `--only <suffix>` procesa una
+sola granularidad/familia, `--precision N` recorta decimales de lat/lon
+(5 ≈ 1 m, 4 ≈ 11 m) para archivos más livianos.
+
+Abierto con `file://` el visor no puede hacer `fetch` de los JSON: hay que
+servirlo por HTTP (el comando de arriba).
+
+**En qué consiste**
+
+- **Corrida**: granularidad (`fina` / `media` / `gruesa`) × familia
+  (`HDBSCAN` / `paramétrico`) -- las 6 celdas de la matriz de
+  `tune_clustering.py --select` (ver `docs/v2_autoencoder_training.md` §7.2).
+- **Set de etiquetas** -- los dos archivos que deja `--select` por celda:
+  - `dinámico · ajuste` (`clusters_dynamic*.zip`): las ~107k secuencias con
+    transición sobre las que se **ajustó** el clustering (in-sample).
+  - `pool · aplicado` (`clusters_pooled_subsampled*.zip`): ~126k parcelas
+    (incluye las constantes submuestreadas al 15%), **asignadas** por centroide
+    más cercano; las que quedan lejos de todo centroide salen como `−1` ("sin
+    tipificar"). Ver docs §7.2, Nota metodológica.
+- **Vista**: selector de zona (con zoom automático a su bounding box), sliders de
+  tamaño y opacidad de punto, y un toggle para mostrar u ocultar el `−1`.
+- **Leyenda**: swatch de color + etiqueta automática (`F»A · monotónica · ~2008 ·
+  deforestación para agricultura`, tomada de `viz/typology/typology_browser.json`
+  si está presente; si no, "cluster N"), ordenada por tamaño dentro de la zona
+  visible. Clic en una fila aísla ese cluster (atenúa el resto); "ver todos"
+  lo restablece. La barra de estado y los porcentajes son relativos a lo que se
+  ve (zona seleccionada, con o sin `−1`), no al total de la corrida.
+
+**Métodos**
+
+- **Capas base**: OpenStreetMap, OSM Humanitarian y **Esri World Imagery**
+  (satélite) con una capa opcional de etiquetas de Esri encima. No hay capa de
+  Google: sus tiles no se pueden embeber fuera de la Google Maps JS API con
+  clave (ToS). Todas las capas se cargan con `crossOrigin` -- requisito para el
+  export.
+- **Capa de puntos**: un `L.Layer` propio que dibuja sobre un `<canvas>` y
+  redibuja en cada `move`/`zoom` (coalescido con `requestAnimationFrame`).
+  `L.circleMarker` no escala a ~100k objetos; un canvas plano sí. Los puntos se
+  pintan agrupados por cluster (una llamada de `fillStyle` por cluster) y se
+  saltan zonas enteras cuyo bounding box no toca la vista.
+- **Exportar vista** (PNG o JPG, escala `1×` o `2×`): sin dependencias, por
+  compositing propio. Se calcula el rango de tiles visibles al zoom
+  correspondiente (`2×` usa un nivel más de detalle), se bajan con
+  `crossOrigin="anonymous"` y se dibujan en un canvas offscreen; encima se
+  redibujan los puntos con `map.project(...)`; y debajo se pinta un pie que arma
+  solo: corrida + set, zona y nº de parcelas, leyenda compacta (hasta 6
+  clusters), barra de escala (métrica, calculada sobre la latitud del centro) y
+  atribución (OSM / Esri). El archivo sale como
+  `land2vec_{set}{suffix}_{zona}_{basemap}.{png,jpg}`.
+
+**Solo local, por ahora**
+
+`viz/clusters/data/` está **gitignoreado**: son coordenadas por parcela cruzadas
+con la etiqueta de cluster, se regeneran en la máquina. Leaflet 1.9.4 va
+vendorizado en `viz/clusters/vendor/` para que el visor funcione offline. Más
+detalle en `viz/clusters/README.md`.
 
 ## Modelos entrenados incluidos
 
