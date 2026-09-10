@@ -224,3 +224,8 @@ data/id_seqs_text_2000_2022_chaco_santiago_frontier.csv
 # se publican. Ver viz/typology/README.md.
 viz/typology/typology_browser.json
 models/cluster_v2/typology*
+
+# Payload del mapa de clusterizaciones (scripts/build_cluster_map.py). Son
+# coordenadas por parcela cruzadas con la etiqueta de cluster -- se regeneran en
+# la máquina, no se versionan. Ver viz/clusters/README.md.
+viz/clusters/data/

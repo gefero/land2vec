@@ -416,6 +416,18 @@ de probing, PCA). Resumen:
   python scripts/describe_clusters.py         # genera viz/typology/typology_browser.json (local, gitignoreado)
   python -m http.server -d viz/typology 8000  # -> http://localhost:8000
   ```
+- **Mapa espacial de las clusterizaciones** (`scripts/build_cluster_map.py` +
+  visor Leaflet `viz/clusters/index.html`): dónde cae cada cluster sobre el mapa
+  real de las 7 zonas OOD. Selector de granularidad × familia × set (`dynamic` =
+  las secuencias de ajuste / `pooled_subsampled` = todo el pool aplicado por
+  centroide más cercano), base OSM o satélite Esri, leyenda con las etiquetas
+  automáticas, y export de la vista a PNG/JPG con pie. Solo local, datos
+  gitignoreados (coordenadas por parcela) -- ver `viz/clusters/README.md`.
+
+  ```bash
+  python scripts/build_cluster_map.py         # genera viz/clusters/data/ (local, gitignoreado)
+  python -m http.server -d viz/clusters 8001  # -> http://localhost:8001
+  ```
 - **Próximo paso**: macro F1 restringido a clases con soporte por
   subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
 

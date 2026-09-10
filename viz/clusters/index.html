@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa de clusterizaciones land2vec</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+  :root {
+    --ground: #f6f7f3;
+    --surface: #ffffff;
+    --surface-2: #eef0e9;
+    --ink: #1b2016;
+    --muted: #626c58;
+    --faint: #8a9179;
+    --border: #dfe3d6;
+    --accent: #40682f;
+    --accent-ink: #ffffff;
+    --shadow: 0 1px 2px rgba(27,32,22,.06), 0 8px 24px rgba(27,32,22,.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    font-size: 13px; line-height: 1.45;
+    display: flex; flex-direction: column;
+  }
+  h1, h2, h3 { margin: 0; font-weight: 600; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  button, select, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  header {
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: var(--surface); display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .status { margin-left: auto; font-size: 11.5px; color: var(--faint); }
+  header .status.err { color: #b3402a; }
+
+  .app { flex: 1; display: flex; min-height: 0; }
+  .panel {
+    width: 306px; flex: none; background: var(--surface); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 16px;
+  }
+  #map { flex: 1; min-width: 0; background: var(--surface-2); }
+
+  .group > .lab {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--faint); margin-bottom: 6px; font-weight: 600;
+  }
+  .seg { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .seg button {
+    flex: 1; background: var(--surface); border: 0; padding: 6px 4px; font-size: 12px;
+    color: var(--muted); border-right: 1px solid var(--border);
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .seg + .seg { margin-top: 6px; }
+
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { color: var(--muted); flex: none; }
+  .row select, .row input[type="range"] { flex: 1; min-width: 0; }
+  .row select {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px;
+  }
+  .row .val { width: 30px; text-align: right; color: var(--ink); font-size: 12px; }
+  .check { display: flex; align-items: center; gap: 7px; color: var(--muted); cursor: pointer; }
+
+  .exportbar { display: flex; flex-direction: column; gap: 8px; }
+  .exportbar .btns { display: flex; gap: 6px; }
+  .exportbar .btns button {
+    flex: 1; background: var(--accent); color: var(--accent-ink); border: 0;
+    border-radius: 7px; padding: 7px 6px; font-weight: 600; font-size: 12px;
+  }
+  .exportbar .btns button.alt { background: var(--surface); color: var(--accent); border: 1px solid var(--accent); }
+  .hint { font-size: 11px; color: var(--faint); }
+
+  .legend { display: flex; flex-direction: column; gap: 2px; }
+  .legend .lh { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+  .legend .lh h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
+  .legend .lh .clear { margin-left: auto; font-size: 11px; color: var(--accent); background: 0; border: 0; padding: 0; }
+  .legend .items { display: flex; flex-direction: column; gap: 1px; max-height: 340px; overflow-y: auto; }
+  .legrow {
+    display: flex; align-items: center; gap: 7px; padding: 3px 4px; border-radius: 5px;
+    background: 0; border: 0; text-align: left; width: 100%; color: var(--ink);
+  }
+  .legrow:hover { background: var(--surface-2); }
+  .legrow[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .legrow .sw { width: 11px; height: 11px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.15); }
+  .legrow .tx { flex: 1; min-width: 0; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legrow .ct { color: var(--faint); font-size: 10.5px; flex: none; }
+  .legrow .cid { color: var(--faint); font-size: 10px; flex: none; width: 20px; text-align: right; }
+
+  .tooltip {
+    position: absolute; z-index: 1000; pointer-events: none; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 11.5px;
+    box-shadow: var(--shadow); max-width: 260px; display: none;
+  }
+  .tooltip b { color: var(--accent); }
+  .tooltip .z { color: var(--faint); }
+
+  .leaflet-cluster-canvas { pointer-events: none; }
+
+  @media (max-width: 720px) {
+    .app { flex-direction: column; }
+    .panel { width: auto; max-height: 44vh; border-right: 0; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Mapa de clusterizaciones <span class="mono" style="font-weight:400;color:var(--muted)">land2vec v2</span></h1>
+  <span class="sub">7 zonas out-of-domain &middot; trayectorias de uso del suelo 2000&ndash;2022</span>
+  <span class="status" id="status">cargando&hellip;</span>
+</header>
+
+<div class="app">
+  <aside class="panel">
+    <div class="group">
+      <div class="lab">Corrida</div>
+      <div class="seg" id="segGran">
+        <button data-v="fine" aria-pressed="true">fina</button>
+        <button data-v="medium">media</button>
+        <button data-v="coarse">gruesa</button>
+      </div>
+      <div class="seg" id="segFam">
+        <button data-v="hdbscan" aria-pressed="true">HDBSCAN</button>
+        <button data-v="parametric">paramétrico</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="lab">Set de etiquetas</div>
+      <div class="seg" id="segSet">
+        <button data-v="dynamic" aria-pressed="true">dinámico &middot; ajuste</button>
+        <button data-v="pooled_subsampled">pool &middot; aplicado</button>
+      </div>
+      <div class="hint" id="setHint"></div>
+    </div>
+
+    <div class="group">
+      <div class="lab">Vista</div>
+      <div class="row">
+        <label for="zoneSel">Zona</label>
+        <select id="zoneSel"><option value="__all__">Todas</option></select>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label for="sizeR">Punto</label>
+        <input type="range" id="sizeR" min="1" max="6" step="0.5" value="2.5">
+        <span class="val" id="sizeV">2.5</span>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label for="opacR">Opacidad</label>
+        <input type="range" id="opacR" min="0.15" max="1" step="0.05" value="0.75">
+        <span class="val" id="opacV">.75</span>
+      </div>
+      <label class="check" style="margin-top:8px">
+        <input type="checkbox" id="showNoise"> mostrar sin tipificar (&minus;1)
+      </label>
+    </div>
+
+    <div class="group exportbar">
+      <div class="lab">Exportar vista</div>
+      <div class="seg" id="segScale">
+        <button data-v="1" aria-pressed="true">1&times;</button>
+        <button data-v="2">2&times; (nítido)</button>
+      </div>
+      <div class="btns">
+        <button id="expPng">PNG</button>
+        <button id="expJpg" class="alt">JPG</button>
+      </div>
+      <div class="hint" id="expHint">incluye pie con leyenda y atribución</div>
+    </div>
+
+    <div class="group legend">
+      <div class="lh">
+        <h3>Clusters</h3>
+        <span id="legCount" class="ct" style="color:var(--faint);font-size:10.5px"></span>
+        <button class="clear" id="legClear" hidden>ver todos</button>
+      </div>
+      <div class="items" id="legItems"></div>
+    </div>
+  </aside>
+
+  <div id="map"></div>
+</div>
+
+<div class="tooltip" id="tt"></div>
+
+<script src="vendor/leaflet.js"></script>
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ *  Estado y constantes
+ * ------------------------------------------------------------------ */
+const DATA_DIR = "data/";
+const NOISE_COLOR = "#c9ccc2";           // -1 "sin tipificar"
+const SUFFIX = {
+  "fine|hdbscan": "", "fine|parametric": "_parametric",
+  "medium|hdbscan": "_medium", "medium|parametric": "_medium_parametric",
+  "coarse|hdbscan": "_coarse", "coarse|parametric": "_coarse_parametric",
+};
+const SET_HINT = {
+  dynamic: "Las ~107k secuencias con transición sobre las que se ajustó el clustering (in-sample).",
+  pooled_subsampled: "Todo el pool (incl. constantes al 15%) asignado por centroide más cercano; los puntos lejos de todo centroide salen como −1.",
+};
+
+const state = {
+  gran: "fine", fam: "hdbscan", set: "dynamic",
+  zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false,
+  scale: 1, isolated: null,
+};
+
+let manifest = null;             // index.json
+let palette = [];
+let zonesMeta = {};              // id -> {label, bounds}
+let labelsByRun = {};            // suffix -> { "<cid>": {etiqueta,...} }
+const fileCache = new Map();     // filename -> parsed json
+let current = null;              // { file, data }  del run+set activo
+
+const $ = (s) => document.querySelector(s);
+const statusEl = $("#status");
+
+/* ------------------------------------------------------------------ *
+ *  Mapa base
+ * ------------------------------------------------------------------ */
+const map = L.map("map", {
+  center: [-32, -60], zoom: 5, zoomControl: true,
+  zoomAnimation: false, markerZoomAnimation: false, preferCanvas: false,
+});
+
+const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const ESRI_ATTR = 'Imagery &copy; Esri, Maxar, Earthstar Geographics';
+
+const bases = {
+  "OpenStreetMap": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, crossOrigin: true, attribution: OSM_ATTR,
+  }),
+  "OSM Humanitarian": L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
+    maxZoom: 19, crossOrigin: true, attribution: OSM_ATTR + ', tiles &copy; HOT',
+  }),
+  "Esri World Imagery": L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19, crossOrigin: true, attribution: ESRI_ATTR,
+  }),
+};
+const esriLabels = L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+  maxZoom: 19, crossOrigin: true, attribution: ESRI_ATTR, pane: "shadowPane",
+});
+
+// plantillas para el compositing del export (paralelas a `bases`)
+const BASE_TEMPLATES = {
+  "OpenStreetMap": { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", attr: "© OpenStreetMap" },
+  "OSM Humanitarian": { url: "https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", attr: "© OpenStreetMap, HOT" },
+  "Esri World Imagery": { url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr: "Imagery © Esri" },
+};
+
+let activeBaseName = "OpenStreetMap";
+bases[activeBaseName].addTo(map);
+L.control.layers(bases, { "Etiquetas (Esri)": esriLabels }, { position: "topright", collapsed: false }).addTo(map);
+map.on("baselayerchange", (e) => { activeBaseName = e.name; });
+
+/* ------------------------------------------------------------------ *
+ *  Capa de puntos sobre <canvas> (rápida para ~100k puntos)
+ * ------------------------------------------------------------------ */
+const ClusterCanvas = L.Layer.extend({
+  onAdd(map) {
+    this._map = map;
+    this._canvas = L.DomUtil.create("canvas", "leaflet-cluster-canvas leaflet-layer");
+    map.getPane("overlayPane").appendChild(this._canvas);
+    this._drawn = [];              // {x,y,cid,zone} del último frame, para el hover
+    map.on("move zoom viewreset resize", this._redraw, this);
+    this._resize();
+    this._redraw();
+  },
+  onRemove(map) {
+    L.DomUtil.remove(this._canvas);
+    map.off("move zoom viewreset resize", this._redraw, this);
+  },
+  _resize() {
+    const s = this._map.getSize();
+    this._canvas.width = s.x; this._canvas.height = s.y;
+  },
+  _redraw() {
+    if (this._raf) return;
+    this._raf = requestAnimationFrame(() => { this._raf = 0; this._draw(); });
+  },
+  _draw() {
+    const map = this._map, cv = this._canvas;
+    if (cv.width !== map.getSize().x || cv.height !== map.getSize().y) this._resize();
+    const tl = map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(cv, tl);
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    this._drawn.length = 0;
+    if (!current) return;
+
+    const r = state.size, d = r * 2;
+    ctx.globalAlpha = state.opacity;
+    const vb = map.getBounds().pad(0.05);
+    const south = vb.getSouth(), north = vb.getNorth(), west = vb.getWest(), east = vb.getEast();
+    const zoneFilter = state.zone === "__all__" ? null : state.zone;
+
+    for (const [zid, zd] of Object.entries(current.data.zones)) {
+      if (zoneFilter && zid !== zoneFilter) continue;
+      const zb = zd.bounds;   // [[s,w],[n,e]] — saltar la zona entera si no toca la vista
+      if (zb && (zb[1][0] < south || zb[0][0] > north || zb[1][1] < west || zb[0][1] > east)) continue;
+      for (const [cidStr, flat] of Object.entries(zd.points)) {
+        const cid = +cidStr;
+        if (cid === -1 && !state.showNoise) continue;
+        if (state.isolated !== null && cid !== state.isolated) continue;
+        ctx.fillStyle = colorFor(cid);
+        for (let i = 0; i < flat.length; i += 2) {
+          const lat = flat[i], lon = flat[i + 1];
+          if (lat < south || lat > north || lon < west || lon > east) continue;
+          const p = map.latLngToContainerPoint([lat, lon]);
+          ctx.fillRect(p.x - r, p.y - r, d, d);
+          this._drawn.push(p.x, p.y, cid, zid);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  },
+  hitTest(px, py) {
+    const a = this._drawn, tol = Math.max(6, state.size + 3);
+    let best = null, bestD = tol * tol;
+    for (let i = 0; i < a.length; i += 4) {
+      const dx = a[i] - px, dy = a[i + 1] - py, dd = dx * dx + dy * dy;
+      if (dd < bestD) { bestD = dd; best = { cid: a[i + 2], zone: a[i + 3] }; }
+    }
+    return best;
+  },
+});
+const pointLayer = new ClusterCanvas().addTo(map);
+
+/* ------------------------------------------------------------------ *
+ *  Colores
+ * ------------------------------------------------------------------ */
+function colorFor(cid) {
+  if (cid === -1) return NOISE_COLOR;
+  return palette[cid % palette.length] || "#888";
+}
+
+/* ------------------------------------------------------------------ *
+ *  Carga de datos
+ * ------------------------------------------------------------------ */
+async function boot() {
+  try {
+    manifest = await fetchJSON(DATA_DIR + "index.json");
+  } catch (e) {
+    statusEl.textContent = "sin datos — corré  python scripts/build_cluster_map.py";
+    statusEl.classList.add("err");
+    if (location.protocol === "file:") {
+      statusEl.textContent += "  (y serví con  python -m http.server -d viz/clusters)";
+    }
+    return;
+  }
+  palette = manifest.palette;
+  for (const z of manifest.zones) {
+    zonesMeta[z.id] = z;
+    const opt = document.createElement("option");
+    opt.value = z.id; opt.textContent = z.label;
+    $("#zoneSel").appendChild(opt);
+  }
+  for (const r of manifest.runs) labelsByRun[r.suffix] = r.labels || {};
+  wireControls();
+  await loadCurrent();
+}
+
+function fetchJSON(url) {
+  return fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))));
+}
+
+function currentFile() {
+  const suffix = SUFFIX[state.gran + "|" + state.fam];
+  return state.set + suffix + ".json";
+}
+
+async function loadCurrent() {
+  const file = currentFile();
+  state.isolated = null;
+  updateLegendClear();
+  if (!fileCache.has(file)) {
+    statusEl.textContent = "cargando " + file + "…";
+    try {
+      fileCache.set(file, await fetchJSON(DATA_DIR + file));
+    } catch (e) {
+      statusEl.textContent = "no pude cargar " + file;
+      statusEl.classList.add("err");
+      return;
+    }
+  }
+  statusEl.classList.remove("err");
+  current = { file, data: fileCache.get(file) };
+  updateStatus();
+  buildLegend();
+  pointLayer._redraw();
+}
+
+function scopedTotal() {
+  // parcelas visibles según el filtro de zona y el toggle de -1 (no el total de la corrida)
+  let t = 0;
+  for (const [cid, n] of aggregateCounts()) {
+    if (cid === -1 && !state.showNoise) continue;
+    if (state.isolated !== null && cid !== state.isolated) continue;
+    t += n;
+  }
+  return t;
+}
+
+function updateStatus() {
+  if (!current) return;
+  const suffix = SUFFIX[state.gran + "|" + state.fam];
+  const run = manifest.runs.find((r) => r.suffix === suffix);
+  const present = run.sets[state.set].clusters_present || [];
+  const nCl = present.filter((c) => c !== -1).length;
+  const noise = present.includes(-1) ? " · con −1" : "";
+  const scope = state.zone === "__all__" ? "" : " en " + zonesMeta[state.zone].label;
+  statusEl.textContent =
+    `${current.data.name} · ${scopedTotal().toLocaleString("es-AR")} parcelas${scope} · ${nCl} clusters${noise}`;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Leyenda
+ * ------------------------------------------------------------------ */
+function aggregateCounts() {
+  const zoneFilter = state.zone === "__all__" ? null : state.zone;
+  const counts = new Map();
+  for (const [zid, zd] of Object.entries(current.data.zones)) {
+    if (zoneFilter && zid !== zoneFilter) continue;
+    for (const [cid, n] of Object.entries(zd.counts)) {
+      counts.set(+cid, (counts.get(+cid) || 0) + n);
+    }
+  }
+  return counts;
+}
+
+function labelFor(cid) {
+  if (cid === -1) return "sin tipificar";
+  const suffix = SUFFIX[state.gran + "|" + state.fam];
+  const l = (labelsByRun[suffix] || {})[cid];
+  return l && l.etiqueta ? l.etiqueta : "cluster " + cid;
+}
+
+function buildLegend() {
+  const counts = aggregateCounts();
+  const rows = [...counts.entries()]
+    .filter(([cid]) => cid !== -1 || state.showNoise)
+    .sort((a, b) => b[1] - a[1]);
+  const total = rows.reduce((a, [, n]) => a + n, 0);   // % relativos a lo que se ve
+  $("#legCount").textContent = `${rows.length} · n=${total.toLocaleString("es-AR")}`;
+  const box = $("#legItems");
+  box.innerHTML = "";
+  for (const [cid, n] of rows) {
+    const b = document.createElement("button");
+    b.className = "legrow";
+    b.setAttribute("aria-pressed", state.isolated === cid);
+    b.innerHTML =
+      `<span class="cid mono">${cid}</span>` +
+      `<span class="sw" style="background:${colorFor(cid)}"></span>` +
+      `<span class="tx" title="${esc(labelFor(cid))}">${esc(labelFor(cid))}</span>` +
+      `<span class="ct mono">${(100 * n / total).toFixed(1)}%</span>`;
+    b.onclick = () => {
+      state.isolated = state.isolated === cid ? null : cid;
+      updateLegendClear();
+      updateStatus();
+      buildLegend();
+      pointLayer._redraw();
+    };
+    box.appendChild(b);
+  }
+}
+
+function updateLegendClear() {
+  $("#legClear").hidden = state.isolated === null;
+}
+$("#legClear").onclick = () => {
+  state.isolated = null; updateLegendClear(); updateStatus(); buildLegend(); pointLayer._redraw();
+};
+
+/* ------------------------------------------------------------------ *
+ *  Controles
+ * ------------------------------------------------------------------ */
+function seg(id, key, after) {
+  const el = $("#" + id);
+  el.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    [...el.children].forEach((b) => b.setAttribute("aria-pressed", b === btn));
+    state[key] = btn.dataset.v;
+    after && after();
+  });
+}
+
+function wireControls() {
+  seg("segGran", "gran", loadCurrent);
+  seg("segFam", "fam", loadCurrent);
+  seg("segSet", "set", () => { $("#setHint").textContent = SET_HINT[state.set]; loadCurrent(); });
+  seg("segScale", "scale", () => { state.scale = +state.scale; });
+  $("#setHint").textContent = SET_HINT[state.set];
+
+  $("#zoneSel").addEventListener("change", (e) => {
+    state.zone = e.target.value;
+    if (state.zone !== "__all__" && zonesMeta[state.zone].bounds) {
+      map.fitBounds(zonesMeta[state.zone].bounds, { padding: [20, 20] });
+    }
+    updateStatus();
+    buildLegend();
+    pointLayer._redraw();
+  });
+
+  const sizeR = $("#sizeR"), opacR = $("#opacR");
+  sizeR.addEventListener("input", () => {
+    state.size = +sizeR.value; $("#sizeV").textContent = sizeR.value; pointLayer._redraw();
+  });
+  opacR.addEventListener("input", () => {
+    state.opacity = +opacR.value;
+    $("#opacV").textContent = (+opacR.value).toFixed(2).replace(/^0/, "");
+    pointLayer._redraw();
+  });
+  $("#showNoise").addEventListener("change", (e) => {
+    state.showNoise = e.target.checked; updateStatus(); buildLegend(); pointLayer._redraw();
+  });
+
+  $("#expPng").onclick = () => exportView("png");
+  $("#expJpg").onclick = () => exportView("jpg");
+
+  // fit inicial: todas las zonas
+  const all = manifest.zones.map((z) => z.bounds).filter(Boolean);
+  if (all.length) {
+    const b = L.latLngBounds(all[0]);
+    all.slice(1).forEach((x) => b.extend(x));
+    map.fitBounds(b, { padding: [30, 30] });
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Hover / tooltip
+ * ------------------------------------------------------------------ */
+const tt = $("#tt");
+let ttRaf = 0;
+map.getContainer().addEventListener("mousemove", (e) => {
+  if (ttRaf) return;
+  ttRaf = requestAnimationFrame(() => {
+    ttRaf = 0;
+    const rect = map.getContainer().getBoundingClientRect();
+    const hit = pointLayer.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (!hit) { tt.style.display = "none"; return; }
+    tt.innerHTML =
+      `<b>#${hit.cid}</b> ${esc(labelFor(hit.cid))}<br><span class="z">${esc(zonesMeta[hit.zone].label)}</span>`;
+    tt.style.display = "block";
+    tt.style.left = (e.clientX - rect.left + 14) + "px";
+    tt.style.top = (e.clientY - rect.top + 14) + "px";
+  });
+});
+map.getContainer().addEventListener("mouseleave", () => { tt.style.display = "none"; });
+
+/* ------------------------------------------------------------------ *
+ *  Export: compositing propio (tiles + puntos + pie) en un <canvas>
+ * ------------------------------------------------------------------ */
+function fillTemplate(tpl, x, y, z) {
+  return tpl.replace("{x}", x).replace("{y}", y).replace("{z}", z).replace("{s}", "a");
+}
+
+function loadImg(url) {
+  return new Promise((resolve) => {
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = url;
+  });
+}
+
+async function exportView(fmt) {
+  if (!current) return;
+  const btnHint = $("#expHint");
+  btnHint.textContent = "componiendo imagen…";
+  try {
+    const s = state.scale;                       // 1 o 2
+    const tileZoom = map.getZoom() + (s - 1);    // s=2 -> un nivel más de detalle
+    const size = map.getSize();
+    const W = size.x * s, H = size.y * s;
+    const nw = map.getBounds().getNorthWest();
+    const originPx = map.project(nw, tileZoom);  // px absolutos en el CRS de tiles
+    const x0 = Math.floor(originPx.x / 256), x1 = Math.floor((originPx.x + W) / 256);
+    const y0 = Math.floor(originPx.y / 256), y1 = Math.floor((originPx.y + H) / 256);
+
+    const out = document.createElement("canvas");
+    const footH = Math.round(78 * s);
+    out.width = W; out.height = H + footH;
+    const ctx = out.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, out.width, out.height);
+
+    // --- tiles base (+ etiquetas Esri si están activas) ---
+    const tpl = BASE_TEMPLATES[activeBaseName];
+    const layers = [tpl.url];
+    let attr = tpl.attr;
+    if (map.hasLayer(esriLabels)) {
+      layers.push("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
+    }
+    for (const layerUrl of layers) {
+      const jobs = [];
+      for (let tx = x0; tx <= x1; tx++) {
+        for (let ty = y0; ty <= y1; ty++) {
+          const px = tx * 256 - originPx.x, py = ty * 256 - originPx.y;
+          jobs.push(loadImg(fillTemplate(layerUrl, tx, ty, tileZoom)).then((im) => {
+            if (im) ctx.drawImage(im, Math.round(px), Math.round(py), 256, 256);
+          }));
+        }
+      }
+      await Promise.all(jobs);
+    }
+
+    // --- puntos ---
+    const r = state.size * s, d = r * 2;
+    ctx.globalAlpha = Math.min(1, state.opacity + 0.1);
+    const zoneFilter = state.zone === "__all__" ? null : state.zone;
+    for (const [zid, zd] of Object.entries(current.data.zones)) {
+      if (zoneFilter && zid !== zoneFilter) continue;
+      for (const [cidStr, flat] of Object.entries(zd.points)) {
+        const cid = +cidStr;
+        if (cid === -1 && !state.showNoise) continue;
+        if (state.isolated !== null && cid !== state.isolated) continue;
+        ctx.fillStyle = colorFor(cid);
+        for (let i = 0; i < flat.length; i += 2) {
+          const p = map.project([flat[i], flat[i + 1]], tileZoom);
+          const x = p.x - originPx.x, y = p.y - originPx.y;
+          if (x < -d || y < -d || x > W + d || y > H + d) continue;
+          ctx.fillRect(x - r, y - r, d, d);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    drawFooter(ctx, W, H, footH, s, attr);
+
+    const type = fmt === "jpg" ? "image/jpeg" : "image/png";
+    const name = `land2vec_${current.file.replace(/\.json$/, "")}_` +
+      `${state.zone === "__all__" ? "todas" : state.zone}_${slug(activeBaseName)}.${fmt}`;
+    out.toBlob((blob) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      btnHint.textContent = "listo: " + name;
+    }, type, fmt === "jpg" ? 0.92 : undefined);
+  } catch (e) {
+    btnHint.textContent = "falló el export: " + e.message;
+  }
+}
+
+function drawFooter(ctx, W, H, footH, s, attr) {
+  const pad = 12 * s;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, H, W, footH);
+  ctx.fillStyle = "#dfe3d6";
+  ctx.fillRect(0, H, W, 1 * s);
+
+  ctx.fillStyle = "#1b2016";
+  ctx.font = `${13 * s}px "IBM Plex Sans", system-ui, sans-serif`;
+  ctx.textBaseline = "top";
+  const zoneLabel = state.zone === "__all__" ? "7 zonas OOD" : zonesMeta[state.zone].label;
+  ctx.fillText(`land2vec — ${current.data.name}`, pad, H + pad);
+  ctx.fillStyle = "#626c58";
+  ctx.font = `${11 * s}px "IBM Plex Sans", system-ui, sans-serif`;
+  ctx.fillText(`${zoneLabel} · ${scopedTotal().toLocaleString("es-AR")} parcelas · ${attr}`,
+    pad, H + pad + 18 * s);
+
+  // leyenda compacta: hasta 6 clusters más grandes
+  const counts = aggregateCounts();
+  const top = [...counts.entries()]
+    .filter(([cid]) => cid !== -1 || state.showNoise)
+    .filter(([cid]) => state.isolated === null || cid === state.isolated)
+    .sort((a, b) => b[1] - a[1]).slice(0, 6);
+  let lx = pad;
+  const ly = H + pad + 40 * s;
+  ctx.font = `${10.5 * s}px "IBM Plex Sans", system-ui, sans-serif`;
+  for (const [cid] of top) {
+    const txt = cid === -1 ? "sin tipificar" : `#${cid} ${labelFor(cid).split(" · ")[0]}`;
+    const w = ctx.measureText(txt).width + 16 * s;
+    if (lx + w > W - pad) break;
+    ctx.fillStyle = colorFor(cid);
+    ctx.fillRect(lx, ly, 9 * s, 9 * s);
+    ctx.fillStyle = "#3a3f33";
+    ctx.fillText(txt, lx + 13 * s, ly - 1 * s);
+    lx += w;
+  }
+
+  // barra de escala (resolución en el CRS de tiles al zoom con el que se compuso)
+  const tileZoom = map.getZoom() + (s - 1);
+  const mPerPx = 156543.03392 * Math.abs(Math.cos(map.getCenter().lat * Math.PI / 180))
+    / Math.pow(2, tileZoom);
+  const targetPx = 90 * s;
+  let meters = mPerPx * targetPx;
+  const pow = Math.pow(10, Math.floor(Math.log10(meters)));
+  meters = (meters / pow >= 5 ? 5 : meters / pow >= 2 ? 2 : 1) * pow;
+  const barPx = meters / mPerPx;
+  const bx = W - pad - barPx, by = H + footH - pad - 4 * s;
+  ctx.strokeStyle = "#1b2016"; ctx.lineWidth = 1.5 * s;
+  ctx.beginPath();
+  ctx.moveTo(bx, by - 5 * s); ctx.lineTo(bx, by); ctx.lineTo(bx + barPx, by); ctx.lineTo(bx + barPx, by - 5 * s);
+  ctx.stroke();
+  ctx.fillStyle = "#1b2016";
+  ctx.font = `${10 * s}px "IBM Plex Sans", system-ui, sans-serif`;
+  ctx.textAlign = "right";
+  ctx.fillText(meters >= 1000 ? (meters / 1000) + " km" : meters + " m", bx + barPx, by - 8 * s);
+  ctx.textAlign = "left";
+}
+
+/* ------------------------------------------------------------------ *
+ *  helpers
+ * ------------------------------------------------------------------ */
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function slug(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+
+boot();
+</script>
+</body>
+</html>
