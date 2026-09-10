@@ -41,24 +41,41 @@ notebooks/      # Notebooks de experimentación ("pruebas") en Google Colab
 
 ## Instalación
 
+Usá `scripts/setup_venv.sh`, que crea el `.venv`, instala `torch` desde el
+canal CUDA correcto (ver abajo), instala el resto y chequea si `torch`
+detecta GPU:
+
+```bash
+bash scripts/setup_venv.sh
+# overrides opcionales:
+PYTHON=python3.12 bash scripts/setup_venv.sh          # otro intérprete
+TORCH_CUDA_CHANNEL=cu128 bash scripts/setup_venv.sh   # otro canal CUDA
+TORCH_CUDA_CHANNEL=cpu bash scripts/setup_venv.sh     # sin GPU
+```
+
+A mano es lo mismo, pero **ojo con el wheel de `torch`**: un
+`pip install -r requirements.txt` a secas trae el default de PyPI
+(actualmente `torch 2.11 +cu130`), que dropeó los kernels de las GPUs
+Pascal/Maxwell/Volta (sm_50-sm_72). Para una GTX 10xx (Pascal, sm_61) hay
+que usar el wheel **cu126**:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install torch==2.11.0 torchvision==0.26.0 \
+    --index-url https://download.pytorch.org/whl/cu126
 pip install -r requirements.txt
 pip install -e .
 ```
 
-O con `scripts/setup_venv.sh`, que hace lo mismo y de paso chequea si
-`torch` detecta GPU:
-
-```bash
-bash scripts/setup_venv.sh
-```
+Si `torch.cuda.is_available()` da `True` pero las ops en GPU fallan con
+`no kernel image is available for execution on the device` (o hay warnings
+de `sm_61 not compatible`), es exactamente este problema: reinstalá `torch`
+desde `cu126`.
 
 Requiere Python 3.11+ (usa `dataclass(slots=True)` y sintaxis de tipos
-moderna) y, para entrenar en GPU, una instalación de PyTorch con soporte
-CUDA (el wheel de `torch` en PyPI ya lo trae si tenés drivers NVIDIA
-compatibles -- no hace falta instalar el CUDA toolkit aparte).
+moderna). No hace falta instalar el CUDA toolkit aparte: el wheel de `torch`
+ya trae las libs CUDA, sólo necesitás drivers NVIDIA compatibles.
 
 `data/landcover_timeseries_2000-2022.nc` (ver más abajo) se versiona con
 [Git LFS](https://git-lfs.com/) por su tamaño (~189MB). Para clonar el repo

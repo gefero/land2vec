@@ -50,6 +50,8 @@ six==1.17.0
 stack-data==0.6.3
 sympy==1.14.0
 threadpoolctl==3.6.0
+# torch/torchvision: instalar vía scripts/setup_venv.sh (canal cu126 para GPUs Pascal).
+# Un `pip install -r requirements.txt` a secas trae el wheel cu130 (sin kernels sm_61).
 torch==2.11.0
 torchvision==0.26.0
 tornado==6.5.5

@@ -26,6 +26,15 @@ echo "Creando entorno en $VENV_DIR con $("$PYTHON" --version) ..."
 source "$VENV_DIR/bin/activate"
 
 pip install --upgrade pip
+
+# torch/torchvision: instalar desde el canal CUDA 12.6 ANTES que requirements.txt.
+# El default de PyPI para torch 2.11 es cu130, que dropeó los kernels Pascal/Maxwell
+# (sm_50-sm_72). GPUs Pascal (p.ej. GTX 10xx, sm_61) sólo andan con el wheel cu126.
+# Override: TORCH_CUDA_CHANNEL=cpu bash scripts/setup_venv.sh  (o cu128, cu130, ...)
+TORCH_CUDA_CHANNEL="${TORCH_CUDA_CHANNEL:-cu126}"
+pip install torch==2.11.0 torchvision==0.26.0 \
+    --index-url "https://download.pytorch.org/whl/${TORCH_CUDA_CHANNEL}"
+
 pip install -r requirements.txt
 pip install -e .
 
