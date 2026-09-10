@@ -509,15 +509,20 @@ servirlo por HTTP (el comando de arriba).
   id (útil para identidad, no interpretable).
 - **Click en un píxel**: abre un popup con su trayectoria cruda de 23 años
   (`F-F-…-A-A`), su forma colapsada (`F»A`), la etiqueta del cluster y el proceso.
-  Las secuencias van deduplicadas en `{set}{suffix}.json` (`seqs`), y cada punto
+  Además **suma esa trayectoria a la selección del mapa**: el primer click deja
+  solo esa, los siguientes se acumulan (los clusters ocultos siguen siendo
+  clickeables). Un botón **`✕ ver todas`** arriba a la izquierda resetea. Las
+  secuencias van deduplicadas en `{set}{suffix}.json` (`seqs`), y cada punto
   guarda `(lat, lon, seqIdx)`.
 - **Leyenda**: en modo `proceso`, agrupada por proceso (cabecera con el color
   base + subtotal + la glosa del proceso al pasar el mouse, filas de clusters
   debajo con su color y etiqueta automática `F»A · monotónica · ~2008 ·
   deforestación para agricultura`); clic en la cabecera aísla el proceso entero,
-  clic en una fila aísla ese cluster. En modo `cluster`, lista plana ordenada por
-  tamaño. "ver todos" restablece. La barra de estado y los porcentajes son
-  relativos a lo que se ve (zona, con o sin `−1`), no al total de la corrida.
+  clic en una fila **agrega o quita** ese cluster de la selección (multi-select,
+  igual que el click en el mapa). En modo `cluster`, lista plana ordenada por
+  tamaño. "ver todos" / `✕ ver todas` restablecen. La barra de estado y los
+  porcentajes son relativos a lo que se ve (zona, selección, con o sin `−1`), no
+  al total de la corrida.
 - **Barra lateral**: se arrastra el borde derecho para cambiarle el ancho (se
   recuerda en `localStorage`). El header y el pie de los export llevan el logo de
   factor~data.

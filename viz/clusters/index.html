@@ -125,6 +125,19 @@
   }
   #resizer:hover, #resizer.drag { background: var(--accent); }
 
+  .sel-reset {
+    background: var(--surface); color: var(--accent); font-weight: 600;
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px;
+    font-size: 12px; box-shadow: var(--shadow); cursor: pointer;
+  }
+  .sel-reset:hover { background: var(--surface-2); }
+
+  .pxbtn {
+    margin-top: 7px; display: block; width: 100%; background: var(--accent);
+    color: var(--accent-ink); border: 0; border-radius: 5px; padding: 5px 6px;
+    font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+
   header .brand { height: 26px; width: auto; display: block; }
 
   @media (max-width: 720px) {
@@ -261,7 +274,7 @@ const SET_HINT = {
 const state = {
   gran: "fine", fam: "hdbscan", set: "dynamic",
   zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false,
-  scale: 1, isolated: null, isolatedProc: null, colorMode: "proceso",
+  scale: 1, selected: new Set(), isolatedProc: null, colorMode: "proceso",
   constBg: false, constOpacity: 0.4,
 };
 
@@ -401,13 +414,15 @@ const ClusterCanvas = L.Layer.extend({
       if (zb && (zb[1][0] < south || zb[0][0] > north || zb[1][1] < west || zb[0][1] > east)) continue;
       for (const [cidStr, flat] of Object.entries(zd.points)) {
         const cid = +cidStr;
-        if (!clusterVisible(cid)) continue;
-        ctx.fillStyle = colorFor(cid);
+        // los ocultos igual se registran en _drawn (para poder clickearlos y
+        // sumarlos a la selección), solo no se dibujan
+        const vis = clusterVisible(cid);
+        if (vis) ctx.fillStyle = colorFor(cid);
         for (let i = 0; i < flat.length; i += 3) {
           const lat = flat[i], lon = flat[i + 1];
           if (lat < south || lat > north || lon < west || lon > east) continue;
           const p = map.latLngToContainerPoint([lat, lon]);
-          ctx.fillRect(p.x - r, p.y - r, d, d);
+          if (vis) ctx.fillRect(p.x - r, p.y - r, d, d);
           this._drawn.push(p.x, p.y, cid, zid, flat[i + 2]);
         }
       }
@@ -425,6 +440,31 @@ const ClusterCanvas = L.Layer.extend({
   },
 });
 const pointLayer = new ClusterCanvas().addTo(map);
+
+/* ------------------------------------------------------------------ *
+ *  Control "ver todas": resetea la selección de trayectorias
+ * ------------------------------------------------------------------ */
+const SelControl = L.Control.extend({
+  onAdd() {
+    const b = L.DomUtil.create("button", "sel-reset");
+    b.type = "button";
+    b.title = "Mostrar todas las trayectorias";
+    L.DomEvent.disableClickPropagation(b);
+    L.DomEvent.on(b, "click", () => clearSelection());
+    this._btn = b;
+    b.hidden = true;
+    return b;
+  },
+});
+const selControl = new SelControl({ position: "topleft" }).addTo(map);
+
+function updateSelControl() {
+  const n = state.selected.size;
+  selControl._btn.hidden = !selectionActive();
+  selControl._btn.textContent = n
+    ? `✕ ver todas · ${n} seleccionada${n > 1 ? "s" : ""}`
+    : "✕ ver todas";
+}
 
 /* ------------------------------------------------------------------ *
  *  Fondo: raster de trayectorias constantes (una imagen por zona)
@@ -468,15 +508,26 @@ function colorFor(cid) {
   return palette[cid % palette.length] || "#888";
 }
 
-// visibilidad de un cluster según los filtros activos (−1, aislar cluster, aislar proceso)
+// visibilidad de un cluster según los filtros activos (−1, selección de
+// trayectorias por click/leyenda, aislar proceso)
 function clusterVisible(cid) {
   if (cid === -1) return state.showNoise;
-  if (state.isolated !== null) return cid === state.isolated;
+  if (state.selected.size) return state.selected.has(cid);
   if (state.isolatedProc !== null) {
     const l = runLabels()[cid];
     return !!l && l.proceso === state.isolatedProc;
   }
   return true;
+}
+
+function selectionActive() {
+  return state.selected.size > 0 || state.isolatedProc !== null;
+}
+
+function clearSelection() {
+  state.selected.clear();
+  state.isolatedProc = null;
+  refreshFromLegend();
 }
 
 const PIXEL_M = 300;          // resolución ESA CCI (src/land2vec/extract.py)
@@ -540,9 +591,10 @@ function currentFile() {
 
 async function loadCurrent() {
   const file = currentFile();
-  state.isolated = null;
+  state.selected.clear();
   state.isolatedProc = null;
   updateLegendClear();
+  updateSelControl();
   if (!fileCache.has(file)) {
     statusEl.textContent = "cargando " + file + "…";
     try {
@@ -610,25 +662,30 @@ function procLabelFor(cid) {
 
 function refreshFromLegend() {
   updateLegendClear();
+  updateSelControl();
   updateStatus();
   buildLegend();
   pointLayer._redraw();
 }
 
+// suma/quita un cluster de la selección de trayectorias
+function toggleSelected(cid) {
+  if (cid === -1) return;
+  state.selected.has(cid) ? state.selected.delete(cid) : state.selected.add(cid);
+  state.isolatedProc = null;
+  refreshFromLegend();
+}
+
 function clusterRow(cid, n, total, sub) {
   const b = document.createElement("button");
   b.className = "legrow" + (sub ? " sub" : "");
-  b.setAttribute("aria-pressed", state.isolated === cid);
+  b.setAttribute("aria-pressed", state.selected.has(cid));
   b.innerHTML =
     `<span class="cid mono">${cid}</span>` +
     `<span class="sw" style="background:${colorFor(cid)}"></span>` +
     `<span class="tx" title="${esc(labelFor(cid))}">${esc(labelFor(cid))}</span>` +
     `<span class="ct mono">${(100 * n / total).toFixed(1)}%</span>`;
-  b.onclick = () => {
-    state.isolated = state.isolated === cid ? null : cid;
-    state.isolatedProc = null;
-    refreshFromLegend();
-  };
+  b.onclick = () => toggleSelected(cid);
   return b;
 }
 
@@ -709,7 +766,7 @@ function buildLegend() {
       `<span class="ct mono">${(100 * gn / total).toFixed(1)}%</span>`;
     h.onclick = () => {
       state.isolatedProc = state.isolatedProc === key ? null : key;
-      state.isolated = null;
+      state.selected.clear();
       refreshFromLegend();
     };
     box.appendChild(h);
@@ -720,11 +777,9 @@ function buildLegend() {
 }
 
 function updateLegendClear() {
-  $("#legClear").hidden = state.isolated === null && state.isolatedProc === null;
+  $("#legClear").hidden = !selectionActive();
 }
-$("#legClear").onclick = () => {
-  state.isolated = null; state.isolatedProc = null; refreshFromLegend();
-};
+$("#legClear").onclick = () => clearSelection();
 
 /* ------------------------------------------------------------------ *
  *  Controles
@@ -747,7 +802,7 @@ function wireControls() {
   seg("segScale", "scale", () => { state.scale = +state.scale; });
   seg("segColor", "colorMode", () => {
     $("#colorHint").hidden = state.colorMode !== "proceso";
-    state.isolated = null; state.isolatedProc = null;
+    state.selected.clear(); state.isolatedProc = null;
     refreshFromLegend();
   });
   $("#setHint").textContent = SET_HINT[state.set];
@@ -822,7 +877,7 @@ map.getContainer().addEventListener("mousemove", (e) => {
     ttRaf = 0;
     const rect = map.getContainer().getBoundingClientRect();
     const hit = pointLayer.hitTest(e.clientX - rect.left, e.clientY - rect.top);
-    if (!hit) { tt.style.display = "none"; return; }
+    if (!hit || !clusterVisible(hit.cid)) { tt.style.display = "none"; return; }
     const proc = hit.cid === -1 ? null : procLabelFor(hit.cid);
     tt.innerHTML =
       `<b>#${hit.cid}</b> ${esc(labelFor(hit.cid))}<br>` +
@@ -851,6 +906,15 @@ map.on("click", (e) => {
   const hit = pointLayer.hitTest(e.originalEvent.clientX - rect.left,
                                  e.originalEvent.clientY - rect.top);
   if (!hit) return;
+
+  // sumar la trayectoria clickeada a la selección del mapa (multi-select)
+  const already = hit.cid !== -1 && state.selected.has(hit.cid);
+  if (hit.cid !== -1 && !already) {
+    state.selected.add(hit.cid);
+    state.isolatedProc = null;
+    refreshFromLegend();
+  }
+
   const seq = (current.data.seqs || [])[hit.si] || "";
   const proc = hit.cid === -1 ? null : procLabelFor(hit.cid);
   const html =
@@ -862,9 +926,20 @@ map.on("click", (e) => {
         `<div class="raw mono">${esc(seq)}</div>`
       : `<div class="pr">sin secuencia</div>`) +
     `<div class="pr">${esc(zonesMeta[hit.zone].label)} · 2000&ndash;2022</div>` +
+    (hit.cid !== -1
+      ? `<button class="pxbtn" data-cid="${hit.cid}">${already ? "quitar del mapa" : "solo esta trayectoria"}</button>`
+      : "") +
     `</div>`;
-  L.popup({ maxWidth: 340, className: "px-popup" })
+  const pop = L.popup({ maxWidth: 340, className: "px-popup" })
     .setLatLng(e.latlng).setContent(html).openOn(map);
+  const btn = pop.getElement() && pop.getElement().querySelector(".pxbtn");
+  if (btn) btn.onclick = () => {
+    if (already) { state.selected.delete(hit.cid); }
+    else { state.selected.clear(); state.selected.add(hit.cid); }
+    state.isolatedProc = null;
+    refreshFromLegend();
+    map.closePopup(pop);
+  };
 });
 
 /* ------------------------------------------------------------------ *

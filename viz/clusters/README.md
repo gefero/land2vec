@@ -40,9 +40,12 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
   `scripts/check_cluster_palette.py`. El modo `cluster` vuelve a la paleta
   cualitativa por id.
 - **Click en un píxel**: popup con su trayectoria cruda de 23 años (`F-F-…-A-A`),
-  la forma colapsada (`F»A`), la etiqueta del cluster y el proceso. Las secuencias
-  van deduplicadas en `{set}{suffix}.json` (clave `seqs`); cada punto guarda
-  `(lat, lon, seqIdx)`.
+  la forma colapsada (`F»A`), la etiqueta del cluster y el proceso. El click
+  **suma esa trayectoria a la selección** (multi-select: el 1er click deja solo
+  esa, los siguientes se acumulan; los clusters ocultos siguen siendo
+  clickeables). Botón `✕ ver todas` arriba a la izquierda para resetear. Las
+  secuencias van deduplicadas en `{set}{suffix}.json` (clave `seqs`); cada punto
+  guarda `(lat, lon, seqIdx)`.
 - **Fondo de trayectorias constantes**: los píxeles cuya cobertura no cambió en
   2000–2022 (el ~97% del territorio, que no se dibuja como puntos) como un raster
   de fondo — un PNG indexado por zona (grilla ESA CCI de 300 m reconstruida,
@@ -53,9 +56,9 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
 - **Base**: OpenStreetMap, OSM Humanitarian o Esri World Imagery (satélite; los
   tiles propios de Google no se pueden embeber fuera de su API con clave).
 - **Leyenda**: en modo `proceso`, agrupada por proceso (cabecera = color base;
-  clic en la cabecera aísla el proceso, clic en una fila aísla el cluster). En
-  modo `cluster`, lista plana. Etiqueta automática de
-  `viz/typology/typology_browser.json` si está.
+  clic en la cabecera aísla el proceso, clic en una fila agrega/quita el cluster
+  de la selección — igual que el click en el mapa). En modo `cluster`, lista
+  plana. Etiqueta automática de `viz/typology/typology_browser.json` si está.
 - **Exportar vista**: PNG o JPG de lo que se ve, con pie (corrida, zona, leyenda
   compacta de procesos/clusters + la fila de estados del fondo si está activo,
   barra de escala, atribución, logo de factor~data). El fondo de constantes se
