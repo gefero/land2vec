@@ -26,6 +26,14 @@ src/land2vec/
   model.py      # GPTDecoder (v1, causal) + TrajectoryAutoencoder (v2, embeddings) + run_epoch
   utils.py      # Guardado/carga de config, modelo y métricas
   extract.py    # Extracción de secuencias por píxel desde el netCDF fuente (ESA CCI)
+  cluster.py    # Pool de trayectorias por zona, submuestreo de constantes, asignación por centroide
+  seqdist.py    # Distancias entre secuencias (Optimal Matching, Hamming)
+  typology.py   # Firma descriptiva y etiqueta automática por cluster (STATE_COLORS, GLOSSES, auto_label)
+scripts/        # tune_clustering, describe_clusters, build_cluster_map, check_cluster_palette,
+                #   plot_process_maps, build_eval_zones, extract_embeddings, train_autoencoder …
+viz/
+  typology/     # Navegador estático de tipologías (cómo es cada cluster)
+  clusters/     # Visor Leaflet del mapa de clusters (dónde cae cada cluster) + factordata-logo
 data/           # Secuencias de entrenamiento y de test (CSV/zip) + netCDF fuente (Git LFS)
 models/         # Checkpoints entrenados (config.json + model.pt + train_data.csv)
 notebooks/      # Notebooks de experimentación ("pruebas") en Google Colab
@@ -446,21 +454,29 @@ modal, índices); éste, *dónde está*.
 **Cómo activarlo**
 
 ```bash
-python scripts/build_cluster_map.py           # genera viz/clusters/data/*.json (local, gitignoreado)
-python -m http.server -d viz/clusters 8001    # -> http://localhost:8001
+python scripts/describe_clusters.py          # (si falta) viz/typology/typology_browser.json — etiquetas y proceso por cluster
+python scripts/build_cluster_map.py          # genera viz/clusters/data/*.{json,png} (local, gitignoreado)
+python -m http.server -d viz/clusters 8001   # -> http://localhost:8001
 ```
 
 `build_cluster_map.py` solo usa la librería estándar (`csv`/`zipfile`/`json`/`zlib`)
 -- no necesita pandas ni torch. Cruza `data/clusters_*.zip` (etiqueta de cluster
-por parcela, columnas `ID,zone,cluster`) con `data/lat_long_df_*.zip` (coordenadas,
-`ID,latitude,longitude`) por la clave `(zone, ID)` -- el `ID` es el índice
-posicional *por zona*, no es único entre zonas (ver `land2vec.cluster.
-load_zone_coords`). Salida: un JSON compacto por corrida (puntos aplanados por
-cluster y por zona, ~2 MB), un `index.json` con el manifiesto (corridas, bounds
-de cada zona, paletas, procesos, etiquetas) y un `constants_<zona>.png` (raster
-de fondo, decenas de KB) por zona. Flags: `--only <suffix>` procesa una sola
-granularidad/familia, `--precision N` recorta decimales de lat/lon (5 ≈ 1 m,
-4 ≈ 11 m), `--no-constants` / `--only-constants` para el raster de fondo.
+por parcela, columnas `ID,zone,cluster`), `data/lat_long_df_*.zip` (coordenadas,
+`ID,latitude,longitude`) y `data/id_seqs_text_2000_2022_*.zip` (trayectoria cruda
+por parcela — para el popup y el fondo de constantes) por la clave `(zone, ID)`
+-- el `ID` es el índice posicional *por zona*, no es único entre zonas (ver
+`land2vec.cluster.load_zone_coords`). Salida:
+
+- `{set}{suffix}.json` por corrida (~2,6–3 MB): puntos `(lat, lon, seqIdx)`
+  aplanados por cluster y por zona + `seqs` (trayectorias crudas deduplicadas).
+- `index.json`: manifiesto (corridas, bounds de cada zona, paletas de cluster y
+  de proceso, glosas, `constant_colors`, `state_colors`, etiquetas por cluster).
+- `constants_<zona>.png` (raster de fondo, decenas de KB) por zona.
+
+Flags: `--only <suffix>` procesa una sola granularidad/familia, `--precision N`
+recorta decimales de lat/lon (5 ≈ 1 m, 4 ≈ 11 m), `--no-constants` /
+`--only-constants` para el raster de fondo. `scripts/check_cluster_palette.py`
+imprime la uniformidad perceptual (ΔE) de las paletas de proceso y de fondo.
 
 Abierto con `file://` el visor no puede hacer `fetch` de los JSON: hay que
 servirlo por HTTP (el comando de arriba).
