@@ -420,6 +420,11 @@ de probing, PCA). Resumen:
   visor Leaflet `viz/clusters/index.html`): dónde cae cada cluster sobre el mapa
   real de las 7 zonas OOD, con export de la vista a PNG/JPG. Solo local -- ver
   [§ Visor del mapa de clusters](#visor-del-mapa-de-clusters-vizclusters) más abajo.
+- **Mapas estáticos de pérdida de cobertura** (`scripts/plot_process_maps.py`):
+  6 PNG (uno por corrida) faceteados por región, con las trayectorias de
+  deforestación, degradación forestal y urbanización coloreadas por proceso.
+  Reusa la clasificación de `build_cluster_map.py`. `python scripts/plot_process_maps.py`
+  -> `imgs/process_maps_<corrida>_<set>.png`.
 - **Próximo paso**: macro F1 restringido a clases con soporte por
   subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
 
