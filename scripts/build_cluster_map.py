@@ -39,6 +39,7 @@ import argparse
 import csv
 import io
 import json
+import math
 import sys
 import zipfile
 from pathlib import Path
@@ -88,7 +89,8 @@ SET_LABELS = {
 }
 
 # Paleta cualitativa (Tableau-20 + Set3 recortada) cicleada por id de cluster.
-# El -1 ("sin tipificar") se pinta aparte, gris claro, en el visor.
+# El -1 ("sin tipificar") se pinta aparte, gris claro, en el visor. Es el modo de
+# color "cluster"; el modo por defecto del visor es "proceso" (ver abajo).
 PALETTE = [
     "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
@@ -99,6 +101,135 @@ PALETTE = [
     "#ffd92f", "#e5c494", "#b3b3b3", "#8dd3c7", "#bebada",
     "#fb8072", "#80b1d3", "#fdb462", "#b3de69", "#fccde5",
 ]
+
+# Copia de land2vec.typology.STATE_COLORS (paleta única de estados de uso del
+# suelo). Se emite en index.json para un futuro modo "estado final" del visor y
+# para la capa de trayectorias constantes (pendiente 3).
+STATE_COLORS = {
+    "[UNK]": "#d9d9d9", "A": "#e6c229", "F": "#1b7837", "G": "#a6d96a",
+    "Wt": "#2b8cbe", "U": "#d7301f", "Sh": "#b8860b", "Sp": "#dfc27d",
+    "B": "#8c6d31", "Wa": "#08519c", "Nd": "#bdbdbd",
+}
+
+# --------------------------------------------------------------------------- #
+#  Color por proceso (modo por defecto del visor)
+# --------------------------------------------------------------------------- #
+# Cada cluster se agrupa en un "proceso" conceptual y se pinta con el hue de ese
+# proceso (anclado a la semántica: rojo = pérdida de bosque ... verde =
+# regeneración ... azul = agua), variando luminosidad y croma según la antigüedad
+# del cambio (cambio viejo -> más oscuro y saturado, reciente -> claro y pálido).
+#
+# El color se genera en OKLCh (espacio perceptualmente ~uniforme) para que la
+# rampa temporal de cada proceso tenga pasos de ΔE parejos -- se valida con
+# scripts/check_cluster_palette.py contra la métrica de
+# https://color-analyzer.streamlit.app/ (objetivo: cerca de viridis, lejos de Jet).
+#
+# La clasificación (classify_process) es determinista y se deriva de la secuencia
+# modal inicio»fin del cluster (typology_browser.json). Las glosas agronómicas de
+# cada par (inicio, fin) viven en src/land2vec/typology.py (GLOSSES).
+
+PROCESSES = {
+    "deforestacion":        {"label": "Deforestación (F→agro/pastizal)",           "h": 29},
+    "degradacion_forestal": {"label": "Degradación forestal (F→arbustal/esparso)", "h": 52},
+    "expansion_agricola":   {"label": "Expansión agrícola (→A)",                   "h": 74},
+    "perdida_vegetacion":   {"label": "Pérdida de vegetación / aridización",       "h": 106},
+    "revegetacion":         {"label": "Revegetación de suelo árido",               "h": 130},
+    "regeneracion_bosque":  {"label": "Regeneración de bosque (→F)",               "h": 152},
+    "dinamica_hidrica":     {"label": "Dinámica de agua / humedal",               "h": 240},
+    "urbanizacion":         {"label": "Urbanización (→U)",                         "h": 330},
+    "oscilante":            {"label": "Oscilante / múltiple",                      "h": 300, "c_scale": 0.5},
+    "otro":                 {"label": "Otro",                                      "h": 0,   "c_scale": 0.0},
+}
+
+_RAMP_L = (0.80, 0.50)   # OKLab L: cambio reciente -> cambio viejo
+_RAMP_C = (0.06, 0.14)   # croma OKLCh: reciente -> viejo
+
+
+def _srgb_to_linear(c: float) -> float:
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _linear_to_srgb(c: float) -> float:
+    return 12.92 * c if c <= 0.0031308 else 1.055 * (c ** (1 / 2.4)) - 0.055
+
+
+def _oklab_to_srgb(L: float, a: float, b: float) -> tuple[float, float, float]:
+    "OKLab -> sRGB (0..1), recortando al gamut. https://bottosson.github.io/posts/oklab/"
+    l_ = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+    m_ = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+    s_ = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3
+    r = 4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_
+    g = -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_
+    b2 = -0.0041960863 * l_ - 0.7034186147 * m_ + 1.7076147010 * s_
+    return tuple(min(1.0, max(0.0, _linear_to_srgb(x))) for x in (r, g, b2))
+
+
+def _srgb_to_oklab(r: float, g: float, b: float) -> tuple[float, float, float]:
+    "sRGB (0..1) -> OKLab."
+    r, g, b = _srgb_to_linear(r), _srgb_to_linear(g), _srgb_to_linear(b)
+    l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ** (1 / 3)
+    m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ** (1 / 3)
+    s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ** (1 / 3)
+    return (
+        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+        1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+        0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+    )
+
+
+def _oklch_to_hex(L: float, C: float, h_deg: float) -> str:
+    a = C * math.cos(math.radians(h_deg))
+    b = C * math.sin(math.radians(h_deg))
+    r, g, bb = _oklab_to_srgb(L, a, b)
+    return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(bb * 255))
+
+
+def process_color(key: str, t_age: float | None) -> str:
+    """Color de un cluster del proceso `key`. `t_age` in [0, 1]: 0 = cambio más
+    reciente (claro, poco saturado), 1 = más viejo (oscuro, saturado). `None`
+    (sin año de cambio) cae en el medio de la rampa."""
+    t = 0.5 if t_age is None else max(0.0, min(1.0, t_age))
+    p = PROCESSES[key]
+    L = _RAMP_L[0] + (_RAMP_L[1] - _RAMP_L[0]) * t
+    C = (_RAMP_C[0] + (_RAMP_C[1] - _RAMP_C[0]) * t) * p.get("c_scale", 1.0)
+    return _oklch_to_hex(L, C, p["h"])
+
+
+_DEFOR_FIN = {"A", "G"}
+_DEGRAD_FIN = {"Sh", "Sp", "B"}
+
+
+def classify_process(inicio: str, fin: str, forma: str | None) -> str:
+    """Proceso conceptual de un cluster a partir de su secuencia modal colapsada
+    (inicio»fin) y su forma. Reglas ordenadas, primera que matchea. Determinista."""
+    if forma in ("oscilante", "múltiple") or inicio == fin:
+        return "oscilante"
+    if fin == "U":
+        return "urbanizacion"
+    if fin == "F" and inicio != "F":
+        return "regeneracion_bosque"
+    if inicio == "F" and fin in _DEFOR_FIN:
+        return "deforestacion"
+    if inicio == "F" and fin in _DEGRAD_FIN:
+        return "degradacion_forestal"
+    if {inicio, fin} & {"Wt", "Wa"}:
+        return "dinamica_hidrica"
+    if fin == "A":
+        return "expansion_agricola"
+    if inicio in ("B", "Sp") and fin in ("Sp", "G", "Sh"):
+        return "revegetacion"
+    if fin in ("B", "Sp"):
+        return "perdida_vegetacion"
+    return "otro"
+
+
+def _dss(tokens: list[str]) -> list[str]:
+    "Distinct Successive States: colapsa repeticiones consecutivas (land2vec.typology.dss)."
+    out: list[str] = []
+    for t in tokens:
+        if not out or out[-1] != t:
+            out.append(t)
+    return out
 
 
 def read_zip_csv(path: Path) -> csv.DictReader:
@@ -123,23 +254,47 @@ def load_zone_coords(zone: str, data_dir: Path) -> dict[str, tuple[float, float]
 
 
 def load_typology_labels() -> dict[str, dict[int, dict]]:
-    """suffix -> {cluster_id -> {etiqueta, glosa, forma, anio_cambio}}.
-    Vacío si no está viz/typology/typology_browser.json."""
+    """suffix -> {cluster_id -> {etiqueta, glosa, forma, anio_cambio, inicio, fin,
+    proceso, color}}. Vacío si no está viz/typology/typology_browser.json.
+
+    `inicio`/`fin` salen de colapsar la secuencia modal; `proceso` de
+    classify_process(); `color` de process_color(proceso, antigüedad del cambio),
+    con la antigüedad normalizada al rango de anio_cambio de esa corrida
+    (cambio viejo -> color más oscuro)."""
     if not TYPOLOGY_JSON.exists():
         return {}
     payload = json.loads(TYPOLOGY_JSON.read_text())
     by_suffix: dict[str, dict[int, dict]] = {}
     for run in payload.get("runs", []):
         suffix = run.get("suffix", "")
-        by_suffix[suffix] = {
-            int(c["cluster"]): {
+        clusters = run.get("clusters", [])
+        years = [c["anio_cambio"] for c in clusters
+                 if isinstance(c.get("anio_cambio"), (int, float))]
+        ymax = max(years) if years else 0
+        span = (ymax - min(years)) if years else 0
+        run_labels: dict[int, dict] = {}
+        for c in clusters:
+            d = _dss((c.get("modal_seq") or "").split("-"))
+            forma = c.get("forma")
+            if len(d) <= 1 or not d[0]:
+                inicio = fin = ""
+                proceso = "otro"
+            else:
+                inicio, fin = d[0], d[-1]
+                proceso = classify_process(inicio, fin, forma)
+            anio = c.get("anio_cambio")
+            t_age = ((ymax - anio) / span) if (span and isinstance(anio, (int, float))) else None
+            run_labels[int(c["cluster"])] = {
                 "etiqueta": c.get("etiqueta"),
                 "glosa": c.get("glosa"),
-                "forma": c.get("forma"),
-                "anio_cambio": c.get("anio_cambio"),
+                "forma": forma,
+                "anio_cambio": anio,
+                "inicio": inicio,
+                "fin": fin,
+                "proceso": proceso,
+                "color": process_color(proceso, t_age),
             }
-            for c in run.get("clusters", [])
-        }
+        by_suffix[suffix] = run_labels
     return by_suffix
 
 
@@ -265,6 +420,11 @@ def main() -> None:
         ],
         "set_labels": SET_LABELS,
         "palette": PALETTE,
+        "processes": {
+            k: {"label": v["label"], "color": process_color(k, 0.5)}
+            for k, v in PROCESSES.items()
+        },
+        "state_colors": STATE_COLORS,
         "runs": runs,
     }
     (args.out_dir / "index.json").write_text(json.dumps(index, separators=(",", ":")))

@@ -452,9 +452,9 @@ parcela, columnas `ID,zone,cluster`) con `data/lat_long_df_*.zip` (coordenadas,
 posicional *por zona*, no es único entre zonas (ver `land2vec.cluster.
 load_zone_coords`). Salida: un JSON compacto por corrida (puntos aplanados por
 cluster y por zona, ~2 MB) más un `index.json` con el manifiesto (corridas,
-bounds de cada zona, paleta, etiquetas). Flags: `--only <suffix>` procesa una
-sola granularidad/familia, `--precision N` recorta decimales de lat/lon
-(5 ≈ 1 m, 4 ≈ 11 m) para archivos más livianos.
+bounds de cada zona, paleta, procesos, `state_colors`, etiquetas). Flags:
+`--only <suffix>` procesa una sola granularidad/familia, `--precision N` recorta
+decimales de lat/lon (5 ≈ 1 m, 4 ≈ 11 m) para archivos más livianos.
 
 Abierto con `file://` el visor no puede hacer `fetch` de los JSON: hay que
 servirlo por HTTP (el comando de arriba).
@@ -471,17 +471,34 @@ servirlo por HTTP (el comando de arriba).
     (incluye las constantes submuestreadas al 15%), **asignadas** por centroide
     más cercano; las que quedan lejos de todo centroide salen como `−1` ("sin
     tipificar"). Ver docs §7.2, Nota metodológica.
-- **Vista**: selector de zona (con zoom automático a su bounding box), sliders de
-  tamaño y opacidad de punto, un toggle **`tamaño = píxel real (300 m)`** (el
-  marcador escala con el zoom para cubrir la huella del píxel ESA CCI, de modo que
-  en zonas densas los puntos se toquen; el slider de tamaño pasa a ser un factor,
-  `2.5 = 1×`), y un toggle para mostrar u ocultar el `−1`.
-- **Leyenda**: swatch de color + etiqueta automática (`F»A · monotónica · ~2008 ·
-  deforestación para agricultura`, tomada de `viz/typology/typology_browser.json`
-  si está presente; si no, "cluster N"), ordenada por tamaño dentro de la zona
-  visible. Clic en una fila aísla ese cluster (atenúa el resto); "ver todos"
-  lo restablece. La barra de estado y los porcentajes son relativos a lo que se
-  ve (zona seleccionada, con o sin `−1`), no al total de la corrida.
+- **Vista**: selector de zona (con zoom automático a su bounding box), **modo de
+  color** (`proceso` / `cluster`), sliders de tamaño y opacidad de punto, un
+  toggle **`tamaño = píxel real (300 m)`** (el marcador escala con el zoom para
+  cubrir la huella del píxel ESA CCI, de modo que en zonas densas los puntos se
+  toquen; el slider de tamaño pasa a ser un factor, `2.5 = 1×`), y un toggle para
+  mostrar u ocultar el `−1`.
+- **Color por proceso** (modo por defecto): cada cluster se agrupa en un
+  **proceso** conceptual (deforestación, degradación forestal, expansión
+  agrícola, pérdida de vegetación / aridización, revegetación, regeneración de
+  bosque, dinámica de agua/humedal, urbanización, oscilante, otro) según su
+  secuencia modal `inicio»fin`, y se pinta con el **hue** de ese proceso (rojo =
+  pérdida de bosque … verde = regeneración … azul = agua … magenta = urbano). La
+  **luminosidad y el croma** codifican la antigüedad del cambio (`anio_cambio`):
+  cambio reciente → claro y pálido, cambio viejo → oscuro y saturado. Los colores
+  se generan en **OKLCh** para que la rampa temporal de cada proceso tenga pasos
+  perceptualmente parejos (se valida con `scripts/check_cluster_palette.py`
+  contra la métrica de <https://color-analyzer.streamlit.app/>). La clasificación
+  es determinista (`classify_process` en `build_cluster_map.py`, derivada de
+  `modal_seq` + `forma` de `viz/typology/typology_browser.json`). El modo
+  `cluster` mantiene la paleta cualitativa cicleada por id (útil para identidad,
+  no interpretable).
+- **Leyenda**: en modo `proceso`, agrupada por proceso (cabecera con el color
+  base + subtotal, filas de clusters debajo con su color y etiqueta automática
+  `F»A · monotónica · ~2008 · deforestación para agricultura`); clic en la
+  cabecera aísla el proceso entero, clic en una fila aísla ese cluster. En modo
+  `cluster`, lista plana ordenada por tamaño. "ver todos" restablece. La barra de
+  estado y los porcentajes son relativos a lo que se ve (zona, con o sin `−1`),
+  no al total de la corrida.
 
 **Métodos**
 
@@ -500,9 +517,9 @@ servirlo por HTTP (el comando de arriba).
   correspondiente (`2×` usa un nivel más de detalle), se bajan con
   `crossOrigin="anonymous"` y se dibujan en un canvas offscreen; encima se
   redibujan los puntos con `map.project(...)`; y debajo se pinta un pie que arma
-  solo: corrida + set, zona y nº de parcelas, leyenda compacta (hasta 6
-  clusters), barra de escala (métrica, calculada sobre la latitud del centro) y
-  atribución (OSM / Esri). El archivo sale como
+  solo: corrida + set, zona y nº de parcelas, leyenda compacta (hasta 6 procesos
+  o clusters, según el modo de color), barra de escala (métrica, calculada sobre
+  la latitud del centro) y atribución (OSM / Esri). El archivo sale como
   `land2vec_{set}{suffix}_{zona}_{basemap}.{png,jpg}`.
 
 **Solo local, por ahora**

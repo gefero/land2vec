@@ -20,18 +20,30 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
     (incluye las constantes submuestreadas al 15%), **asignadas** por centroide
     más cercano; las que quedan lejos de todo centroide salen como `−1` ("sin
     tipificar"). Ver docs §7.2, Nota metodológica.
-- **Vista**: zona (con zoom a su bbox), tamaño y opacidad del punto, y el toggle
-  **`tamaño = píxel real (300 m)`** — el marcador escala con el zoom para cubrir la
-  huella del píxel ESA CCI (`src/land2vec/extract.py`), así en `dinámico` y en las
-  zonas densas los puntos se tocan en vez de verse como confeti; con el modo activo
-  el deslizador de tamaño pasa a ser un factor (`2.5` = 1× la huella real).
+- **Vista**: zona (con zoom a su bbox), **modo de color** (`proceso` / `cluster`),
+  tamaño y opacidad del punto, y el toggle **`tamaño = píxel real (300 m)`** — el
+  marcador escala con el zoom para cubrir la huella del píxel ESA CCI
+  (`src/land2vec/extract.py`), así en `dinámico` y en las zonas densas los puntos
+  se tocan en vez de verse como confeti; con el modo activo el deslizador de
+  tamaño pasa a ser un factor (`2.5` = 1× la huella real).
+- **Color por proceso** (por defecto): cada cluster se agrupa en un proceso
+  conceptual (deforestación, degradación forestal, expansión agrícola, pérdida de
+  vegetación, revegetación, regeneración de bosque, dinámica de agua/humedal,
+  urbanización, oscilante, otro) según su secuencia modal `inicio»fin`, con hue
+  por proceso y luminosidad/croma por antigüedad del cambio (reciente = claro,
+  viejo = oscuro). Color generado en OKLCh; la clasificación (`classify_process`)
+  y la paleta viven en `scripts/build_cluster_map.py` y se validan con
+  `scripts/check_cluster_palette.py`. El modo `cluster` vuelve a la paleta
+  cualitativa por id.
 - **Base**: OpenStreetMap, OSM Humanitarian o Esri World Imagery (satélite; los
   tiles propios de Google no se pueden embeber fuera de su API con clave).
-- **Leyenda**: swatch + etiqueta automática (de `viz/typology/typology_browser.json`
-  si está), ordenada por tamaño, clic para aislar un cluster.
+- **Leyenda**: en modo `proceso`, agrupada por proceso (cabecera = color base;
+  clic en la cabecera aísla el proceso, clic en una fila aísla el cluster). En
+  modo `cluster`, lista plana. Etiqueta automática de
+  `viz/typology/typology_browser.json` si está.
 - **Exportar vista**: PNG o JPG de lo que se ve, con pie (corrida, zona, leyenda
-  compacta, barra de escala, atribución). `2×` compone con un nivel más de
-  detalle para una salida nítida.
+  compacta de procesos/clusters, barra de escala, atribución). `2×` compone con
+  un nivel más de detalle para una salida nítida.
 
 ## Cómo levantarlo
 
@@ -41,8 +53,11 @@ python -m http.server -d viz/clusters 8001     # -> http://localhost:8001
 ```
 
 `build_cluster_map.py` solo usa la librería estándar (no necesita pandas/torch);
-lee `data/clusters_*.zip` + `data/lat_long_df_*.zip`. Con `--only _medium` procesa
-una sola granularidad/familia; con `--precision 4`, archivos más livianos.
+lee `data/clusters_*.zip` + `data/lat_long_df_*.zip` y, si está,
+`viz/typology/typology_browser.json` (para las etiquetas y el proceso de cada
+cluster). Con `--only _medium` procesa una sola granularidad/familia; con
+`--precision 4`, archivos más livianos. `scripts/check_cluster_palette.py`
+reporta la uniformidad perceptual (ΔE) de las rampas de color por proceso.
 
 ## Solo local, por ahora
 

@@ -93,6 +93,12 @@
   .legrow .tx { flex: 1; min-width: 0; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .legrow .ct { color: var(--faint); font-size: 10.5px; flex: none; }
   .legrow .cid { color: var(--faint); font-size: 10px; flex: none; width: 20px; text-align: right; }
+  .legrow.grp { margin-top: 5px; }
+  .legrow.grp:first-child { margin-top: 0; }
+  .legrow.grp .tx { font-weight: 600; font-size: 11px; }
+  .legrow.grp .sw { width: 13px; height: 13px; border-radius: 4px; }
+  .legrow.sub { padding-left: 16px; }
+  .legrow.sub .tx { color: var(--muted); }
 
   .tooltip {
     position: absolute; z-index: 1000; pointer-events: none; background: var(--surface);
@@ -148,6 +154,11 @@
         <label for="zoneSel">Zona</label>
         <select id="zoneSel"><option value="__all__">Todas</option></select>
       </div>
+      <div class="seg" id="segColor" style="margin-top:8px">
+        <button data-v="proceso" aria-pressed="true">color: proceso</button>
+        <button data-v="cluster">cluster</button>
+      </div>
+      <div class="hint" id="colorHint">hue = proceso, luminosidad = antigüedad del cambio (viejo = más oscuro)</div>
       <div class="row" style="margin-top:6px">
         <label for="sizeR" id="sizeLab">Punto</label>
         <input type="range" id="sizeR" min="1" max="6" step="0.5" value="2.5">
@@ -217,13 +228,14 @@ const SET_HINT = {
 const state = {
   gran: "fine", fam: "hdbscan", set: "dynamic",
   zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false,
-  scale: 1, isolated: null,
+  scale: 1, isolated: null, isolatedProc: null, colorMode: "proceso",
 };
 
 let manifest = null;             // index.json
 let palette = [];
+let processes = {};              // key -> {label, color}  (color base del proceso)
 let zonesMeta = {};              // id -> {label, bounds}
-let labelsByRun = {};            // suffix -> { "<cid>": {etiqueta,...} }
+let labelsByRun = {};            // suffix -> { "<cid>": {etiqueta, proceso, color, ...} }
 const fileCache = new Map();     // filename -> parsed json
 let current = null;              // { file, data }  del run+set activo
 
@@ -318,8 +330,7 @@ const ClusterCanvas = L.Layer.extend({
       if (zb && (zb[1][0] < south || zb[0][0] > north || zb[1][1] < west || zb[0][1] > east)) continue;
       for (const [cidStr, flat] of Object.entries(zd.points)) {
         const cid = +cidStr;
-        if (cid === -1 && !state.showNoise) continue;
-        if (state.isolated !== null && cid !== state.isolated) continue;
+        if (!clusterVisible(cid)) continue;
         ctx.fillStyle = colorFor(cid);
         for (let i = 0; i < flat.length; i += 2) {
           const lat = flat[i], lon = flat[i + 1];
@@ -347,9 +358,30 @@ const pointLayer = new ClusterCanvas().addTo(map);
 /* ------------------------------------------------------------------ *
  *  Colores
  * ------------------------------------------------------------------ */
+function runLabels() {
+  return labelsByRun[SUFFIX[state.gran + "|" + state.fam]] || {};
+}
+
 function colorFor(cid) {
   if (cid === -1) return NOISE_COLOR;
+  if (state.colorMode === "proceso") {
+    const l = runLabels()[cid];
+    if (l && l.color) return l.color;
+    if (l && processes[l.proceso]) return processes[l.proceso].color;
+    return "#9b9b9b";
+  }
   return palette[cid % palette.length] || "#888";
+}
+
+// visibilidad de un cluster según los filtros activos (−1, aislar cluster, aislar proceso)
+function clusterVisible(cid) {
+  if (cid === -1) return state.showNoise;
+  if (state.isolated !== null) return cid === state.isolated;
+  if (state.isolatedProc !== null) {
+    const l = runLabels()[cid];
+    return !!l && l.proceso === state.isolatedProc;
+  }
+  return true;
 }
 
 const PIXEL_M = 300;          // resolución ESA CCI (src/land2vec/extract.py)
@@ -381,6 +413,12 @@ async function boot() {
     return;
   }
   palette = manifest.palette;
+  processes = manifest.processes || {};
+  if (!Object.keys(processes).length) {   // manifiesto viejo: sin modo proceso
+    state.colorMode = "cluster";
+    $("#segColor").hidden = true;
+    $("#colorHint").hidden = true;
+  }
   for (const z of manifest.zones) {
     zonesMeta[z.id] = z;
     const opt = document.createElement("option");
@@ -404,6 +442,7 @@ function currentFile() {
 async function loadCurrent() {
   const file = currentFile();
   state.isolated = null;
+  state.isolatedProc = null;
   updateLegendClear();
   if (!fileCache.has(file)) {
     statusEl.textContent = "cargando " + file + "…";
@@ -426,9 +465,7 @@ function scopedTotal() {
   // parcelas visibles según el filtro de zona y el toggle de -1 (no el total de la corrida)
   let t = 0;
   for (const [cid, n] of aggregateCounts()) {
-    if (cid === -1 && !state.showNoise) continue;
-    if (state.isolated !== null && cid !== state.isolated) continue;
-    t += n;
+    if (clusterVisible(cid)) t += n;
   }
   return t;
 }
@@ -462,9 +499,38 @@ function aggregateCounts() {
 
 function labelFor(cid) {
   if (cid === -1) return "sin tipificar";
-  const suffix = SUFFIX[state.gran + "|" + state.fam];
-  const l = (labelsByRun[suffix] || {})[cid];
+  const l = runLabels()[cid];
   return l && l.etiqueta ? l.etiqueta : "cluster " + cid;
+}
+
+function procLabelFor(cid) {
+  const l = runLabels()[cid];
+  const p = l && processes[l.proceso];
+  return p ? p.label : null;
+}
+
+function refreshFromLegend() {
+  updateLegendClear();
+  updateStatus();
+  buildLegend();
+  pointLayer._redraw();
+}
+
+function clusterRow(cid, n, total, sub) {
+  const b = document.createElement("button");
+  b.className = "legrow" + (sub ? " sub" : "");
+  b.setAttribute("aria-pressed", state.isolated === cid);
+  b.innerHTML =
+    `<span class="cid mono">${cid}</span>` +
+    `<span class="sw" style="background:${colorFor(cid)}"></span>` +
+    `<span class="tx" title="${esc(labelFor(cid))}">${esc(labelFor(cid))}</span>` +
+    `<span class="ct mono">${(100 * n / total).toFixed(1)}%</span>`;
+  b.onclick = () => {
+    state.isolated = state.isolated === cid ? null : cid;
+    state.isolatedProc = null;
+    refreshFromLegend();
+  };
+  return b;
 }
 
 function buildLegend() {
@@ -472,35 +538,59 @@ function buildLegend() {
   const rows = [...counts.entries()]
     .filter(([cid]) => cid !== -1 || state.showNoise)
     .sort((a, b) => b[1] - a[1]);
-  const total = rows.reduce((a, [, n]) => a + n, 0);   // % relativos a lo que se ve
-  $("#legCount").textContent = `${rows.length} · n=${total.toLocaleString("es-AR")}`;
+  const total = rows.reduce((a, [, n]) => a + n, 0) || 1;   // % relativos a lo que se ve
   const box = $("#legItems");
   box.innerHTML = "";
-  for (const [cid, n] of rows) {
-    const b = document.createElement("button");
-    b.className = "legrow";
-    b.setAttribute("aria-pressed", state.isolated === cid);
-    b.innerHTML =
-      `<span class="cid mono">${cid}</span>` +
-      `<span class="sw" style="background:${colorFor(cid)}"></span>` +
-      `<span class="tx" title="${esc(labelFor(cid))}">${esc(labelFor(cid))}</span>` +
-      `<span class="ct mono">${(100 * n / total).toFixed(1)}%</span>`;
-    b.onclick = () => {
-      state.isolated = state.isolated === cid ? null : cid;
-      updateLegendClear();
-      updateStatus();
-      buildLegend();
-      pointLayer._redraw();
-    };
-    box.appendChild(b);
+
+  const grouped = state.colorMode === "proceso" && Object.keys(runLabels()).length > 0;
+  if (!grouped) {
+    $("#legCount").textContent = `${rows.length} · n=${total.toLocaleString("es-AR")}`;
+    for (const [cid, n] of rows) box.appendChild(clusterRow(cid, n, total, false));
+    return;
   }
+
+  // agrupar por proceso, en el orden del manifiesto
+  const byProc = new Map();
+  let noise = null;
+  for (const [cid, n] of rows) {
+    if (cid === -1) { noise = n; continue; }
+    const l = runLabels()[cid];
+    const key = (l && processes[l.proceso]) ? l.proceso : "otro";
+    if (!byProc.has(key)) byProc.set(key, []);
+    byProc.get(key).push([cid, n]);
+  }
+  let nGroups = 0, nClusters = 0;
+  for (const key of Object.keys(processes)) {
+    const entries = byProc.get(key);
+    if (!entries || !entries.length) continue;
+    nGroups++; nClusters += entries.length;
+    entries.sort((a, b) => b[1] - a[1]);
+    const gn = entries.reduce((a, [, n]) => a + n, 0);
+
+    const h = document.createElement("button");
+    h.className = "legrow grp";
+    h.setAttribute("aria-pressed", state.isolatedProc === key);
+    h.innerHTML =
+      `<span class="sw" style="background:${processes[key].color}"></span>` +
+      `<span class="tx" title="${esc(processes[key].label)}">${esc(processes[key].label)}</span>` +
+      `<span class="ct mono">${(100 * gn / total).toFixed(1)}%</span>`;
+    h.onclick = () => {
+      state.isolatedProc = state.isolatedProc === key ? null : key;
+      state.isolated = null;
+      refreshFromLegend();
+    };
+    box.appendChild(h);
+    for (const [cid, n] of entries) box.appendChild(clusterRow(cid, n, total, true));
+  }
+  if (noise !== null) box.appendChild(clusterRow(-1, noise, total, false));
+  $("#legCount").textContent = `${nGroups} procesos · ${nClusters} clusters · n=${total.toLocaleString("es-AR")}`;
 }
 
 function updateLegendClear() {
-  $("#legClear").hidden = state.isolated === null;
+  $("#legClear").hidden = state.isolated === null && state.isolatedProc === null;
 }
 $("#legClear").onclick = () => {
-  state.isolated = null; updateLegendClear(); updateStatus(); buildLegend(); pointLayer._redraw();
+  state.isolated = null; state.isolatedProc = null; refreshFromLegend();
 };
 
 /* ------------------------------------------------------------------ *
@@ -522,6 +612,11 @@ function wireControls() {
   seg("segFam", "fam", loadCurrent);
   seg("segSet", "set", () => { $("#setHint").textContent = SET_HINT[state.set]; loadCurrent(); });
   seg("segScale", "scale", () => { state.scale = +state.scale; });
+  seg("segColor", "colorMode", () => {
+    $("#colorHint").hidden = state.colorMode !== "proceso";
+    state.isolated = null; state.isolatedProc = null;
+    refreshFromLegend();
+  });
   $("#setHint").textContent = SET_HINT[state.set];
 
   $("#zoneSel").addEventListener("change", (e) => {
@@ -583,8 +678,11 @@ map.getContainer().addEventListener("mousemove", (e) => {
     const rect = map.getContainer().getBoundingClientRect();
     const hit = pointLayer.hitTest(e.clientX - rect.left, e.clientY - rect.top);
     if (!hit) { tt.style.display = "none"; return; }
+    const proc = hit.cid === -1 ? null : procLabelFor(hit.cid);
     tt.innerHTML =
-      `<b>#${hit.cid}</b> ${esc(labelFor(hit.cid))}<br><span class="z">${esc(zonesMeta[hit.zone].label)}</span>`;
+      `<b>#${hit.cid}</b> ${esc(labelFor(hit.cid))}<br>` +
+      (proc ? `<span class="z">${esc(proc)}</span><br>` : "") +
+      `<span class="z">${esc(zonesMeta[hit.zone].label)}</span>`;
     tt.style.display = "block";
     tt.style.left = (e.clientX - rect.left + 14) + "px";
     tt.style.top = (e.clientY - rect.top + 14) + "px";
@@ -660,8 +758,7 @@ async function exportView(fmt) {
       if (zoneFilter && zid !== zoneFilter) continue;
       for (const [cidStr, flat] of Object.entries(zd.points)) {
         const cid = +cidStr;
-        if (cid === -1 && !state.showNoise) continue;
-        if (state.isolated !== null && cid !== state.isolated) continue;
+        if (!clusterVisible(cid)) continue;
         ctx.fillStyle = colorFor(cid);
         for (let i = 0; i < flat.length; i += 2) {
           const p = map.project([flat[i], flat[i + 1]], tileZoom);
@@ -708,23 +805,40 @@ function drawFooter(ctx, W, H, footH, s, attr) {
   ctx.fillText(`${zoneLabel} · ${scopedTotal().toLocaleString("es-AR")} parcelas · ${attr}`,
     pad, H + pad + 18 * s);
 
-  // leyenda compacta: hasta 6 clusters más grandes
+  // leyenda compacta: por proceso (modo "proceso") o por cluster
   const counts = aggregateCounts();
-  const top = [...counts.entries()]
-    .filter(([cid]) => cid !== -1 || state.showNoise)
-    .filter(([cid]) => state.isolated === null || cid === state.isolated)
-    .sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const grouped = state.colorMode === "proceso" && Object.keys(runLabels()).length > 0;
+  let items;   // [{color, txt}]
+  if (grouped) {
+    const byProc = new Map();
+    for (const [cid, n] of counts) {
+      if (!clusterVisible(cid) || cid === -1) continue;
+      const l = runLabels()[cid];
+      const key = (l && processes[l.proceso]) ? l.proceso : "otro";
+      byProc.set(key, (byProc.get(key) || 0) + n);
+    }
+    items = [...byProc.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([key]) => ({ color: processes[key].color, txt: processes[key].label }));
+  } else {
+    items = [...counts.entries()]
+      .filter(([cid]) => clusterVisible(cid))
+      .sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([cid]) => ({
+        color: colorFor(cid),
+        txt: cid === -1 ? "sin tipificar" : `#${cid} ${labelFor(cid).split(" · ")[0]}`,
+      }));
+  }
   let lx = pad;
   const ly = H + pad + 40 * s;
   ctx.font = `${10.5 * s}px "IBM Plex Sans", system-ui, sans-serif`;
-  for (const [cid] of top) {
-    const txt = cid === -1 ? "sin tipificar" : `#${cid} ${labelFor(cid).split(" · ")[0]}`;
-    const w = ctx.measureText(txt).width + 16 * s;
+  for (const it of items) {
+    const w = ctx.measureText(it.txt).width + 16 * s;
     if (lx + w > W - pad) break;
-    ctx.fillStyle = colorFor(cid);
+    ctx.fillStyle = it.color;
     ctx.fillRect(lx, ly, 9 * s, 9 * s);
     ctx.fillStyle = "#3a3f33";
-    ctx.fillText(txt, lx + 13 * s, ly - 1 * s);
+    ctx.fillText(it.txt, lx + 13 * s, ly - 1 * s);
     lx += w;
   }
 
