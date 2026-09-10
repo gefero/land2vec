@@ -445,16 +445,17 @@ python scripts/build_cluster_map.py           # genera viz/clusters/data/*.json 
 python -m http.server -d viz/clusters 8001    # -> http://localhost:8001
 ```
 
-`build_cluster_map.py` solo usa la librería estándar (`csv`/`zipfile`/`json`) --
-no necesita pandas ni torch. Cruza `data/clusters_*.zip` (etiqueta de cluster por
-parcela, columnas `ID,zone,cluster`) con `data/lat_long_df_*.zip` (coordenadas,
+`build_cluster_map.py` solo usa la librería estándar (`csv`/`zipfile`/`json`/`zlib`)
+-- no necesita pandas ni torch. Cruza `data/clusters_*.zip` (etiqueta de cluster
+por parcela, columnas `ID,zone,cluster`) con `data/lat_long_df_*.zip` (coordenadas,
 `ID,latitude,longitude`) por la clave `(zone, ID)` -- el `ID` es el índice
 posicional *por zona*, no es único entre zonas (ver `land2vec.cluster.
 load_zone_coords`). Salida: un JSON compacto por corrida (puntos aplanados por
-cluster y por zona, ~2 MB) más un `index.json` con el manifiesto (corridas,
-bounds de cada zona, paleta, procesos, `state_colors`, etiquetas). Flags:
-`--only <suffix>` procesa una sola granularidad/familia, `--precision N` recorta
-decimales de lat/lon (5 ≈ 1 m, 4 ≈ 11 m) para archivos más livianos.
+cluster y por zona, ~2 MB), un `index.json` con el manifiesto (corridas, bounds
+de cada zona, paletas, procesos, etiquetas) y un `constants_<zona>.png` (raster
+de fondo, decenas de KB) por zona. Flags: `--only <suffix>` procesa una sola
+granularidad/familia, `--precision N` recorta decimales de lat/lon (5 ≈ 1 m,
+4 ≈ 11 m), `--no-constants` / `--only-constants` para el raster de fondo.
 
 Abierto con `file://` el visor no puede hacer `fetch` de los JSON: hay que
 servirlo por HTTP (el comando de arriba).
@@ -475,8 +476,9 @@ servirlo por HTTP (el comando de arriba).
   color** (`proceso` / `cluster`), sliders de tamaño y opacidad de punto, un
   toggle **`tamaño = píxel real (300 m)`** (el marcador escala con el zoom para
   cubrir la huella del píxel ESA CCI, de modo que en zonas densas los puntos se
-  toquen; el slider de tamaño pasa a ser un factor, `2.5 = 1×`), y un toggle para
-  mostrar u ocultar el `−1`.
+  toquen; el slider de tamaño pasa a ser un factor, `2.5 = 1×`), un toggle para
+  mostrar u ocultar el `−1`, y un toggle **`fondo: trayectorias constantes`**
+  (con su propio slider de opacidad).
 - **Color por proceso** (modo por defecto): cada cluster se agrupa en un
   **proceso** conceptual (deforestación, degradación forestal, expansión
   agrícola, pérdida de vegetación / aridización, revegetación, regeneración de
@@ -499,6 +501,18 @@ servirlo por HTTP (el comando de arriba).
   `cluster`, lista plana ordenada por tamaño. "ver todos" restablece. La barra de
   estado y los porcentajes son relativos a lo que se ve (zona, con o sin `−1`),
   no al total de la corrida.
+- **Fondo de trayectorias constantes**: los píxeles cuya cobertura **no cambió**
+  en 2000–2022 (bosque intacto, agua permanente, cultivo estable…) son el ~97% del
+  territorio y no se dibujan como puntos. El toggle los muestra como un raster de
+  fondo (un PNG por zona, grilla ESA CCI de 300 m reconstruida), coloreado por su
+  único estado. La **paleta del fondo es parte del mismo sistema** que la de
+  procesos: cada estado comparte el hue de su proceso análogo (bosque = verde
+  como "regeneración de bosque"; agua = azul como "dinámica hídrica"; urbano =
+  magenta como "urbanización") pero mucho más pálido, para que el fondo retroceda
+  y los clusters resalten. Se genera directo de `data/id_seqs_text_*` +
+  `lat_long_df_*`, sin re-correr el modelo. Sirve de contexto espacial detrás de
+  los clusters y hace visible por qué el `−1` del set `pool` es sobre todo
+  cobertura estable.
 
 **Métodos**
 
@@ -512,15 +526,20 @@ servirlo por HTTP (el comando de arriba).
   `L.circleMarker` no escala a ~100k objetos; un canvas plano sí. Los puntos se
   pintan agrupados por cluster (una llamada de `fillStyle` por cluster) y se
   saltan zonas enteras cuyo bounding box no toca la vista.
+- **Fondo de constantes**: un PNG **indexado** por zona (encoder propio con
+  `zlib`, sin PIL), sobre una grilla reconstruida a partir de las lat/lon únicas
+  (las 7 zonas son grillas rectangulares completas). Se muestra con
+  `L.imageOverlay` en `tilePane` (debajo de los puntos) y `image-rendering:
+  pixelated`.
 - **Exportar vista** (PNG o JPG, escala `1×` o `2×`): sin dependencias, por
   compositing propio. Se calcula el rango de tiles visibles al zoom
   correspondiente (`2×` usa un nivel más de detalle), se bajan con
-  `crossOrigin="anonymous"` y se dibujan en un canvas offscreen; encima se
-  redibujan los puntos con `map.project(...)`; y debajo se pinta un pie que arma
-  solo: corrida + set, zona y nº de parcelas, leyenda compacta (hasta 6 procesos
-  o clusters, según el modo de color), barra de escala (métrica, calculada sobre
-  la latitud del centro) y atribución (OSM / Esri). El archivo sale como
-  `land2vec_{set}{suffix}_{zona}_{basemap}.{png,jpg}`.
+  `crossOrigin="anonymous"` y se dibujan en un canvas offscreen; encima va el
+  fondo de constantes (si está activo), después los puntos con `map.project(...)`;
+  y debajo un pie que arma solo: corrida + set, zona y nº de parcelas, leyenda
+  compacta (hasta 6 procesos o clusters + la fila de estados del fondo), barra de
+  escala (métrica, calculada sobre la latitud del centro) y atribución (OSM /
+  Esri). El archivo sale como `land2vec_{set}{suffix}_{zona}_{basemap}.{png,jpg}`.
 
 **Solo local, por ahora**
 

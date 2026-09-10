@@ -22,7 +22,9 @@ Uso:
 import argparse
 import math
 
-from build_cluster_map import PROCESSES, _srgb_to_linear, process_color
+from build_cluster_map import (
+    CONST_COLORS, PROCESSES, STATE_LABELS, _srgb_to_linear, process_color,
+)
 
 # --------------------------------------------------------------------------- #
 #  sRGB -> CIELab (D65), Python puro
@@ -91,6 +93,28 @@ def main() -> None:
 
     print(f"\nresumen: peor σ de rampa = {worst_sd:.3f}  "
           f"(objetivo < ~0.5; viridis ≈ 0.3)")
+
+    # ---- paleta de estados constantes (fondo) ----
+    print("\n" + "=" * 52)
+    print("Paleta de estados constantes (fondo, pálida a propósito)\n")
+    clabs = {t: _lab(h) for t, h in CONST_COLORS.items()}
+    for t, hx in CONST_COLORS.items():
+        print(f"  {t:<6} {hx}  {STATE_LABELS.get(t, '')}")
+    cpairs = sorted(
+        (_de76(clabs[a], clabs[b]), a, b)
+        for i, a in enumerate(CONST_COLORS) for b in list(CONST_COLORS)[i + 1:]
+    )
+    print(f"\n  ΔE76 min entre estados: {cpairs[0][0]:.1f} ({cpairs[0][1]} ↔ {cpairs[0][2]})")
+    print("  5 pares más cercanos:")
+    for de, a, b in cpairs[:5]:
+        print(f"    {de:6.1f}  {a} ↔ {b}")
+    # rima de hue con el proceso análogo: mismo hue, el fondo mucho más claro (ΔL alto)
+    rhyme = [("F", "regeneracion_bosque"), ("Wa", "dinamica_hidrica"),
+             ("U", "urbanizacion"), ("A", "expansion_agricola")]
+    print("\n  fondo vs proceso análogo (debe separarse en L):")
+    for tok, proc in rhyme:
+        cl, pl = clabs[tok], _lab(process_color(proc, 0.5))
+        print(f"    {tok:<4} vs {proc:<20} ΔE76 {_de76(cl, pl):5.1f}  ΔL {cl[0]-pl[0]:+5.1f}")
 
 
 if __name__ == "__main__":

@@ -20,10 +20,12 @@ Uso:
     python scripts/build_cluster_map.py                 # las 6 corridas x 2 sets
     python scripts/build_cluster_map.py --only _medium  # una granularidad/familia
     python scripts/build_cluster_map.py --precision 4   # menos decimales, menos peso
+    python scripts/build_cluster_map.py --no-constants  # sin el raster de fondo
 
 Prerrequisitos (los deja `tune_clustering.py --select`):
     data/clusters_{dynamic,pooled_subsampled}{,_medium,_coarse}{,_parametric}.zip
     data/lat_long_df_{zona}.zip           (una por zona OOD)
+    data/id_seqs_text_2000_2022_{zona}.zip  (para el raster de fondo de constantes)
 
 Opcional, para etiquetas legibles en la leyenda (lo deja
 `scripts/describe_clusters.py`, gitignoreado):
@@ -31,8 +33,11 @@ Opcional, para etiquetas legibles en la leyenda (lo deja
 
 Escribe (gitignoreado -- contiene coordenadas por parcela, ver
 viz/clusters/README.md):
-    viz/clusters/data/index.json           manifiesto (corridas, zonas, paleta)
+    viz/clusters/data/index.json           manifiesto (corridas, zonas, paletas)
     viz/clusters/data/{set}{suffix}.json   puntos por zona y por cluster
+    viz/clusters/data/constants_{zona}.png  raster de fondo: píxeles cuya
+                                            trayectoria 2000-2022 no cambia,
+                                            coloreados por su único estado
 """
 
 import argparse
@@ -40,7 +45,9 @@ import csv
 import io
 import json
 import math
+import struct
 import sys
+import zlib
 import zipfile
 from pathlib import Path
 
@@ -232,6 +239,141 @@ def _dss(tokens: list[str]) -> list[str]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+#  Paleta de estados constantes (fondo de trayectorias que nunca cambiaron)
+# --------------------------------------------------------------------------- #
+# Integrada al sistema de color de los procesos: mismo espacio OKLCh, y el hue de
+# cada estado se comparte con el proceso semánticamente equivalente (bosque
+# constante = verde pálido, mismo hue que "regeneración de bosque"; agua = azul,
+# mismo hue que "dinámica de agua"). Muy claro y poco saturado para que el fondo
+# retroceda y los puntos de cluster resalten.
+
+VOCAB = ["[UNK]", "A", "F", "G", "Wt", "U", "Sh", "Sp", "B", "Wa", "Nd"]  # land2vec.tokenizer
+
+STATE_LABELS = {
+    "[UNK]": "sin clasificar", "A": "agricultura", "F": "forestal", "G": "pastizal",
+    "Wt": "humedal", "U": "urbano", "Sh": "arbustal", "Sp": "vegetación esparsa",
+    "B": "suelo desnudo", "Wa": "agua", "Nd": "sin dato",
+}
+
+# (L, C, hue OKLCh) por estado. Todos claros (fondo que retrocede), pero con
+# suficiente separación de hue/L/C entre los beige áridos (A/Sp/B/Sh, dominantes
+# en Puna/Patagonia) para que no se fundan. F/Wa/Wt/U/A/G comparten el hue de su
+# proceso análogo (mismo sistema de color). Wa y U -- raros e importantes de
+# ubicar -- salen más oscuros y saturados.
+_CONST_OKLCH = {
+    "F":  (0.83, 0.070, 152),   # forestal -- verde
+    "G":  (0.87, 0.065, 128),   # pastizal -- verde-amarillo
+    "A":  (0.87, 0.078,  80),   # agricultura -- oro
+    "Sh": (0.86, 0.055, 110),   # arbustal -- oliva
+    "Sp": (0.88, 0.055,  62),   # vegetación esparsa -- arena
+    "B":  (0.92, 0.038,  30),   # suelo desnudo -- el más pálido, rosado
+    "Wt": (0.86, 0.072, 210),   # humedal -- celeste
+    "Wa": (0.77, 0.088, 245),   # agua -- azul, netamente más oscuro que el resto del fondo
+    "U":  (0.82, 0.090, 330),   # urbano -- magenta
+}
+
+
+def _const_color(token: str) -> str:
+    if token == "[UNK]":
+        return _oklch_to_hex(0.90, 0.0, 0.0)
+    if token == "Nd":
+        return _oklch_to_hex(0.80, 0.0, 0.0)
+    return _oklch_to_hex(*_CONST_OKLCH[token])
+
+
+CONST_COLORS = {t: _const_color(t) for t in VOCAB}
+
+
+def _hex_to_rgb(h: str) -> tuple[int, int, int]:
+    h = h.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+# paleta indexada del PNG: idx 0 = vacío/transparente, idx 1..11 = VOCAB
+CONST_PALETTE = [(0, 0, 0)] + [_hex_to_rgb(CONST_COLORS[t]) for t in VOCAB]
+CONST_IDX = {t: i + 1 for i, t in enumerate(VOCAB)}
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    return (struct.pack(">I", len(data)) + tag + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+
+def _png_indexed(w: int, h: int, pixels: bytes, palette: list[tuple[int, int, int]],
+                 transparent_idx: int = 0) -> bytes:
+    """PNG de color indexado (color type 3, 8 bpp). `pixels` = w*h bytes de índices
+    de paleta, fila por fila desde arriba. `transparent_idx` sale con alpha 0."""
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 3, 0, 0, 0)
+    plte = b"".join(struct.pack(">BBB", *c) for c in palette)
+    trns = bytes(0 if i == transparent_idx else 255 for i in range(len(palette)))
+    raw = bytearray()
+    for y in range(h):
+        raw.append(0)                       # filtro 0 (None) por scanline
+        raw += pixels[y * w:(y + 1) * w]
+    idat = zlib.compress(bytes(raw), 9)
+    return (sig + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"PLTE", plte)
+            + _png_chunk(b"tRNS", trns) + _png_chunk(b"IDAT", idat)
+            + _png_chunk(b"IEND", b""))
+
+
+def build_constant_raster(zone: str, data_dir: Path) -> dict | None:
+    """Raster PNG (grilla ESA CCI 300 m reconstruida) de los píxeles cuya
+    trayectoria 2000-2022 no cambia -- coloreados por su único estado. Devuelve
+    None si faltan las entradas."""
+    seqs_path = data_dir / f"id_seqs_text_2000_2022_{zone}.zip"
+    coords_path = data_dir / f"lat_long_df_{zone}.zip"
+    if not seqs_path.exists() or not coords_path.exists():
+        print(f"  {zone}: falta id_seqs/lat_long, se omite el fondo")
+        return None
+
+    constant: dict[str, str] = {}
+    for row in read_zip_csv(seqs_path):
+        toks = row["seqs"].split("-")
+        if toks and all(t == toks[0] for t in toks):
+            constant[row["ID"]] = toks[0]
+
+    coords = [(r["ID"], round(float(r["latitude"]), 6), round(float(r["longitude"]), 6))
+              for r in read_zip_csv(coords_path)]
+    lons = sorted({lon for _, _, lon in coords})
+    lats = sorted({lat for _, lat, _ in coords})
+    W, H = len(lons), len(lats)
+    lon_ix = {v: i for i, v in enumerate(lons)}
+    lat_ix = {v: i for i, v in enumerate(lats)}
+
+    buf = bytearray(W * H)
+    placed = 0
+    for cid, lat, lon in coords:
+        tok = constant.get(cid)
+        if tok is None:
+            continue
+        col, rowi = lon_ix.get(lon), lat_ix.get(lat)
+        if col is None or rowi is None:
+            continue
+        buf[(H - 1 - rowi) * W + col] = CONST_IDX[tok]   # norte arriba
+        placed += 1
+
+    png = _png_indexed(W, H, bytes(buf), CONST_PALETTE)
+    dlon = (lons[-1] - lons[0]) / (W - 1) if W > 1 else 0.0028
+    dlat = (lats[-1] - lats[0]) / (H - 1) if H > 1 else 0.0028
+    bounds = [[lats[0] - dlat / 2, lons[0] - dlon / 2],
+              [lats[-1] + dlat / 2, lons[-1] + dlon / 2]]
+    by_state: dict[str, int] = {}
+    for tok in constant.values():
+        by_state[tok] = by_state.get(tok, 0) + 1
+
+    return {
+        "png": png,
+        "bounds": bounds,
+        "by_state": by_state,
+        "n_constant": len(constant),
+        "placed": placed,
+        "grid": [W, H],
+        "rect": W * H == len(coords),
+    }
+
+
 def read_zip_csv(path: Path) -> csv.DictReader:
     """Abre el único miembro de un .zip como csv.DictReader (todo en memoria:
     los archivos son chicos, < 3 MB descomprimidos)."""
@@ -355,6 +497,44 @@ def build_set(
     }
 
 
+def build_all_constants(data_dir: Path, out_dir: Path) -> tuple[dict, dict]:
+    "Genera los constants_<zona>.png y devuelve (constants_meta, conteos globales)."
+    print("[fondo de trayectorias constantes]")
+    constants: dict[str, dict] = {}
+    counts: dict[str, int] = {}
+    for zone in ZONES:
+        cr = build_constant_raster(zone, data_dir)
+        if cr is None:
+            continue
+        (out_dir / f"constants_{zone}.png").write_bytes(cr["png"])
+        constants[zone] = {
+            "file": f"constants_{zone}.png",
+            "bounds": cr["bounds"],
+            "by_state": cr["by_state"],
+        }
+        for tok, n in cr["by_state"].items():
+            counts[tok] = counts.get(tok, 0) + n
+        warn = "" if cr["rect"] else "  ¡grilla no rectangular!"
+        print(f"  constants_{zone}.png: {cr['grid'][0]}×{cr['grid'][1]}, "
+              f"{cr['n_constant']:,} constantes, {len(cr['png']) / 1024:.0f} KB{warn}")
+    return constants, counts
+
+
+def _rebuild_constants_only(data_dir: Path, out_dir: Path) -> None:
+    "Regenera solo el raster de fondo y actualiza esas claves en index.json."
+    index_path = out_dir / "index.json"
+    if not index_path.exists():
+        sys.exit(f"falta {index_path} -- corré primero sin --only-constants")
+    index = json.loads(index_path.read_text())
+    constants, counts = build_all_constants(data_dir, out_dir)
+    index["constant_colors"] = CONST_COLORS
+    index["state_labels"] = STATE_LABELS
+    index["constants"] = constants
+    index["constant_state_counts"] = counts
+    index_path.write_text(json.dumps(index, separators=(",", ":")))
+    print(f"\nactualizado {index_path.relative_to(ROOT)} (solo fondo)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -365,9 +545,17 @@ def main() -> None:
                         help="decimales de lat/lon (5 ~1 m, 4 ~11 m; menos = archivo más liviano)")
     parser.add_argument("--only", choices=list(SUFFIXES), default=None,
                         help="procesar solo esta granularidad/familia")
+    parser.add_argument("--no-constants", action="store_true",
+                        help="no generar el raster de fondo de trayectorias constantes")
+    parser.add_argument("--only-constants", action="store_true",
+                        help="regenerar solo el raster de fondo (deja los JSON de puntos)")
     args = parser.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.only_constants:
+        return _rebuild_constants_only(args.data_dir, args.out_dir)
+
     suffixes = [args.only] if args.only else list(SUFFIXES)
     typ_labels = load_typology_labels()
     if not typ_labels:
@@ -408,6 +596,10 @@ def main() -> None:
     if not runs:
         sys.exit("no se generó ninguna corrida -- ¿faltan los data/clusters_*.zip?")
 
+    constants, const_counts = (
+        ({}, {}) if args.no_constants else build_all_constants(args.data_dir, args.out_dir)
+    )
+
     index = {
         "generated_from": "scripts/build_cluster_map.py",
         "zones": [
@@ -425,6 +617,10 @@ def main() -> None:
             for k, v in PROCESSES.items()
         },
         "state_colors": STATE_COLORS,
+        "constant_colors": CONST_COLORS,
+        "state_labels": STATE_LABELS,
+        "constants": constants,
+        "constant_state_counts": const_counts,
         "runs": runs,
     }
     (args.out_dir / "index.json").write_text(json.dumps(index, separators=(",", ":")))

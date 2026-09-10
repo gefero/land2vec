@@ -109,6 +109,7 @@
   .tooltip .z { color: var(--faint); }
 
   .leaflet-cluster-canvas { pointer-events: none; }
+  .leaflet-image-layer { image-rendering: pixelated; image-rendering: crisp-edges; }
 
   @media (max-width: 720px) {
     .app { flex-direction: column; }
@@ -176,6 +177,14 @@
       <label class="check" style="margin-top:8px">
         <input type="checkbox" id="showNoise"> mostrar sin tipificar (&minus;1)
       </label>
+      <label class="check" style="margin-top:8px" id="constWrap" hidden>
+        <input type="checkbox" id="constBg"> fondo: trayectorias constantes
+      </label>
+      <div class="row" id="constOpacRow" hidden style="margin-top:6px">
+        <label for="constOpacR">Op. fondo</label>
+        <input type="range" id="constOpacR" min="0.1" max="1" step="0.05" value="0.4">
+        <span class="val" id="constOpacV">.40</span>
+      </div>
     </div>
 
     <div class="group exportbar">
@@ -189,6 +198,11 @@
         <button id="expJpg" class="alt">JPG</button>
       </div>
       <div class="hint" id="expHint">incluye pie con leyenda y atribución</div>
+    </div>
+
+    <div class="group legend" id="constLegend" hidden>
+      <div class="lh"><h3>Fondo &middot; estado constante 2000&ndash;2022</h3></div>
+      <div class="items" id="constLegItems" style="max-height:none"></div>
     </div>
 
     <div class="group legend">
@@ -229,11 +243,16 @@ const state = {
   gran: "fine", fam: "hdbscan", set: "dynamic",
   zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false,
   scale: 1, isolated: null, isolatedProc: null, colorMode: "proceso",
+  constBg: false, constOpacity: 0.4,
 };
 
 let manifest = null;             // index.json
 let palette = [];
 let processes = {};              // key -> {label, color}  (color base del proceso)
+let constColors = {};            // token -> hex  (paleta pálida del fondo)
+let stateLabels = {};            // token -> nombre legible
+let constMeta = {};              // zone -> { file, bounds, by_state }
+const constLayers = new Map();   // zone -> L.imageOverlay (lazy)
 let zonesMeta = {};              // id -> {label, bounds}
 let labelsByRun = {};            // suffix -> { "<cid>": {etiqueta, proceso, color, ...} }
 const fileCache = new Map();     // filename -> parsed json
@@ -356,6 +375,30 @@ const ClusterCanvas = L.Layer.extend({
 const pointLayer = new ClusterCanvas().addTo(map);
 
 /* ------------------------------------------------------------------ *
+ *  Fondo: raster de trayectorias constantes (una imagen por zona)
+ * ------------------------------------------------------------------ */
+function syncConstLayer() {
+  const on = state.constBg && Object.keys(constMeta).length > 0;
+  const zoneFilter = state.zone === "__all__" ? null : state.zone;
+  for (const [zid, meta] of Object.entries(constMeta)) {
+    const want = on && (!zoneFilter || zid === zoneFilter);
+    let lyr = constLayers.get(zid);
+    if (want && !lyr) {
+      lyr = L.imageOverlay(DATA_DIR + meta.file, meta.bounds, {
+        opacity: state.constOpacity, interactive: false, pane: "tilePane",
+      });
+      constLayers.set(zid, lyr);
+    }
+    if (want) {
+      if (!map.hasLayer(lyr)) lyr.addTo(map);
+      lyr.setOpacity(state.constOpacity);
+    } else if (lyr && map.hasLayer(lyr)) {
+      map.removeLayer(lyr);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ *
  *  Colores
  * ------------------------------------------------------------------ */
 function runLabels() {
@@ -419,6 +462,10 @@ async function boot() {
     $("#segColor").hidden = true;
     $("#colorHint").hidden = true;
   }
+  constColors = manifest.constant_colors || {};
+  stateLabels = manifest.state_labels || {};
+  constMeta = manifest.constants || {};
+  if (Object.keys(constMeta).length) $("#constWrap").hidden = false;
   for (const z of manifest.zones) {
     zonesMeta[z.id] = z;
     const opt = document.createElement("option");
@@ -533,6 +580,37 @@ function clusterRow(cid, n, total, sub) {
   return b;
 }
 
+// estados del fondo constante presentes en la vista, agregados por área.
+// [{token, n}] ordenado desc, o [] si el fondo está apagado / sin datos.
+function constStatesInView() {
+  if (!state.constBg || !Object.keys(constMeta).length) return [];
+  const zoneFilter = state.zone === "__all__" ? null : state.zone;
+  const acc = {};
+  for (const [zid, meta] of Object.entries(constMeta)) {
+    if (zoneFilter && zid !== zoneFilter) continue;
+    for (const [t, n] of Object.entries(meta.by_state || {})) acc[t] = (acc[t] || 0) + n;
+  }
+  return Object.entries(acc).map(([t, n]) => [t, n]).sort((a, b) => b[1] - a[1]);
+}
+
+function buildConstLegend() {
+  const ents = constStatesInView();
+  $("#constLegend").hidden = ents.length === 0;
+  const box = $("#constLegItems");
+  box.innerHTML = "";
+  if (!ents.length) return;
+  const tot = ents.reduce((a, [, n]) => a + n, 0);
+  for (const [t, n] of ents) {
+    const r = document.createElement("div");
+    r.className = "legrow";
+    r.innerHTML =
+      `<span class="sw" style="background:${constColors[t] || "#ccc"}"></span>` +
+      `<span class="tx">${esc(stateLabels[t] || t)}</span>` +
+      `<span class="ct mono">${(100 * n / tot).toFixed(0)}%</span>`;
+    box.appendChild(r);
+  }
+}
+
 function buildLegend() {
   const counts = aggregateCounts();
   const rows = [...counts.entries()]
@@ -541,6 +619,8 @@ function buildLegend() {
   const total = rows.reduce((a, [, n]) => a + n, 0) || 1;   // % relativos a lo que se ve
   const box = $("#legItems");
   box.innerHTML = "";
+
+  buildConstLegend();
 
   const grouped = state.colorMode === "proceso" && Object.keys(runLabels()).length > 0;
   if (!grouped) {
@@ -627,6 +707,7 @@ function wireControls() {
     updateStatus();
     buildLegend();
     pointLayer._redraw();
+    syncConstLayer();
   });
 
   const sizeR = $("#sizeR"), opacR = $("#opacR");
@@ -652,6 +733,17 @@ function wireControls() {
   });
   $("#showNoise").addEventListener("change", (e) => {
     state.showNoise = e.target.checked; updateStatus(); buildLegend(); pointLayer._redraw();
+  });
+  $("#constBg").addEventListener("change", (e) => {
+    state.constBg = e.target.checked;
+    $("#constOpacRow").hidden = !state.constBg;
+    syncConstLayer();
+    buildLegend();
+  });
+  $("#constOpacR").addEventListener("input", (e) => {
+    state.constOpacity = +e.target.value;
+    $("#constOpacV").textContent = state.constOpacity.toFixed(2).replace(/^0/, "");
+    syncConstLayer();
   });
 
   $("#expPng").onclick = () => exportView("png");
@@ -722,7 +814,7 @@ async function exportView(fmt) {
     const y0 = Math.floor(originPx.y / 256), y1 = Math.floor((originPx.y + H) / 256);
 
     const out = document.createElement("canvas");
-    const footH = Math.round(78 * s);
+    const footH = Math.round((state.constBg && Object.keys(constMeta).length ? 96 : 78) * s);
     out.width = W; out.height = H + footH;
     const ctx = out.getContext("2d");
     ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, out.width, out.height);
@@ -747,13 +839,31 @@ async function exportView(fmt) {
       await Promise.all(jobs);
     }
 
+    const zoneFilter = state.zone === "__all__" ? null : state.zone;
+
+    // --- fondo de trayectorias constantes (encima de los tiles, debajo de los puntos) ---
+    if (state.constBg && Object.keys(constMeta).length) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.globalAlpha = state.constOpacity;
+      for (const [zid, meta] of Object.entries(constMeta)) {
+        if (zoneFilter && zid !== zoneFilter) continue;
+        const im = await loadImg(DATA_DIR + meta.file);
+        if (!im) continue;
+        const nwc = map.project([meta.bounds[1][0], meta.bounds[0][1]], tileZoom); // maxLat,minLon
+        const sec = map.project([meta.bounds[0][0], meta.bounds[1][1]], tileZoom); // minLat,maxLon
+        ctx.drawImage(im, nwc.x - originPx.x, nwc.y - originPx.y,
+          sec.x - nwc.x, sec.y - nwc.y);
+      }
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = true;
+    }
+
     // --- puntos ---
     const d = state.pxMode
       ? Math.max(1, (PIXEL_M / metersPerPixel(map.getCenter().lat, tileZoom)) * (state.size / 2.5))
       : state.size * s * 2;
     const r = d / 2;
     ctx.globalAlpha = Math.min(1, state.opacity + 0.1);
-    const zoneFilter = state.zone === "__all__" ? null : state.zone;
     for (const [zid, zd] of Object.entries(current.data.zones)) {
       if (zoneFilter && zid !== zoneFilter) continue;
       for (const [cidStr, flat] of Object.entries(zd.points)) {
@@ -840,6 +950,26 @@ function drawFooter(ctx, W, H, footH, s, attr) {
     ctx.fillStyle = "#3a3f33";
     ctx.fillText(it.txt, lx + 13 * s, ly - 1 * s);
     lx += w;
+  }
+
+  // línea del fondo constante (si está activo)
+  const cStates = constStatesInView();
+  if (cStates.length) {
+    let cx = pad;
+    const cy = ly + 16 * s;
+    ctx.fillStyle = "#626c58";
+    ctx.fillText("fondo:", cx, cy - 1 * s);
+    cx += ctx.measureText("fondo:").width + 8 * s;
+    for (const [t] of cStates.slice(0, 7)) {
+      const txt = stateLabels[t] || t;
+      const w = ctx.measureText(txt).width + 15 * s;
+      if (cx + w > W - pad) break;
+      ctx.fillStyle = constColors[t] || "#ccc";
+      ctx.fillRect(cx, cy, 9 * s, 9 * s);
+      ctx.fillStyle = "#3a3f33";
+      ctx.fillText(txt, cx + 12 * s, cy - 1 * s);
+      cx += w;
+    }
   }
 
   // barra de escala (resolución en el CRS de tiles al zoom con el que se compuso)
