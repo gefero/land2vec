@@ -472,7 +472,10 @@ servirlo por HTTP (el comando de arriba).
     más cercano; las que quedan lejos de todo centroide salen como `−1` ("sin
     tipificar"). Ver docs §7.2, Nota metodológica.
 - **Vista**: selector de zona (con zoom automático a su bounding box), sliders de
-  tamaño y opacidad de punto, y un toggle para mostrar u ocultar el `−1`.
+  tamaño y opacidad de punto, un toggle **`tamaño = píxel real (300 m)`** (el
+  marcador escala con el zoom para cubrir la huella del píxel ESA CCI, de modo que
+  en zonas densas los puntos se toquen; el slider de tamaño pasa a ser un factor,
+  `2.5 = 1×`), y un toggle para mostrar u ocultar el `−1`.
 - **Leyenda**: swatch de color + etiqueta automática (`F»A · monotónica · ~2008 ·
   deforestación para agricultura`, tomada de `viz/typology/typology_browser.json`
   si está presente; si no, "cluster N"), ordenada por tamaño dentro de la zona

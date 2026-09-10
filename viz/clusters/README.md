@@ -20,6 +20,11 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
     (incluye las constantes submuestreadas al 15%), **asignadas** por centroide
     más cercano; las que quedan lejos de todo centroide salen como `−1` ("sin
     tipificar"). Ver docs §7.2, Nota metodológica.
+- **Vista**: zona (con zoom a su bbox), tamaño y opacidad del punto, y el toggle
+  **`tamaño = píxel real (300 m)`** — el marcador escala con el zoom para cubrir la
+  huella del píxel ESA CCI (`src/land2vec/extract.py`), así en `dinámico` y en las
+  zonas densas los puntos se tocan en vez de verse como confeti; con el modo activo
+  el deslizador de tamaño pasa a ser un factor (`2.5` = 1× la huella real).
 - **Base**: OpenStreetMap, OSM Humanitarian o Esri World Imagery (satélite; los
   tiles propios de Google no se pueden embeber fuera de su API con clave).
 - **Leyenda**: swatch + etiqueta automática (de `viz/typology/typology_browser.json`

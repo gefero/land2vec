@@ -149,7 +149,7 @@
         <select id="zoneSel"><option value="__all__">Todas</option></select>
       </div>
       <div class="row" style="margin-top:6px">
-        <label for="sizeR">Punto</label>
+        <label for="sizeR" id="sizeLab">Punto</label>
         <input type="range" id="sizeR" min="1" max="6" step="0.5" value="2.5">
         <span class="val" id="sizeV">2.5</span>
       </div>
@@ -158,6 +158,10 @@
         <input type="range" id="opacR" min="0.15" max="1" step="0.05" value="0.75">
         <span class="val" id="opacV">.75</span>
       </div>
+      <label class="check" style="margin-top:8px">
+        <input type="checkbox" id="pxMode"> tamaño = píxel real (300 m)
+      </label>
+      <div class="hint" id="pxHint" hidden>el marcador escala con el zoom para cubrir el píxel ESA CCI; el deslizador pasa a ser factor (2.5 = 1&times;)</div>
       <label class="check" style="margin-top:8px">
         <input type="checkbox" id="showNoise"> mostrar sin tipificar (&minus;1)
       </label>
@@ -212,7 +216,7 @@ const SET_HINT = {
 
 const state = {
   gran: "fine", fam: "hdbscan", set: "dynamic",
-  zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false,
+  zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false,
   scale: 1, isolated: null,
 };
 
@@ -301,7 +305,8 @@ const ClusterCanvas = L.Layer.extend({
     this._drawn.length = 0;
     if (!current) return;
 
-    const r = state.size, d = r * 2;
+    const d = markerSide(map.getCenter().lat, map.getZoom()), r = d / 2;
+    this._lastR = r;
     ctx.globalAlpha = state.opacity;
     const vb = map.getBounds().pad(0.05);
     const south = vb.getSouth(), north = vb.getNorth(), west = vb.getWest(), east = vb.getEast();
@@ -328,7 +333,7 @@ const ClusterCanvas = L.Layer.extend({
     ctx.globalAlpha = 1;
   },
   hitTest(px, py) {
-    const a = this._drawn, tol = Math.max(6, state.size + 3);
+    const a = this._drawn, tol = Math.max(6, (this._lastR || state.size) + 3);
     let best = null, bestD = tol * tol;
     for (let i = 0; i < a.length; i += 4) {
       const dx = a[i] - px, dy = a[i + 1] - py, dd = dx * dx + dy * dy;
@@ -345,6 +350,20 @@ const pointLayer = new ClusterCanvas().addTo(map);
 function colorFor(cid) {
   if (cid === -1) return NOISE_COLOR;
   return palette[cid % palette.length] || "#888";
+}
+
+const PIXEL_M = 300;          // resolución ESA CCI (src/land2vec/extract.py)
+
+// metros por píxel de pantalla en EPSG:3857 a una latitud y zoom dados
+function metersPerPixel(lat, zoom) {
+  return 156543.03392 * Math.abs(Math.cos(lat * Math.PI / 180)) / Math.pow(2, zoom);
+}
+
+// lado del marcador (px) para el frame actual; en pxMode escala con el zoom
+// tomando 2.5 en el deslizador como 1× la huella real de 300 m
+function markerSide(lat, zoom) {
+  if (!state.pxMode) return state.size * 2;
+  return Math.max(1, (PIXEL_M / metersPerPixel(lat, zoom)) * (state.size / 2.5));
 }
 
 /* ------------------------------------------------------------------ *
@@ -516,8 +535,20 @@ function wireControls() {
   });
 
   const sizeR = $("#sizeR"), opacR = $("#opacR");
+  const syncSizeReadout = () => {
+    $("#sizeLab").textContent = state.pxMode ? "Factor" : "Punto";
+    $("#sizeV").textContent = state.pxMode
+      ? (state.size / 2.5).toFixed(2).replace(/\.?0+$/, "") + "×"
+      : String(state.size);
+  };
   sizeR.addEventListener("input", () => {
-    state.size = +sizeR.value; $("#sizeV").textContent = sizeR.value; pointLayer._redraw();
+    state.size = +sizeR.value; syncSizeReadout(); pointLayer._redraw();
+  });
+  $("#pxMode").addEventListener("change", (e) => {
+    state.pxMode = e.target.checked;
+    $("#pxHint").hidden = !state.pxMode;
+    syncSizeReadout();
+    pointLayer._redraw();
   });
   opacR.addEventListener("input", () => {
     state.opacity = +opacR.value;
@@ -619,7 +650,10 @@ async function exportView(fmt) {
     }
 
     // --- puntos ---
-    const r = state.size * s, d = r * 2;
+    const d = state.pxMode
+      ? Math.max(1, (PIXEL_M / metersPerPixel(map.getCenter().lat, tileZoom)) * (state.size / 2.5))
+      : state.size * s * 2;
+    const r = d / 2;
     ctx.globalAlpha = Math.min(1, state.opacity + 0.1);
     const zoneFilter = state.zone === "__all__" ? null : state.zone;
     for (const [zid, zd] of Object.entries(current.data.zones)) {
