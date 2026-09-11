@@ -213,8 +213,8 @@
       </label>
       <div class="row" id="constOpacRow" hidden style="margin-top:6px">
         <label for="constOpacR">Op. fondo</label>
-        <input type="range" id="constOpacR" min="0.1" max="1" step="0.05" value="0.4">
-        <span class="val" id="constOpacV">.40</span>
+        <input type="range" id="constOpacR" min="0.1" max="1" step="0.05" value="0.55">
+        <span class="val" id="constOpacV">.55</span>
       </div>
     </div>
 
@@ -232,8 +232,12 @@
     </div>
 
     <div class="group legend" id="constLegend" hidden>
-      <div class="lh"><h3>Fondo &middot; estado constante 2000&ndash;2022</h3></div>
+      <div class="lh">
+        <h3>Fondo &middot; estado constante 2000&ndash;2022</h3>
+        <button class="clear" id="constLegClear" hidden>ver todos</button>
+      </div>
       <div class="items" id="constLegItems" style="max-height:none"></div>
+      <div class="hint">click para prender/apagar una capa</div>
     </div>
 
     <div class="group legend">
@@ -275,16 +279,18 @@ const state = {
   gran: "fine", fam: "hdbscan", set: "dynamic",
   zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false,
   scale: 1, selected: new Set(), isolatedProc: null, colorMode: "proceso",
-  constBg: false, constOpacity: 0.4,
+  constBg: false, constOpacity: 0.55, constSelected: new Set(),
 };
 
 let manifest = null;             // index.json
 let palette = [];
 let processes = {};              // key -> {label, color}  (color base del proceso)
 let constColors = {};            // token -> hex  (paleta pálida del fondo)
+let constColorToToken = {};      // "r,g,b" -> token  (para filtrar el raster por click)
 let stateLabels = {};            // token -> nombre legible
 let constMeta = {};              // zone -> { file, bounds, by_state }
 const constLayers = new Map();   // zone -> L.imageOverlay (lazy)
+const constRasters = new Map();  // zone -> ImageData cruda decodificada (lazy, para filtrar)
 let zonesMeta = {};              // id -> {label, bounds}
 let labelsByRun = {};            // suffix -> { "<cid>": {etiqueta, proceso, color, ...} }
 const fileCache = new Map();     // filename -> parsed json
@@ -469,25 +475,104 @@ function updateSelControl() {
 /* ------------------------------------------------------------------ *
  *  Fondo: raster de trayectorias constantes (una imagen por zona)
  * ------------------------------------------------------------------ */
-function syncConstLayer() {
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function buildConstColorLookup() {
+  constColorToToken = {};
+  for (const [tok, hex] of Object.entries(constColors)) {
+    const [r, g, b] = hexToRgb(hex);
+    constColorToToken[`${r},${g},${b}`] = tok;
+  }
+}
+
+// visibilidad de un estado del fondo según la selección por click en su leyenda
+// (mismo patrón que clusterVisible: sin selección = se ven todos)
+function constTokenVisible(tok) {
+  return state.constSelected.size === 0 || state.constSelected.has(tok);
+}
+
+// decodifica una vez el PNG indexado a ImageData (para poder filtrar por color/token)
+async function ensureConstRaster(zid) {
+  if (constRasters.has(zid)) return constRasters.get(zid);
+  const meta = constMeta[zid];
+  if (!meta) return null;
+  const img = await loadImg(DATA_DIR + meta.file);
+  if (!img) return null;
+  const cv = document.createElement("canvas");
+  cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  const raw = ctx.getImageData(0, 0, cv.width, cv.height);
+  constRasters.set(zid, raw);
+  return raw;
+}
+
+// URL (data: o el archivo crudo) del raster de una zona con los estados
+// apagados vueltos transparentes según state.constSelected
+function filteredConstDataURL(zid) {
+  const raw = constRasters.get(zid);
+  if (!raw || state.constSelected.size === 0) return DATA_DIR + constMeta[zid].file;
+  const data = new Uint8ClampedArray(raw.data);
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const tok = constColorToToken[`${data[i]},${data[i + 1]},${data[i + 2]}`];
+    if (!tok || !constTokenVisible(tok)) data[i + 3] = 0;
+  }
+  const cv = document.createElement("canvas");
+  cv.width = raw.width; cv.height = raw.height;
+  cv.getContext("2d").putImageData(new ImageData(data, raw.width, raw.height), 0, 0);
+  return cv.toDataURL();
+}
+
+async function syncConstLayer() {
   const on = state.constBg && Object.keys(constMeta).length > 0;
   const zoneFilter = state.zone === "__all__" ? null : state.zone;
+  const wanted = new Set(Object.keys(constMeta).filter((zid) => on && (!zoneFilter || zid === zoneFilter)));
+  await Promise.all([...wanted].map(ensureConstRaster));
   for (const [zid, meta] of Object.entries(constMeta)) {
-    const want = on && (!zoneFilter || zid === zoneFilter);
+    const want = wanted.has(zid);
     let lyr = constLayers.get(zid);
-    if (want && !lyr) {
-      lyr = L.imageOverlay(DATA_DIR + meta.file, meta.bounds, {
-        opacity: state.constOpacity, interactive: false, pane: "tilePane",
-      });
-      constLayers.set(zid, lyr);
-    }
     if (want) {
+      const url = filteredConstDataURL(zid);
+      if (!lyr) {
+        lyr = L.imageOverlay(url, meta.bounds, {
+          opacity: state.constOpacity, interactive: false, pane: "tilePane",
+        });
+        constLayers.set(zid, lyr);
+      } else {
+        lyr.setUrl(url);
+      }
       if (!map.hasLayer(lyr)) lyr.addTo(map);
       lyr.setOpacity(state.constOpacity);
     } else if (lyr && map.hasLayer(lyr)) {
       map.removeLayer(lyr);
     }
   }
+}
+
+// solo cambia la opacidad de las capas ya en pantalla (el slider no debe
+// re-decodificar/filtrar el raster en cada tick de arrastre)
+function setConstOpacity() {
+  for (const lyr of constLayers.values()) if (map.hasLayer(lyr)) lyr.setOpacity(state.constOpacity);
+}
+
+// prende/apaga un estado del fondo constante (misma lógica que toggleSelected)
+function toggleConstSelected(tok) {
+  state.constSelected.has(tok) ? state.constSelected.delete(tok) : state.constSelected.add(tok);
+  refreshConstFromLegend();
+}
+
+function clearConstSelection() {
+  state.constSelected.clear();
+  refreshConstFromLegend();
+}
+
+function refreshConstFromLegend() {
+  buildConstLegend();
+  syncConstLayer();
 }
 
 /* ------------------------------------------------------------------ *
@@ -566,6 +651,7 @@ async function boot() {
     $("#colorHint").hidden = true;
   }
   constColors = manifest.constant_colors || {};
+  buildConstColorLookup();
   stateLabels = manifest.state_labels || {};
   constMeta = manifest.constants || {};
   if (Object.keys(constMeta).length) $("#constWrap").hidden = false;
@@ -705,20 +791,24 @@ function constStatesInView() {
 function buildConstLegend() {
   const ents = constStatesInView();
   $("#constLegend").hidden = ents.length === 0;
+  $("#constLegClear").hidden = state.constSelected.size === 0;
   const box = $("#constLegItems");
   box.innerHTML = "";
   if (!ents.length) return;
   const tot = ents.reduce((a, [, n]) => a + n, 0);
   for (const [t, n] of ents) {
-    const r = document.createElement("div");
-    r.className = "legrow";
-    r.innerHTML =
+    const b = document.createElement("button");
+    b.className = "legrow";
+    b.setAttribute("aria-pressed", state.constSelected.has(t));
+    b.innerHTML =
       `<span class="sw" style="background:${constColors[t] || "#ccc"}"></span>` +
       `<span class="tx">${esc(stateLabels[t] || t)}</span>` +
       `<span class="ct mono">${(100 * n / tot).toFixed(0)}%</span>`;
-    box.appendChild(r);
+    b.onclick = () => toggleConstSelected(t);
+    box.appendChild(b);
   }
 }
+$("#constLegClear").onclick = () => clearConstSelection();
 
 function buildLegend() {
   const counts = aggregateCounts();
@@ -851,7 +941,7 @@ function wireControls() {
   $("#constOpacR").addEventListener("input", (e) => {
     state.constOpacity = +e.target.value;
     $("#constOpacV").textContent = state.constOpacity.toFixed(2).replace(/^0/, "");
-    syncConstLayer();
+    setConstOpacity();
   });
 
   $("#expPng").onclick = () => exportView("png");
@@ -1007,7 +1097,8 @@ async function exportView(fmt) {
       ctx.globalAlpha = state.constOpacity;
       for (const [zid, meta] of Object.entries(constMeta)) {
         if (zoneFilter && zid !== zoneFilter) continue;
-        const im = await loadImg(DATA_DIR + meta.file);
+        await ensureConstRaster(zid);
+        const im = await loadImg(filteredConstDataURL(zid));
         if (!im) continue;
         const nwc = map.project([meta.bounds[1][0], meta.bounds[0][1]], tileZoom); // maxLat,minLon
         const sec = map.project([meta.bounds[0][0], meta.bounds[1][1]], tileZoom); // minLat,maxLon
@@ -1118,8 +1209,8 @@ function drawFooter(ctx, W, H, footH, s, attr) {
     lx += w;
   }
 
-  // línea del fondo constante (si está activo)
-  const cStates = constStatesInView();
+  // línea del fondo constante (si está activo) -- solo los estados prendidos
+  const cStates = constStatesInView().filter(([t]) => constTokenVisible(t));
   if (cStates.length) {
     let cx = pad;
     const cy = ly + 16 * s;
