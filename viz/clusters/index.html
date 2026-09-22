@@ -78,6 +78,10 @@
   }
   .exportbar .btns button.alt { background: var(--surface); color: var(--accent); border: 1px solid var(--accent); }
   .hint { font-size: 11px; color: var(--faint); }
+  .hint.warn {
+    color: #8a5a00; background: #fdf3d9; border: 1px solid #f0dfa0;
+    border-radius: 6px; padding: 6px 8px; margin-top: 6px;
+  }
 
   [hidden] { display: none !important; }
   .legend { display: flex; flex-direction: column; gap: 2px; }
@@ -152,12 +156,21 @@
 <header>
   <img class="brand" src="factordata-logo.png" alt="factor~data">
   <h1>Mapa de clusterizaciones <span class="mono" style="font-weight:400;color:var(--muted)">land2vec v2</span></h1>
-  <span class="sub">7 zonas out-of-domain &middot; trayectorias de uso del suelo 2000&ndash;2022</span>
+  <span class="sub" id="headerSub">7 zonas out-of-domain &middot; trayectorias de uso del suelo 2000&ndash;2022</span>
   <span class="status" id="status">cargando&hellip;</span>
 </header>
 
 <div class="app">
   <aside class="panel">
+    <div class="group" id="groupWrap">
+      <div class="lab">Conjunto de zonas</div>
+      <div class="seg" id="segGroup">
+        <button data-v="eval" aria-pressed="true">evaluación</button>
+        <button data-v="train">entrenamiento</button>
+      </div>
+      <div class="hint warn" id="groupHint" hidden></div>
+    </div>
+
     <div class="group">
       <div class="lab">Corrida</div>
       <div class="seg" id="segGran">
@@ -171,7 +184,7 @@
       </div>
     </div>
 
-    <div class="group">
+    <div class="group" id="setGroupWrap">
       <div class="lab">Set de etiquetas</div>
       <div class="seg" id="segSet">
         <button data-v="dynamic" aria-pressed="true">dinámico &middot; ajuste</button>
@@ -286,15 +299,18 @@ const SUFFIX = {
 const SET_HINT = {
   dynamic: "Las ~107k secuencias con transición sobre las que se ajustó el clustering (in-sample).",
   pooled_subsampled: "Todo el pool (incl. constantes al 15%) asignado por centroide más cercano; los puntos lejos de todo centroide salen como −1.",
+  train_pooled: "Las 8 zonas de entrenamiento, asignadas por centroide más cercano contra el mismo clustering. In-sample para el encoder — ver el aviso de arriba.",
 };
 
 const state = {
-  gran: "fine", fam: "hdbscan", set: "dynamic",
+  gran: "fine", fam: "hdbscan", set: "dynamic", group: "eval",
   zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false,
   scale: 1, selected: new Set(), isolatedProc: null, colorMode: "proceso",
   constBg: false, constOpacity: 0.55, constSelected: new Set(),
   imgBg: false, imgOpacity: 0.8, imgYear: "2022",
 };
+// último set elegido a mano en cada grupo (para restaurarlo al volver a "eval")
+const lastSetByGroup = { eval: "dynamic", train: "train_pooled" };
 
 let manifest = null;             // index.json
 let palette = [];
@@ -307,7 +323,8 @@ const constLayers = new Map();   // zone -> L.imageOverlay (lazy)
 const constRasters = new Map();  // zone -> ImageData cruda decodificada (lazy, para filtrar)
 let imageryMeta = {};            // zone -> { bounds, "2000": {file, coverage, ...}, "2022": {...} }
 const imageryLayers = new Map(); // "zone|year" -> L.imageOverlay (lazy)
-let zonesMeta = {};              // id -> {label, bounds}
+let zonesMeta = {};              // id -> {label, bounds, group}  (TODAS las zonas, eval + train)
+let zoneGroups = [];             // [{id, label, short, sets, zones, hint}]  ver manifest.zone_groups
 let labelsByRun = {};            // suffix -> { "<cid>": {etiqueta, proceso, color, ...} }
 const fileCache = new Map();     // filename -> parsed json
 let current = null;              // { file, data }  del run+set activo
@@ -428,10 +445,9 @@ const ClusterCanvas = L.Layer.extend({
     ctx.globalAlpha = state.opacity;
     const vb = map.getBounds().pad(0.05);
     const south = vb.getSouth(), north = vb.getNorth(), west = vb.getWest(), east = vb.getEast();
-    const zoneFilter = state.zone === "__all__" ? null : state.zone;
 
     for (const [zid, zd] of Object.entries(current.data.zones)) {
-      if (zoneFilter && zid !== zoneFilter) continue;
+      if (!zoneAllowed(zid)) continue;
       const zb = zd.bounds;   // [[s,w],[n,e]] — saltar la zona entera si no toca la vista
       if (zb && (zb[1][0] < south || zb[0][0] > north || zb[1][1] < west || zb[0][1] > east)) continue;
       for (const [cidStr, flat] of Object.entries(zd.points)) {
@@ -548,10 +564,7 @@ function filteredConstDataURL(zid) {
 // quede debajo suyo dentro del mismo pane (orden de inserción = z-order).
 function syncImageryLayer() {
   const on = state.imgBg && Object.keys(imageryMeta).length > 0;
-  const zoneFilter = state.zone === "__all__" ? null : state.zone;
-  const wanted = new Set(
-    Object.keys(imageryMeta).filter((zid) => on && (!zoneFilter || zid === zoneFilter))
-  );
+  const wanted = new Set(Object.keys(imageryMeta).filter((zid) => on && zoneAllowed(zid)));
   for (const [key, lyr] of imageryLayers) {
     const [zid] = key.split("|");
     if (!wanted.has(zid) || key !== `${zid}|${state.imgYear}`) {
@@ -572,7 +585,7 @@ function syncImageryLayer() {
     if (!map.hasLayer(lyr)) lyr.addTo(map);
     lyr.setOpacity(state.imgOpacity);
   }
-  const entry = zoneFilter && imageryMeta[zoneFilter]?.[state.imgYear];
+  const entry = state.zone !== "__all__" && imageryMeta[state.zone]?.[state.imgYear];
   $("#imgHint").hidden = !on;
   if (on) {
     // fuente automática (fetch_zone_imagery.py): source + date_range + coverage.
@@ -590,8 +603,7 @@ function setImgOpacity() {
 
 async function syncConstLayer() {
   const on = state.constBg && Object.keys(constMeta).length > 0;
-  const zoneFilter = state.zone === "__all__" ? null : state.zone;
-  const wanted = new Set(Object.keys(constMeta).filter((zid) => on && (!zoneFilter || zid === zoneFilter)));
+  const wanted = new Set(Object.keys(constMeta).filter((zid) => on && zoneAllowed(zid)));
   await Promise.all([...wanted].map(ensureConstRaster));
   for (const [zid, meta] of Object.entries(constMeta)) {
     const want = wanted.has(zid);
@@ -691,6 +703,79 @@ function markerSide(lat, zoom) {
 }
 
 /* ------------------------------------------------------------------ *
+ *  Conjunto de zonas (evaluación / entrenamiento)
+ * ------------------------------------------------------------------ */
+function groupById(id) {
+  return zoneGroups.find((g) => g.id === id) || zoneGroups[0];
+}
+function activeGroup() {
+  return groupById(state.group);
+}
+
+// true si la zona `zid` debe dibujarse con el filtro de zona actual: la zona
+// elegida, o (con "Todas") cualquier zona del grupo activo -- así un
+// index.json viejo o una capa que todavía liste zonas de los dos grupos
+// (imagery/constants antes de correr assign_train_clusters.py) no mezcla
+// entrenamiento con evaluación en la misma vista.
+function zoneAllowed(zid) {
+  if (state.zone !== "__all__") return zid === state.zone;
+  return activeGroup().zones.includes(zid);
+}
+
+function groupBounds(g) {
+  const boxes = g.zones.map((zid) => zonesMeta[zid] && zonesMeta[zid].bounds).filter(Boolean);
+  if (!boxes.length) return null;
+  const b = L.latLngBounds(boxes[0]);
+  boxes.slice(1).forEach((x) => b.extend(x));
+  return b;
+}
+
+function populateZoneSel() {
+  const sel = $("#zoneSel");
+  sel.innerHTML = '<option value="__all__">Todas</option>';
+  for (const zid of activeGroup().zones) {
+    const z = zonesMeta[zid];
+    if (!z) continue;
+    const opt = document.createElement("option");
+    opt.value = zid; opt.textContent = z.label;
+    sel.appendChild(opt);
+  }
+  sel.value = "__all__";
+}
+
+function syncSetSegUI() {
+  for (const b of $("#segSet").children) {
+    b.setAttribute("aria-pressed", b.dataset.v === state.set);
+  }
+}
+
+function syncGroupUI() {
+  const g = activeGroup();
+  $("#headerSub").textContent = `${g.short} · trayectorias de uso del suelo 2000–2022`;
+  $("#setGroupWrap").hidden = g.sets.length < 2;
+  $("#groupHint").hidden = !g.hint;
+  $("#groupHint").textContent = g.hint || "";
+  populateZoneSel();
+}
+
+function onGroupChange() {
+  const g = activeGroup();
+  if (!g.sets.includes(state.set)) {
+    const remembered = lastSetByGroup[state.group];
+    state.set = (remembered && g.sets.includes(remembered)) ? remembered : g.sets[0];
+  }
+  syncSetSegUI();
+  syncGroupUI();
+  $("#setHint").textContent = SET_HINT[state.set] || "";
+  state.zone = "__all__";
+  const b = groupBounds(g);
+  if (b) map.fitBounds(b, { padding: [30, 30] });
+  loadCurrent();
+  syncImageryLayer();
+  syncConstLayer();
+}
+
+/* ------------------------------------------------------------------ *
  *  Carga de datos
  * ------------------------------------------------------------------ */
 async function boot() {
@@ -716,12 +801,20 @@ async function boot() {
   stateLabels = manifest.state_labels || {};
   constMeta = manifest.constants || {};
   if (Object.keys(constMeta).length) $("#constWrap").hidden = false;
-  for (const z of manifest.zones) {
-    zonesMeta[z.id] = z;
-    const opt = document.createElement("option");
-    opt.value = z.id; opt.textContent = z.label;
-    $("#zoneSel").appendChild(opt);
-  }
+  for (const z of manifest.zones) zonesMeta[z.id] = z;
+
+  // manifiesto viejo (sin zone_groups): un solo grupo sintético con todas las
+  // zonas y los sets que de hecho aparecen en alguna corrida -- el selector
+  // de grupo queda oculto (ver más abajo) y el visor se comporta como antes.
+  zoneGroups = manifest.zone_groups && manifest.zone_groups.length
+    ? manifest.zone_groups
+    : [{
+        id: "eval", label: "Zonas", short: `${manifest.zones.length} zonas`,
+        sets: [...new Set(manifest.runs.flatMap((r) => Object.keys(r.sets)))],
+        zones: manifest.zones.map((z) => z.id), hint: null,
+      }];
+  $("#groupWrap").hidden = zoneGroups.length < 2;
+
   for (const r of manifest.runs) labelsByRun[r.suffix] = r.labels || {};
   try {
     imageryMeta = await fetchJSON(DATA_DIR + "imagery/index.json");
@@ -733,6 +826,9 @@ async function boot() {
     $("#segImgYear").hidden = false;
   }
   wireControls();
+  syncGroupUI();
+  const b = groupBounds(activeGroup());
+  if (b) map.fitBounds(b, { padding: [30, 30] });
   await loadCurrent();
 }
 
@@ -793,10 +889,9 @@ function updateStatus() {
  *  Leyenda
  * ------------------------------------------------------------------ */
 function aggregateCounts() {
-  const zoneFilter = state.zone === "__all__" ? null : state.zone;
   const counts = new Map();
   for (const [zid, zd] of Object.entries(current.data.zones)) {
-    if (zoneFilter && zid !== zoneFilter) continue;
+    if (!zoneAllowed(zid)) continue;
     for (const [cid, n] of Object.entries(zd.counts)) {
       counts.set(+cid, (counts.get(+cid) || 0) + n);
     }
@@ -849,10 +944,9 @@ function clusterRow(cid, n, total, sub) {
 // [{token, n}] ordenado desc, o [] si el fondo está apagado / sin datos.
 function constStatesInView() {
   if (!state.constBg || !Object.keys(constMeta).length) return [];
-  const zoneFilter = state.zone === "__all__" ? null : state.zone;
   const acc = {};
   for (const [zid, meta] of Object.entries(constMeta)) {
-    if (zoneFilter && zid !== zoneFilter) continue;
+    if (!zoneAllowed(zid)) continue;
     for (const [t, n] of Object.entries(meta.by_state || {})) acc[t] = (acc[t] || 0) + n;
   }
   return Object.entries(acc).map(([t, n]) => [t, n]).sort((a, b) => b[1] - a[1]);
@@ -956,9 +1050,14 @@ function seg(id, key, after) {
 }
 
 function wireControls() {
+  seg("segGroup", "group", onGroupChange);
   seg("segGran", "gran", loadCurrent);
   seg("segFam", "fam", loadCurrent);
-  seg("segSet", "set", () => { $("#setHint").textContent = SET_HINT[state.set]; loadCurrent(); });
+  seg("segSet", "set", () => {
+    lastSetByGroup[state.group] = state.set;
+    $("#setHint").textContent = SET_HINT[state.set];
+    loadCurrent();
+  });
   seg("segScale", "scale", () => { state.scale = +state.scale; });
   seg("segColor", "colorMode", () => {
     $("#colorHint").hidden = state.colorMode !== "proceso";
@@ -1029,14 +1128,6 @@ function wireControls() {
 
   $("#expPng").onclick = () => exportView("png");
   $("#expJpg").onclick = () => exportView("jpg");
-
-  // fit inicial: todas las zonas
-  const all = manifest.zones.map((z) => z.bounds).filter(Boolean);
-  if (all.length) {
-    const b = L.latLngBounds(all[0]);
-    all.slice(1).forEach((x) => b.extend(x));
-    map.fitBounds(b, { padding: [30, 30] });
-  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -1172,13 +1263,11 @@ async function exportView(fmt) {
       await Promise.all(jobs);
     }
 
-    const zoneFilter = state.zone === "__all__" ? null : state.zone;
-
     // --- imagen satelital de inicio/fin (encima de los tiles, debajo del fondo constante) ---
     if (state.imgBg && Object.keys(imageryMeta).length) {
       ctx.globalAlpha = state.imgOpacity;
       for (const [zid, zmeta] of Object.entries(imageryMeta)) {
-        if (zoneFilter && zid !== zoneFilter) continue;
+        if (!zoneAllowed(zid)) continue;
         const entry = zmeta[state.imgYear];
         if (!entry) continue;
         const im = await loadImg(DATA_DIR + entry.file);
@@ -1196,7 +1285,7 @@ async function exportView(fmt) {
       ctx.imageSmoothingEnabled = false;
       ctx.globalAlpha = state.constOpacity;
       for (const [zid, meta] of Object.entries(constMeta)) {
-        if (zoneFilter && zid !== zoneFilter) continue;
+        if (!zoneAllowed(zid)) continue;
         await ensureConstRaster(zid);
         const im = await loadImg(filteredConstDataURL(zid));
         if (!im) continue;
@@ -1216,7 +1305,7 @@ async function exportView(fmt) {
     const r = d / 2;
     ctx.globalAlpha = Math.min(1, state.opacity + 0.1);
     for (const [zid, zd] of Object.entries(current.data.zones)) {
-      if (zoneFilter && zid !== zoneFilter) continue;
+      if (!zoneAllowed(zid)) continue;
       for (const [cidStr, flat] of Object.entries(zd.points)) {
         const cid = +cidStr;
         if (!clusterVisible(cid)) continue;
@@ -1259,7 +1348,8 @@ function drawFooter(ctx, W, H, footH, s, attr) {
   ctx.fillStyle = "#1b2016";
   ctx.font = `${13 * s}px "IBM Plex Sans", system-ui, sans-serif`;
   ctx.textBaseline = "top";
-  const zoneLabel = state.zone === "__all__" ? "7 zonas OOD" : zonesMeta[state.zone].label;
+  const zoneLabel = (state.zone === "__all__" ? activeGroup().short : zonesMeta[state.zone].label)
+    + (state.group === "train" ? " — in-sample" : "");
   ctx.fillText(`land2vec — ${current.data.name}`, pad, H + pad);
 
   // logo factor~data, arriba a la derecha del pie
