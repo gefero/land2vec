@@ -174,9 +174,9 @@ def mask_landsat89(img):
     return scaled.updateMask(mask).copyProperties(img, ["system:time_start"])
 
 
-def mask_sentinel(img):
+def mask_sentinel(img, cloud_classes=SENTINEL_CLOUD_CLASSES):
     scl = img.select("SCL")
-    bad = ee.List(SENTINEL_CLOUD_CLASSES)
+    bad = ee.List(cloud_classes)
     mask = scl.remap(bad, ee.List.repeat(0, bad.size()), 1)
     return img.select(["B4", "B3", "B2"], ["R", "G", "B"]).updateMask(mask).copyProperties(img, ["system:time_start"])
 
@@ -247,7 +247,7 @@ def visualized_composite(coll, tile_prop, cloud_prop, mask_fn, vis, budget=MAX_S
 
 
 def build_composite(region, year, pad_months, cloud_cover, landsat_fallback=False,
-                     fallback_budget=FALLBACK_MAX_SCENES):
+                     fallback_budget=FALLBACK_MAX_SCENES, sentinel_cloud_classes=None):
     is_landsat = year < 2013  # Landsat 5 dejó de operar en 2012
     start, end = date_window(year, pad_months)
     if is_landsat:
@@ -278,12 +278,24 @@ def build_composite(region, year, pad_months, cloud_cover, landsat_fallback=Fals
     # a su swath de 185 km), y un tope global le da todo el cupo a los tiles
     # con menos nube y deja los demás enteros afuera -- eso se veía como
     # agujeros negros rectangulares en el compuesto, no ruido.
-    composite, n_scenes = visualized_composite(coll, tile_prop, cloud_prop, mask_landsat if is_landsat else mask_sentinel, vis)
+    if is_landsat:
+        mask_fn = mask_landsat
+    elif sentinel_cloud_classes is None:
+        mask_fn = mask_sentinel
+    else:
+        # nieve/hielo/salares muy reflectantes: SCL los confunde con nube
+        # (típicamente clase 8, "cloud medium probability") y los enmascara
+        # en TODAS las escenas por igual -- ningún presupuesto de escenas
+        # arregla eso, hay que sacar esa clase de la lista (--sentinel-cloud-classes).
+        mask_fn = lambda img: mask_sentinel(img, sentinel_cloud_classes)  # noqa: E731
+    composite, n_scenes = visualized_composite(coll, tile_prop, cloud_prop, mask_fn, vis)
     meta = {
         "source": source,
         "n_scenes": n_scenes,
         "date_range": f"{start.format('YYYY-MM-dd').getInfo()}/{end.format('YYYY-MM-dd').getInfo()}",
     }
+    if not is_landsat and sentinel_cloud_classes is not None:
+        meta["sentinel_cloud_classes"] = sentinel_cloud_classes
 
     if landsat_fallback and not is_landsat:
         # Sentinel-2 puede quedar con una costura sin dato justo en el límite
@@ -344,6 +356,11 @@ def parse_args():
                     help=f"presupuesto de escenas del respaldo Landsat 8/9, repartido por path/row "
                          f"(default {FALLBACK_MAX_SCENES}; subirlo si una zona tiene muchos path/row "
                          "y el aviso de 'posibles agujeros' aparece también en el respaldo)")
+    p.add_argument("--sentinel-cloud-classes", type=int, nargs="+", default=None,
+                    help=f"clases SCL a enmascarar como nube en el compuesto Sentinel-2 (default "
+                         f"{SENTINEL_CLOUD_CLASSES}). Sacar el 8 ('cloud medium probability') en "
+                         "zonas con nieve/hielo/salares muy reflectantes que SCL confunde con nube "
+                         "en todas las escenas por igual -- no afecta al respaldo Landsat")
     return p.parse_args()
 
 
@@ -372,6 +389,7 @@ def main():
                 composite, meta = build_composite(
                     region, year, args.pad_months, args.cloud_cover, args.landsat_fallback,
                     fallback_budget=args.landsat_fallback_scenes,
+                    sentinel_cloud_classes=args.sentinel_cloud_classes,
                 )
                 fname = f"{zone['id']}_{year}.png"
                 export_png(composite, region, dims, args.out_dir / fname)
