@@ -246,7 +246,8 @@ def visualized_composite(coll, tile_prop, cloud_prop, mask_fn, vis, budget=MAX_S
     return composite, n_scenes
 
 
-def build_composite(region, year, pad_months, cloud_cover, landsat_fallback=False):
+def build_composite(region, year, pad_months, cloud_cover, landsat_fallback=False,
+                     fallback_budget=FALLBACK_MAX_SCENES):
     is_landsat = year < 2013  # Landsat 5 dejó de operar en 2012
     start, end = date_window(year, pad_months)
     if is_landsat:
@@ -302,7 +303,7 @@ def build_composite(region, year, pad_months, cloud_cover, landsat_fallback=Fals
         if fallback_coll.size().getInfo() > 0:
             fallback_vis, fallback_n = visualized_composite(
                 fallback_coll, "TILE_ID", "CLOUD_COVER", mask_landsat89, LANDSAT_VIS,
-                budget=FALLBACK_MAX_SCENES,
+                budget=fallback_budget,
             )
             composite = ee.ImageCollection([fallback_vis, composite]).mosaic()
             meta["landsat_fallback_scenes"] = fallback_n
@@ -339,6 +340,10 @@ def parse_args():
     p.add_argument("--force", action="store_true", help="reprocesa aunque ya exista {zona}_{año}.png")
     p.add_argument("--landsat-fallback", action="store_true",
                     help="tapa con Landsat 8/9 las costuras sin dato de Sentinel-2 en límites de huso UTM")
+    p.add_argument("--landsat-fallback-scenes", type=int, default=FALLBACK_MAX_SCENES,
+                    help=f"presupuesto de escenas del respaldo Landsat 8/9, repartido por path/row "
+                         f"(default {FALLBACK_MAX_SCENES}; subirlo si una zona tiene muchos path/row "
+                         "y el aviso de 'posibles agujeros' aparece también en el respaldo)")
     return p.parse_args()
 
 
@@ -366,6 +371,7 @@ def main():
             try:
                 composite, meta = build_composite(
                     region, year, args.pad_months, args.cloud_cover, args.landsat_fallback,
+                    fallback_budget=args.landsat_fallback_scenes,
                 )
                 fname = f"{zone['id']}_{year}.png"
                 export_png(composite, region, dims, args.out_dir / fname)
