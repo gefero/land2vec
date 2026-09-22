@@ -199,7 +199,7 @@ Flags relevantes, todos con default razonable:
 | `--cloud-cover N` | nubosidad máxima admitida por escena (default 50). Subir a 80 en zonas con pocas escenas despejadas |
 | `--pad-months N` | ancho de la ventana de fechas (default 5) |
 | `--max-side N` | lado máximo del PNG en píxeles (default 2000) |
-| `--landsat-fallback` | ver más abajo -- solo hace falta en 4 zonas puntuales |
+| `--landsat-fallback` | ver más abajo -- solo hace falta en 5 zonas puntuales |
 | `--force` | reprocesa aunque ya exista el PNG |
 
 **Límite de memoria del servidor de Earth Engine.** Un compuesto de mediana
@@ -214,21 +214,36 @@ escena -- eso se veía como agujeros negros rectangulares en el compuesto, no
 como ruido. Si una zona puntual sigue fallando por memoria, `--max-side` más
 chico reduce la grilla de salida y da margen.
 
+**Agujeros por presupuesto mal repartido (bug corregido).** `cap_per_tile()`
+tenía la rama invertida: cuando sobraba presupuesto (`MAX_SCENES=160`) frente
+a pocos tiles, clampeaba igual al piso `min_per_tile=8` en vez de repartir
+todo el presupuesto -- confirmado en `puna_salta_catamarca` (10 tiles, usaba
+80/160 escenas) y `yungas` (3 tiles, usaba solo 24/160). Corregido: ahora usa
+`total_budget // n_tiles` siempre, con aviso en consola si eso queda por
+debajo de `min_per_tile` (ahí sí puede haber agujero genuino de nubosidad).
+Si una zona chica sigue con agujeros después de este fix, `--cloud-cover 80`
+y/o `--pad-months` más ancho ayudan (más escenas candidatas por tile).
+
 **Costura en el límite de huso UTM (`--landsat-fallback`).** Varias zonas
 cruzan un límite de huso -- `patagonia_estepa` (19/20), `chaco_santiago_frontier`
-y `pampa_nucleo` (ambas 20/21), y `pampa_deprimida` (su par de entrenamiento,
-también 20/21) -- y la grilla de *tiles* MGRS de Sentinel-2, que está definida
-por huso, deja sin cubrir una franja exacta en esa costura, sin importar
-cuántas escenas o qué nubosidad se admita (es una falta de dato real, no un
-parámetro para ajustar). `--landsat-fallback` arma un segundo compuesto con
-Landsat 8/9 (grilla path/row, sin esa discontinuidad) y lo usa *solo* donde
-Sentinel-2 quedó sin dato -- el resto de la imagen sigue siendo Sentinel-2 a
-10 m. El parche queda visible (30 m, tono distinto) pero acotado a la costura.
-Usarlo únicamente en esas zonas:
+y `pampa_nucleo` (ambas 20/21), `pampa_deprimida` (su par de entrenamiento,
+también 20/21), y `patagonia_santacruz` (18/19, confirmado por los tiles MGRS
+reales: 20 en huso 19, 5 en huso 18 pese a que su bbox declarado no llega al
+límite teórico -- los tiles Sentinel-2 son cuadrados de 100 km orientados a
+la grilla de su huso, no franjas de meridiano, así que pueden asomar al huso
+vecino) -- y la grilla de *tiles* MGRS de Sentinel-2, que está definida por
+huso, deja sin cubrir una franja exacta en esa costura, sin importar cuántas
+escenas o qué nubosidad se admita (es una falta de dato real, no un parámetro
+para ajustar). `--landsat-fallback` arma un segundo compuesto con Landsat 8/9
+(grilla path/row, sin esa discontinuidad) y lo usa *solo* donde Sentinel-2
+quedó sin dato -- el resto de la imagen sigue siendo Sentinel-2 a 10 m. El
+parche queda visible (30 m, tono distinto) pero acotado a la costura. Usarlo
+únicamente en esas zonas:
 
 ```bash
 python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
-  --zone patagonia_estepa --zone chaco_santiago_frontier --zone pampa_nucleo --zone pampa_deprimida \
+  --zone patagonia_estepa --zone chaco_santiago_frontier --zone pampa_nucleo \
+  --zone pampa_deprimida --zone patagonia_santacruz \
   --cloud-cover 80 --landsat-fallback --force
 ```
 

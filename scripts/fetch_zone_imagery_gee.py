@@ -190,25 +190,28 @@ def date_window(year, pad_months):
 def cap_per_tile(coll, tile_prop, cloud_prop, total_budget, min_per_tile=8):
     """Reparte `total_budget` escenas ENTRE LOS TILES que hagan falta, no un
     tope fijo por tile -- agrupa por `tile_prop`, calcula cuántos tiles
-    distintos hay y le da a cada uno `total_budget / n_tiles` escenas (mínimo
-    `min_per_tile`), ordenadas por nubosidad. Necesario para Sentinel-2: una
-    zona grande necesita varios tiles MGRS (~100x100 km) para cubrirla
-    entera, y un tope GLOBAL ordenado por nubosidad de toda la colección le
-    puede dar todo el cupo a 1-2 tiles con poca nube y dejar los demás
-    enteros afuera -- eso se veía como agujeros negros rectangulares en el
-    compuesto final, no ruido. Repartir por tile mantiene el mismo total (ya
-    validado que no tira "User memory limit exceeded") pero distribuido."""
+    distintos hay y le da a cada uno `total_budget / n_tiles` escenas,
+    ordenadas por nubosidad. Necesario para Sentinel-2: una zona grande
+    necesita varios tiles MGRS (~100x100 km) para cubrirla entera, y un tope
+    GLOBAL ordenado por nubosidad de toda la colección le puede dar todo el
+    cupo a 1-2 tiles con poca nube y dejar los demás enteros afuera -- eso se
+    veía como agujeros negros rectangulares en el compuesto final, no ruido.
+    Repartir por tile mantiene el mismo total (ya validado que no tira "User
+    memory limit exceeded") pero distribuido.
+
+    `min_per_tile` es solo el umbral bajo el cual avisar que el reparto puede
+    dejar agujeros genuinos (no hay presupuesto para darle a cada tile ni esa
+    mínima cantidad) -- nunca se usa como techo: con pocos tiles y presupuesto
+    de sobra, cada uno se queda con `total_budget // n_tiles`, no con el
+    mínimo. Un bug previo hacía justo eso (clampeaba al mínimo aun sobrando
+    presupuesto) y dejaba agujeros por nubosidad en zonas de pocos tiles
+    -- ver `puna_salta_catamarca`/`yungas` en viz/clusters/README.md."""
     tiles = coll.aggregate_array(tile_prop).distinct()
     n_tiles = max(1, tiles.size().getInfo())
-    # el piso NUNCA puede hacer que el total supere el presupuesto -- volvió a
-    # pasar (esta vez en Landsat) que un tile de más de la cuenta empujaba el
-    # total por encima de lo ya validado como seguro y volvía "User memory
-    # limit exceeded". Si hay tantos tiles que ni 1 escena c/u entra en el
-    # presupuesto, se prioriza no explotar memoria sobre cobertura completa.
-    if n_tiles * min_per_tile <= total_budget:
-        per_tile_cap = min_per_tile
-    else:
-        per_tile_cap = max(1, total_budget // n_tiles)
+    per_tile_cap = max(1, total_budget // n_tiles)
+    if per_tile_cap < min_per_tile:
+        print(f"    aviso: {n_tiles} tiles para {total_budget} escenas de presupuesto da solo "
+              f"{per_tile_cap}/tile (mínimo recomendado {min_per_tile}) -- posibles agujeros por nubosidad")
     # cuántas escenas hay disponibles por tile ANTES del tope -- si algún
     # tile da 0, ese agujero es falta de dato real (nada por debajo del
     # --cloud-cover pedido en toda la ventana), no algo que un presupuesto
