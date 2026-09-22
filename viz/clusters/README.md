@@ -247,6 +247,28 @@ python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
   --cloud-cover 80 --landsat-fallback --force
 ```
 
+**Costura en el límite de banda de latitud (mismo síntoma, otra causa).**
+`puna_salta_catamarca_2022` tenía un agujero rectangular limpio en una
+esquina, con el borde calzando el contorno real de una tile MGRS
+(`19KEP`, la única con letra de banda distinta -- "K" en vez de "J" -- entre
+las 10 tiles de la zona). No era nube: sobrevivió con presupuesto completo
+por tile (`cap_per_tile` ya corregido) y sacando la clase SCL 8 ("cloud
+medium probability", la más propensa a falso positivo sobre nieve/hielo/
+salares -- `--sentinel-cloud-classes`, útil para *ese* caso puntual, acá no
+lo era). Es la misma falta de dato estructural que la costura de huso, pero
+en el límite entre bandas de latitud de la grilla de Sentinel-2 en vez del
+límite de huso -- se tapa igual con `--landsat-fallback`.
+
+Encadenar el respaldo con una exportación grande puede tirar `"User memory
+limit exceeded"` (el compuesto Sentinel + el mosaico con Landsat superan el
+límite de una sola exportación) -- `--max-side` más chico lo resuelve, a
+costa de resolución en toda la imagen, no solo el parche:
+
+```bash
+python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
+  --zone puna_salta_catamarca --cloud-cover 80 --landsat-fallback --max-side 1200 --force
+```
+
 #### Alternativa manual: Google Earth Pro
 
 Si se necesita específicamente la imagen "real" de Google Earth (no
