@@ -5,26 +5,37 @@ x 2 familias (`scripts/tune_clustering.py --select`, ver
 `docs/v2_autoencoder_training.md` §7.2) con las coordenadas por parcela y escribe
 JSONs compactos que `viz/clusters/index.html` consume tal cual (sin recalcular).
 
-Dos "sets" por corrida, ver docs §7.2 (Nota metodológica):
+Tres "sets" por corrida, dos zonas de evaluación (ver docs §7.2, Nota
+metodológica) y uno de entrenamiento:
 
 - `dynamic`            -- las ~107k secuencias con transición sobre las que se
-                         ajustó el clustering ("in-sample").
+                         ajustó el clustering ("in-sample" del clustering, zonas
+                         de evaluación).
 - `pooled_subsampled`  -- ~126k parcelas (incluye constantes submuestreadas al
                          15%), asignadas por centroide más cercano con un corte
-                         "sin tipificar" (cluster = -1) ("aplicado").
+                         "sin tipificar" (cluster = -1) ("aplicado", zonas de
+                         evaluación).
+- `train_pooled`       -- mismo criterio que `pooled_subsampled` pero sobre las
+                         8 zonas de entrenamiento (`scripts/assign_train_clusters.py`)
+                         -- in-sample para el encoder, out-of-sample para el
+                         clustering. Sin equivalente de `dynamic`: el clustering
+                         nunca se ajustó sobre train.
 
-Solo usa la librería estándar (csv/zipfile/json): las entradas ya son CSV dentro
-de zips, no hace falta pandas/numpy. Corre con cualquier `python3`.
+Solo usa la librería estándar (csv/zipfile/json) más `land2vec.zones` (también
+solo-stdlib): las entradas ya son CSV dentro de zips, no hace falta
+pandas/numpy/torch. Corre con cualquier `python3`.
 
 Uso:
-    python scripts/build_cluster_map.py                 # las 6 corridas x 2 sets
+    python scripts/build_cluster_map.py                 # las 6 corridas x hasta 3 sets
     python scripts/build_cluster_map.py --only _medium  # una granularidad/familia
     python scripts/build_cluster_map.py --precision 4   # menos decimales, menos peso
     python scripts/build_cluster_map.py --no-constants  # sin el raster de fondo
+    python scripts/build_cluster_map.py --constants-groups eval  # fondo solo de eval
 
-Prerrequisitos (los deja `tune_clustering.py --select`):
-    data/clusters_{dynamic,pooled_subsampled}{,_medium,_coarse}{,_parametric}.zip
-    data/lat_long_df_{zona}.zip           (una por zona OOD)
+Prerrequisitos (los deja `tune_clustering.py --select` para eval,
+`scripts/assign_train_clusters.py` para train):
+    data/clusters_{dynamic,pooled_subsampled,train_pooled}{,_medium,_coarse}{,_parametric}.zip
+    data/lat_long_df_{zona}.zip           (una por zona)
     data/id_seqs_text_2000_2022_{zona}.zip  (para el raster de fondo de constantes)
 
 Opcional, para etiquetas legibles en la leyenda (lo deja
@@ -54,31 +65,18 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+from land2vec.zones import GROUP_OF, ZONE_LABELS, ZONES_BY_GROUP  # noqa: E402
+
 DATA_DIR = ROOT / "data"
 OUT_DIR = ROOT / "viz" / "clusters" / "data"
 TYPOLOGY_JSON = ROOT / "viz" / "typology" / "typology_browser.json"
 
-# Las 7 zonas de evaluación out-of-domain (land2vec.cluster.ZONES). El clustering
-# se ajusta sobre las 7 juntas; acá solo las separamos para el mapa.
-ZONES = [
-    "puna_noa",
-    "patagonia_estepa",
-    "periurbano_cordoba",
-    "ibera",
-    "delta_parana",
-    "pampa_nucleo",
-    "misiones_selva",
-]
-
-ZONE_LABELS = {
-    "puna_noa": "Puna (Jujuy)",
-    "patagonia_estepa": "Estepa patagónica",
-    "periurbano_cordoba": "Periurbano (Córdoba)",
-    "ibera": "Iberá",
-    "delta_parana": "Delta del Paraná",
-    "pampa_nucleo": "Pampa núcleo",
-    "misiones_selva": "Selva misionera",
-}
+# Las 7 zonas de evaluación out-of-domain (land2vec.zones.EVAL_ZONES) + las 8
+# de entrenamiento (land2vec.zones.ZONES_BY_GROUP["train"]) -- ZONE_LABELS y
+# el grupo de cada una (GROUP_OF) también vienen de ahí, ver land2vec/zones.py.
+ZONES = ZONES_BY_GROUP["eval"] + ZONES_BY_GROUP["train"]
 
 # suffix -> nombre visible (mismo criterio que scripts/tune_clustering.py y
 # viz/typology). "" = granularidad fina / familia HDBSCAN.
@@ -91,11 +89,18 @@ SUFFIXES = {
     "_coarse_parametric": "gruesa / paramétrico",
 }
 
-SETS = ["dynamic", "pooled_subsampled"]
+# "dynamic"/"pooled_subsampled" son las zonas de evaluación (ver docs §7.2);
+# "train_pooled" es el mismo criterio de asignación por centroide que
+# "pooled_subsampled" pero sobre las 8 zonas de entrenamiento
+# (scripts/assign_train_clusters.py) -- in-sample para el encoder, sin
+# equivalente al set "dynamic" (no hay ajuste propio sobre train).
+SETS = ["dynamic", "pooled_subsampled", "train_pooled"]
 SET_LABELS = {
     "dynamic": "dinámico (ajuste · in-sample)",
     "pooled_subsampled": "pool submuestreado (aplicado)",
+    "train_pooled": "train · pool aplicado (in-sample del encoder)",
 }
+SET_GROUP = {"dynamic": "eval", "pooled_subsampled": "eval", "train_pooled": "train"}
 
 # Paleta cualitativa (Tableau-20 + Set3 recortada) cicleada por id de cluster.
 # El -1 ("sin tipificar") se pinta aparte, gris claro, en el visor. Es el modo de
@@ -550,12 +555,14 @@ def build_set(
     }
 
 
-def build_all_constants(data_dir: Path, out_dir: Path) -> tuple[dict, dict]:
-    "Genera los constants_<zona>.png y devuelve (constants_meta, conteos globales)."
+def build_all_constants(data_dir: Path, out_dir: Path, groups: set[str]) -> tuple[dict, dict]:
+    "Genera los constants_<zona>.png (para las zonas de `groups`) y devuelve (constants_meta, conteos globales)."
     print("[fondo de trayectorias constantes]")
     constants: dict[str, dict] = {}
     counts: dict[str, int] = {}
     for zone in ZONES:
+        if GROUP_OF[zone] not in groups:
+            continue
         cr = build_constant_raster(zone, data_dir)
         if cr is None:
             continue
@@ -573,13 +580,22 @@ def build_all_constants(data_dir: Path, out_dir: Path) -> tuple[dict, dict]:
     return constants, counts
 
 
-def _rebuild_constants_only(data_dir: Path, out_dir: Path) -> None:
-    "Regenera solo el raster de fondo y actualiza esas claves en index.json."
+def _rebuild_constants_only(data_dir: Path, out_dir: Path, groups: set[str]) -> None:
+    "Regenera solo el raster de fondo (de las zonas de `groups`) y actualiza esas claves en index.json."
     index_path = out_dir / "index.json"
     if not index_path.exists():
         sys.exit(f"falta {index_path} -- corré primero sin --only-constants")
     index = json.loads(index_path.read_text())
-    constants, counts = build_all_constants(data_dir, out_dir)
+    fresh, _ = build_all_constants(data_dir, out_dir, groups)
+    # conserva las zonas de un grupo no pedido esta vez (p. ej. --constants-groups
+    # train no debe borrar los constants_<zona>.png de eval ya generados).
+    kept = {z: c for z, c in index.get("constants", {}).items()
+            if GROUP_OF.get(z) not in groups}
+    constants = {**kept, **fresh}
+    counts: dict[str, int] = {}
+    for c in constants.values():
+        for tok, n in c["by_state"].items():
+            counts[tok] = counts.get(tok, 0) + n
     index["constant_colors"] = CONST_COLORS
     index["state_labels"] = STATE_LABELS
     index["constants"] = constants
@@ -602,12 +618,15 @@ def main() -> None:
                         help="no generar el raster de fondo de trayectorias constantes")
     parser.add_argument("--only-constants", action="store_true",
                         help="regenerar solo el raster de fondo (deja los JSON de puntos)")
+    parser.add_argument("--constants-groups", choices=["all", "eval", "train"], default="all",
+                        help="a qué grupo de zonas generarle el raster de fondo (default: todas)")
     args = parser.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    const_groups = {"eval", "train"} if args.constants_groups == "all" else {args.constants_groups}
 
     if args.only_constants:
-        return _rebuild_constants_only(args.data_dir, args.out_dir)
+        return _rebuild_constants_only(args.data_dir, args.out_dir, const_groups)
 
     suffixes = [args.only] if args.only else list(SUFFIXES)
     typ_labels = load_typology_labels()
@@ -652,9 +671,16 @@ def main() -> None:
         sys.exit("no se generó ninguna corrida -- ¿faltan los data/clusters_*.zip?")
 
     constants, const_counts = (
-        ({}, {}) if args.no_constants else build_all_constants(args.data_dir, args.out_dir)
+        ({}, {}) if args.no_constants else build_all_constants(args.data_dir, args.out_dir, const_groups)
     )
 
+    # una zona puede tener fondo de constantes (no depende del clustering) sin
+    # todavía tener puntos (p. ej. train antes de assign_train_clusters.py) --
+    # la incluimos igual, con el bounds del fondo, para que el visor conozca su
+    # label/group desde el primer build.
+    for zone, c in constants.items():
+        zone_geo.setdefault(zone, c["bounds"])
+    zones_present = [z for z in ZONES if z in zone_geo]
     index = {
         "generated_from": "scripts/build_cluster_map.py",
         "zones": [
@@ -662,8 +688,24 @@ def main() -> None:
                 "id": z,
                 "label": ZONE_LABELS.get(z, z),
                 "bounds": zone_geo.get(z),
+                "group": GROUP_OF[z],
             }
-            for z in ZONES if z in zone_geo
+            for z in zones_present
+        ],
+        "zone_groups": [
+            {
+                "id": g,
+                "label": "Evaluación (out-of-domain)" if g == "eval" else "Entrenamiento",
+                "short": "7 zonas OOD" if g == "eval" else "8 zonas de entrenamiento",
+                "sets": [s for s in SETS if SET_GROUP[s] == g],
+                "zones": [z for z in zones_present if GROUP_OF[z] == g],
+                "hint": None if g == "eval" else (
+                    "El encoder vio estas secuencias al entrenar: es in-sample "
+                    "para los embeddings (out-of-sample solo para el clustering). "
+                    "No es evidencia de generalización."
+                ),
+            }
+            for g in ("eval", "train")
         ],
         "set_labels": SET_LABELS,
         "palette": PALETTE,
