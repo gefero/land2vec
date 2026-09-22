@@ -216,6 +216,19 @@
         <input type="range" id="constOpacR" min="0.1" max="1" step="0.05" value="0.55">
         <span class="val" id="constOpacV">.55</span>
       </div>
+      <label class="check" style="margin-top:8px" id="imgWrap" hidden>
+        <input type="checkbox" id="imgBg"> imagen satelital (inicio/fin)
+      </label>
+      <div class="seg" id="segImgYear" hidden style="margin-top:6px">
+        <button data-v="2000" aria-pressed="false">2000</button>
+        <button data-v="2022" aria-pressed="true">2022</button>
+      </div>
+      <div class="row" id="imgOpacRow" hidden style="margin-top:6px">
+        <label for="imgOpacR">Op. imagen</label>
+        <input type="range" id="imgOpacR" min="0.1" max="1" step="0.05" value="0.8">
+        <span class="val" id="imgOpacV">.80</span>
+      </div>
+      <div class="hint" id="imgHint" hidden></div>
     </div>
 
     <div class="group exportbar">
@@ -280,6 +293,7 @@ const state = {
   zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false,
   scale: 1, selected: new Set(), isolatedProc: null, colorMode: "proceso",
   constBg: false, constOpacity: 0.55, constSelected: new Set(),
+  imgBg: false, imgOpacity: 0.8, imgYear: "2022",
 };
 
 let manifest = null;             // index.json
@@ -291,6 +305,8 @@ let stateLabels = {};            // token -> nombre legible
 let constMeta = {};              // zone -> { file, bounds, by_state }
 const constLayers = new Map();   // zone -> L.imageOverlay (lazy)
 const constRasters = new Map();  // zone -> ImageData cruda decodificada (lazy, para filtrar)
+let imageryMeta = {};            // zone -> { bounds, "2000": {file, coverage, ...}, "2022": {...} }
+const imageryLayers = new Map(); // "zone|year" -> L.imageOverlay (lazy)
 let zonesMeta = {};              // id -> {label, bounds}
 let labelsByRun = {};            // suffix -> { "<cid>": {etiqueta, proceso, color, ...} }
 const fileCache = new Map();     // filename -> parsed json
@@ -527,6 +543,51 @@ function filteredConstDataURL(zid) {
   return cv.toDataURL();
 }
 
+// imagen satelital de inicio/fin -- misma lógica que syncConstLayer pero sin
+// filtrado por leyenda; se sincroniza ANTES del fondo de constantes para que
+// quede debajo suyo dentro del mismo pane (orden de inserción = z-order).
+function syncImageryLayer() {
+  const on = state.imgBg && Object.keys(imageryMeta).length > 0;
+  const zoneFilter = state.zone === "__all__" ? null : state.zone;
+  const wanted = new Set(
+    Object.keys(imageryMeta).filter((zid) => on && (!zoneFilter || zid === zoneFilter))
+  );
+  for (const [key, lyr] of imageryLayers) {
+    const [zid] = key.split("|");
+    if (!wanted.has(zid) || key !== `${zid}|${state.imgYear}`) {
+      if (map.hasLayer(lyr)) map.removeLayer(lyr);
+    }
+  }
+  for (const zid of wanted) {
+    const entry = imageryMeta[zid]?.[state.imgYear];
+    if (!entry) continue;
+    const key = `${zid}|${state.imgYear}`;
+    let lyr = imageryLayers.get(key);
+    if (!lyr) {
+      lyr = L.imageOverlay(DATA_DIR + entry.file, imageryMeta[zid].bounds, {
+        opacity: state.imgOpacity, interactive: false, pane: "tilePane",
+      });
+      imageryLayers.set(key, lyr);
+    }
+    if (!map.hasLayer(lyr)) lyr.addTo(map);
+    lyr.setOpacity(state.imgOpacity);
+  }
+  const entry = zoneFilter && imageryMeta[zoneFilter]?.[state.imgYear];
+  $("#imgHint").hidden = !on;
+  if (on) {
+    // fuente automática (fetch_zone_imagery.py): source + date_range + coverage.
+    // captura manual (import_manual_imagery.py): source + date (puede faltar).
+    $("#imgHint").textContent = entry
+      ? [entry.source, entry.date_range || entry.date, entry.coverage != null ? `cobertura ${(entry.coverage * 100).toFixed(0)}%` : null]
+          .filter(Boolean).join(" · ")
+      : "elegí una zona para ver el detalle de la composición";
+  }
+}
+
+function setImgOpacity() {
+  for (const lyr of imageryLayers.values()) if (map.hasLayer(lyr)) lyr.setOpacity(state.imgOpacity);
+}
+
 async function syncConstLayer() {
   const on = state.constBg && Object.keys(constMeta).length > 0;
   const zoneFilter = state.zone === "__all__" ? null : state.zone;
@@ -662,6 +723,15 @@ async function boot() {
     $("#zoneSel").appendChild(opt);
   }
   for (const r of manifest.runs) labelsByRun[r.suffix] = r.labels || {};
+  try {
+    imageryMeta = await fetchJSON(DATA_DIR + "imagery/index.json");
+  } catch (e) {
+    imageryMeta = {};   // opcional: scripts/fetch_zone_imagery.py no corrido aún
+  }
+  if (Object.keys(imageryMeta).length) {
+    $("#imgWrap").hidden = false;
+    $("#segImgYear").hidden = false;
+  }
   wireControls();
   await loadCurrent();
 }
@@ -905,6 +975,7 @@ function wireControls() {
     updateStatus();
     buildLegend();
     pointLayer._redraw();
+    syncImageryLayer();
     syncConstLayer();
   });
 
@@ -942,6 +1013,18 @@ function wireControls() {
     state.constOpacity = +e.target.value;
     $("#constOpacV").textContent = state.constOpacity.toFixed(2).replace(/^0/, "");
     setConstOpacity();
+  });
+
+  seg("segImgYear", "imgYear", syncImageryLayer);
+  $("#imgBg").addEventListener("change", (e) => {
+    state.imgBg = e.target.checked;
+    $("#imgOpacRow").hidden = !state.imgBg;
+    syncImageryLayer();
+  });
+  $("#imgOpacR").addEventListener("input", (e) => {
+    state.imgOpacity = +e.target.value;
+    $("#imgOpacV").textContent = state.imgOpacity.toFixed(2).replace(/^0/, "");
+    setImgOpacity();
   });
 
   $("#expPng").onclick = () => exportView("png");
@@ -1090,6 +1173,23 @@ async function exportView(fmt) {
     }
 
     const zoneFilter = state.zone === "__all__" ? null : state.zone;
+
+    // --- imagen satelital de inicio/fin (encima de los tiles, debajo del fondo constante) ---
+    if (state.imgBg && Object.keys(imageryMeta).length) {
+      ctx.globalAlpha = state.imgOpacity;
+      for (const [zid, zmeta] of Object.entries(imageryMeta)) {
+        if (zoneFilter && zid !== zoneFilter) continue;
+        const entry = zmeta[state.imgYear];
+        if (!entry) continue;
+        const im = await loadImg(DATA_DIR + entry.file);
+        if (!im) continue;
+        const nwc = map.project([zmeta.bounds[1][0], zmeta.bounds[0][1]], tileZoom);
+        const sec = map.project([zmeta.bounds[0][0], zmeta.bounds[1][1]], tileZoom);
+        ctx.drawImage(im, nwc.x - originPx.x, nwc.y - originPx.y,
+          sec.x - nwc.x, sec.y - nwc.y);
+      }
+      ctx.globalAlpha = 1;
+    }
 
     // --- fondo de trayectorias constantes (encima de los tiles, debajo de los puntos) ---
     if (state.constBg && Object.keys(constMeta).length) {

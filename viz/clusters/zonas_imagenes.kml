@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>land2vec -- zonas para imagen satelital</name>
+    <Style id="zoneStyle">
+      <LineStyle><color>ff00ffff</color><width>3</width></LineStyle>
+      <PolyStyle><fill>0</fill></PolyStyle>
+    </Style>
+    <Placemark>
+      <name>Puna (Jujuy) (puna_noa)</name>
+      <styleUrl>#zoneStyle</styleUrl>
+      <LookAt>
+        <longitude>-66.0</longitude>
+        <latitude>-22.75</latitude>
+        <tilt>0</tilt>
+        <heading>0</heading>
+        <range>288199</range>
+      </LookAt>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing><coordinates>-66.99861,-23.49861,0 -65.00139,-23.49861,0 -65.00139,-22.00139,0 -66.99861,-22.00139,0 -66.99861,-23.49861,0</coordinates></LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Estepa patagónica (patagonia_estepa)</name>
+      <styleUrl>#zoneStyle</styleUrl>
+      <LookAt>
+        <longitude>-68.002775</longitude>
+        <latitude>-41.5</latitude>
+        <tilt>0</tilt>
+        <heading>0</heading>
+        <range>575998</range>
+      </LookAt>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing><coordinates>-69.99861,-42.99861,0 -66.00694,-42.99861,0 -66.00694,-40.00139,0 -69.99861,-40.00139,0 -69.99861,-42.99861,0</coordinates></LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Periurbano (Córdoba) (periurbano_cordoba)</name>
+      <styleUrl>#zoneStyle</styleUrl>
+      <LookAt>
+        <longitude>-64.2</longitude>
+        <latitude>-31.397225</latitude>
+        <tilt>0</tilt>
+        <heading>0</heading>
+        <range>57319</range>
+      </LookAt>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing><coordinates>-64.39861,-31.59306,0 -64.00139,-31.59306,0 -64.00139,-31.20139,0 -64.39861,-31.20139,0 -64.39861,-31.59306,0</coordinates></LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Iberá (ibera)</name>
+      <styleUrl>#zoneStyle</styleUrl>
+      <LookAt>
+        <longitude>-57.25</longitude>
+        <latitude>-28.25</latitude>
+        <tilt>0</tilt>
+        <heading>0</heading>
+        <range>216049</range>
+      </LookAt>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing><coordinates>-57.99861,-28.99861,0 -56.50139,-28.99861,0 -56.50139,-27.50139,0 -57.99861,-27.50139,0 -57.99861,-28.99861,0</coordinates></LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Delta del Paraná (delta_parana)</name>
+      <styleUrl>#zoneStyle</styleUrl>
+      <LookAt>
+        <longitude>-59.1</longitude>
+        <latitude>-33.099999999999994</latitude>
+        <tilt>0</tilt>
+        <heading>0</heading>
+        <range>201619</range>
+      </LookAt>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing><coordinates>-59.59861,-33.79861,0 -58.60139,-33.79861,0 -58.60139,-32.40139,0 -59.59861,-32.40139,0 -59.59861,-33.79861,0</coordinates></LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Pampa núcleo (pampa_nucleo)</name>
+      <styleUrl>#zoneStyle</styleUrl>
+      <LookAt>
+        <longitude>-61.0</longitude>
+        <latitude>-34.0</latitude>
+        <tilt>0</tilt>
+        <heading>0</heading>
+        <range>288199</range>
+      </LookAt>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing><coordinates>-61.99861,-34.99861,0 -60.00139,-34.99861,0 -60.00139,-33.00139,0 -61.99861,-33.00139,0 -61.99861,-34.99861,0</coordinates></LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Selva misionera (misiones_selva)</name>
+      <styleUrl>#zoneStyle</styleUrl>
+      <LookAt>
+        <longitude>-54.75</longitude>
+        <latitude>-26.5</latitude>
+        <tilt>0</tilt>
+        <heading>0</heading>
+        <range>288199</range>
+      </LookAt>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing><coordinates>-55.49861,-27.49861,0 -54.00139,-27.49861,0 -54.00139,-25.50139,0 -55.49861,-25.50139,0 -55.49861,-27.49861,0</coordinates></LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Placemark>
+      <name>Chaco-Santiago (frontera, train) (chaco_santiago_frontier)</name>
+      <styleUrl>#zoneStyle</styleUrl>
+      <LookAt>
+        <longitude>-61.412501</longitude>
+        <latitude>-26.779166500000002</latitude>
+        <tilt>0</tilt>
+        <heading>0</heading>
+        <range>587622</range>
+      </LookAt>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing><coordinates>-63.448612,-28.126389,0 -59.37639,-28.126389,0 -59.37639,-25.431944,0 -63.448612,-25.431944,0 -63.448612,-28.126389,0</coordinates></LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+  </Document>
+</kml>
