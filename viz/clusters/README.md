@@ -3,23 +3,40 @@
 `index.html` es un visor estático (Leaflet vendorizado, sin build, sin CDN) de
 las seis clusterizaciones de trayectoria de la v2 -- la matriz de 3
 granularidades × 2 familias de `scripts/tune_clustering.py --select`, ver
-`docs/v2_autoencoder_training.md` §7.2 -- **sobre el mapa real** de las 7 zonas
-de evaluación out-of-domain.
+`docs/v2_autoencoder_training.md` §7.2 -- **sobre el mapa real**. Un selector
+**Conjunto de zonas** arriba de todo cambia entre las **7 zonas de evaluación**
+out-of-domain (el benchmark) y las **8 zonas de entrenamiento** (in-sample
+para el encoder, out-of-sample para el clustering -- ver más abajo); nunca se
+mezclan en la misma vista.
 
 Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
 (cronograma, secuencia modal, índices); éste, *dónde cae*.
 
 ## Qué muestra
 
+- **Conjunto de zonas** — `evaluación` (default) o `entrenamiento`. Cambiar de
+  conjunto reencuadra el mapa, repuebla el selector de zona y, si el conjunto
+  tiene un solo set de etiquetas (entrenamiento), oculta el selector de "Set de
+  etiquetas". En `entrenamiento` aparece un aviso fijo: esas zonas son
+  **in-sample para el encoder** (las vio al entrenar el autoencoder) aunque
+  **out-of-sample para el clustering** (que solo se ajustó sobre evaluación) --
+  no es evidencia de generalización. Ver "Zonas de entrenamiento" más abajo.
 - **Corrida**: granularidad (`fina` / `media` / `gruesa`) × familia
   (`HDBSCAN` / `paramétrico`).
-- **Set de etiquetas** — los dos archivos que deja `--select` por celda:
+- **Set de etiquetas** — en `evaluación`, los dos archivos que deja `--select`
+  por celda:
   - `dinámico · ajuste` (`clusters_dynamic*.zip`): las ~107k secuencias con
     transición sobre las que se **ajustó** el clustering (in-sample).
   - `pool · aplicado` (`clusters_pooled_subsampled*.zip`): ~126k parcelas
     (incluye las constantes submuestreadas al 15%), **asignadas** por centroide
     más cercano; las que quedan lejos de todo centroide salen como `−1` ("sin
     tipificar"). Ver docs §7.2, Nota metodológica.
+
+  En `entrenamiento`, un único set `train · pool aplicado`
+  (`clusters_train_pooled*.zip`): mismo criterio de asignación por centroide
+  que `pool · aplicado`, sobre las 8 zonas de entrenamiento -- ver "Zonas de
+  entrenamiento". Sin equivalente de `dinámico · ajuste`: el clustering nunca
+  se ajustó sobre estas zonas.
 - **Vista**: zona (con zoom a su bbox), **modo de color** (`proceso` / `cluster`),
   tamaño y opacidad del punto, el toggle **`tamaño = píxel real (300 m)`** — el
   marcador escala con el zoom para cubrir la huella del píxel ESA CCI
@@ -73,6 +90,44 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
 - **Barra lateral redimensionable**: se arrastra su borde derecho; el ancho se
   guarda en `localStorage`.
 
+## Zonas de entrenamiento
+
+Las **8 zonas de entrenamiento** (`chaco_santiago_frontier`, la base original,
+más las 7 nuevas de la v2 -- una por ecorregión de evaluación, ver
+`docs/v2_autoencoder_training.md` §4.1) tienen secuencias y coordenadas en
+`data/` pero no embeddings ni cluster asignado: nunca pasaron por
+`tune_clustering.py`, que solo se ajusta sobre evaluación. Para que aparezcan
+en el conjunto `entrenamiento` del visor hacen falta dos pasos, en orden,
+**en tu máquina** (necesitan torch/numpy/sklearn, no corren en un contenedor
+sin GPU/torch):
+
+```bash
+# 1. embeddings de cada zona (ya funciona sin cambios, una por una)
+for z in chaco_santiago_frontier puna_salta_catamarca patagonia_santacruz periurbano_gba \
+         corrientes_humedal delta_oeste pampa_deprimida yungas; do
+  python scripts/extract_embeddings.py --model models/autoencoder_v2 --zone $z
+done
+
+# 2. asignación por centroide contra los 6 chosen*.json ya elegidos
+python scripts/assign_train_clusters.py
+```
+
+`assign_train_clusters.py` no reajusta nada: replica el mismo paso de
+etiquetado del pool que `tune_clustering.py --select` (`SpaceTransform` +
+centroide más cercano + corte "sin tipificar" con `untyped_dist_threshold`,
+persistidos en cada `chosen*.json`), sobre `land2vec.zones.ZONES_BY_GROUP
+["train"]` en vez de las 7 de evaluación. Imprime, por corrida y por zona, el
+% de parcelas "sin tipificar" -- compararlo contra el de `pool · aplicado` es
+en sí un chequeo de cuánto generaliza el clustering fuera de donde se ajustó.
+Escribe `data/clusters_train_pooled{suffix}.zip` (mismo formato
+`ID,zone,cluster` que los demás), los seis suffixes.
+
+Con eso ya generado, `build_cluster_map.py` (más abajo) arma el set
+`train_pooled` igual que los de evaluación. El fondo de trayectorias
+constantes y (opcionalmente) la imagen satelital de las 8 zonas de
+entrenamiento **no dependen de este paso** -- se generan aunque todavía no
+haya embeddings, porque solo necesitan `id_seqs_text_*`/`lat_long_df_*`.
+
 ## Cómo levantarlo
 
 ```bash
@@ -81,15 +136,19 @@ python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP  # opcional: 
 python -m http.server -d viz/clusters 8001                       # -> http://localhost:8001
 ```
 
-`build_cluster_map.py` solo usa la librería estándar (no necesita pandas/torch);
-lee `data/clusters_*.zip` + `data/lat_long_df_*.zip` + `data/id_seqs_text_*.zip`
-(trayectorias crudas para el popup + fondo de constantes) y, si está,
-`viz/typology/typology_browser.json` (etiquetas y proceso de cada cluster). Con
-`--only _medium` procesa una sola granularidad/familia; con `--precision 4`,
-archivos más livianos; `--no-constants` salta el raster de fondo,
-`--only-constants` regenera solo ese. `scripts/check_cluster_palette.py` reporta
-la uniformidad perceptual (ΔE) de las rampas de color por proceso y de la paleta
-del fondo.
+`build_cluster_map.py` solo usa la librería estándar (más `land2vec.zones`,
+también solo-stdlib -- no necesita pandas/torch); lee `data/clusters_*.zip` +
+`data/lat_long_df_*.zip` + `data/id_seqs_text_*.zip` (trayectorias crudas para
+el popup + fondo de constantes) y, si está,
+`viz/typology/typology_browser.json` (etiquetas y proceso de cada cluster). Si
+todavía no corriste `assign_train_clusters.py`, arma igual las 6 corridas de
+evaluación y el fondo/imagen de las 8 zonas de entrenamiento -- solo avisa que
+faltan los `clusters_train_pooled*.zip` y sigue. Con `--only _medium` procesa
+una sola granularidad/familia; con `--precision 4`, archivos más livianos;
+`--no-constants` salta el raster de fondo, `--only-constants` lo regenera
+(`--constants-groups eval|train` para limitarlo a un conjunto).
+`scripts/check_cluster_palette.py` reporta la uniformidad perceptual (ΔE) de
+las rampas de color por proceso y de la paleta del fondo.
 
 ### Imagen satelital
 
@@ -125,16 +184,17 @@ https://code.earthengine.google.com/register.
 python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP
 ```
 
-Sin `--zone`/`--year` corre las 8 zonas (7 OOD + `chaco_santiago_frontier`, la
-de training) × (2000, 2022). Es **idempotente**: si `{zona}_{año}.png` ya
-existe (y su entrada en el manifiesto), lo saltea -- se puede cortar a mitad de
-camino y retomar después con el mismo comando; `--force` reprocesa igual.
+Sin `--zone`/`--year` corre las 15 zonas (7 de evaluación + 8 de
+entrenamiento, `land2vec.zones.ZONES_BY_GROUP`) × (2000, 2022). Es
+**idempotente**: si `{zona}_{año}.png` ya existe (y su entrada en el
+manifiesto), lo saltea -- se puede cortar a mitad de camino y retomar después
+con el mismo comando; `--force` reprocesa igual.
 
 Flags relevantes, todos con default razonable:
 
 | Flag | Para qué |
 |---|---|
-| `--zone` (repetible) | limita a una o más zonas; sin esto, las 8 |
+| `--zone` (repetible) | limita a una o más zonas; sin esto, las 15 |
 | `--year` (repetible) | limita a 2000 y/o 2022; sin esto, ambos |
 | `--cloud-cover N` | nubosidad máxima admitida por escena (default 50). Subir a 80 en zonas con pocas escenas despejadas |
 | `--pad-months N` | ancho de la ventana de fechas (default 5) |
@@ -154,20 +214,21 @@ escena -- eso se veía como agujeros negros rectangulares en el compuesto, no
 como ruido. Si una zona puntual sigue fallando por memoria, `--max-side` más
 chico reduce la grilla de salida y da margen.
 
-**Costura en el límite de huso UTM (`--landsat-fallback`).** Tres zonas cruzan
-un límite de huso -- `patagonia_estepa` (19/20), `chaco_santiago_frontier` y
-`pampa_nucleo` (ambas 20/21) -- y la grilla de *tiles* MGRS de Sentinel-2, que
-está definida por huso, deja sin cubrir una franja exacta en esa costura, sin
-importar cuántas escenas o qué nubosidad se admita (es una falta de dato real,
-no un parámetro para ajustar). `--landsat-fallback` arma un segundo compuesto
-con Landsat 8/9 (grilla path/row, sin esa discontinuidad) y lo usa *solo* donde
+**Costura en el límite de huso UTM (`--landsat-fallback`).** Varias zonas
+cruzan un límite de huso -- `patagonia_estepa` (19/20), `chaco_santiago_frontier`
+y `pampa_nucleo` (ambas 20/21), y `pampa_deprimida` (su par de entrenamiento,
+también 20/21) -- y la grilla de *tiles* MGRS de Sentinel-2, que está definida
+por huso, deja sin cubrir una franja exacta en esa costura, sin importar
+cuántas escenas o qué nubosidad se admita (es una falta de dato real, no un
+parámetro para ajustar). `--landsat-fallback` arma un segundo compuesto con
+Landsat 8/9 (grilla path/row, sin esa discontinuidad) y lo usa *solo* donde
 Sentinel-2 quedó sin dato -- el resto de la imagen sigue siendo Sentinel-2 a
 10 m. El parche queda visible (30 m, tono distinto) pero acotado a la costura.
-Usarlo únicamente en esas 3 zonas:
+Usarlo únicamente en esas zonas:
 
 ```bash
 python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
-  --zone patagonia_estepa --zone chaco_santiago_frontier --zone pampa_nucleo \
+  --zone patagonia_estepa --zone chaco_santiago_frontier --zone pampa_nucleo --zone pampa_deprimida \
   --cloud-cover 80 --landsat-fallback --force
 ```
 
@@ -177,8 +238,8 @@ Si se necesita específicamente la imagen "real" de Google Earth (no
 Landsat/Sentinel) o no se quiere dar de alta una cuenta de Earth Engine:
 
 1. `python scripts/make_zone_kml.py` genera `viz/clusters/zonas_imagenes.kml`
-   -- un rectángulo por zona (las 7 OOD + `chaco_santiago_frontier`, la de
-   training) con vista cenital (`tilt=0`) ya calculada.
+   -- un rectángulo por zona (las 7 de evaluación + las 8 de entrenamiento)
+   con vista cenital (`tilt=0`) ya calculada.
 2. En Google Earth Pro: `Archivo > Abrir` ese KML, doble click en cada zona del
    panel *Lugares* para volar exacto a su rectángulo (queda top-down, no hace
    falta ajustar inclinación). Ocultar el propio KML antes de exportar para que
@@ -188,8 +249,8 @@ Landsat/Sentinel) o no se quiere dar de alta una cuenta de Earth Engine:
    el año exacto, se usa la más próxima.
 4. `Archivo > Guardar > Guardar imagen` en cada fecha, nombrando el archivo
    `{zona}_2000.png` / `{zona}_2022.png` (el id de zona es el mismo de
-   `data/index.json`, p. ej. `puna_noa`, o `chaco_santiago_frontier` para la de
-   training). Todas las capturas juntas en una misma carpeta.
+   `data/index.json`/`land2vec.zones`, p. ej. `puna_noa` o
+   `puna_salta_catamarca`). Todas las capturas juntas en una misma carpeta.
 5. `python scripts/import_manual_imagery.py <carpeta>` las copia a
    `data/imagery/` y arma `data/imagery/index.json`. `--date
    puna_noa_2000=1999-08-15` (repetible) es opcional, solo para que el tooltip

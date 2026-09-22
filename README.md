@@ -443,7 +443,9 @@ de probing, PCA). Resumen:
   ```
 - **Mapa espacial de las clusterizaciones** (`scripts/build_cluster_map.py` +
   visor Leaflet `viz/clusters/index.html`): dónde cae cada cluster sobre el mapa
-  real de las 7 zonas OOD, con export de la vista a PNG/JPG. Solo local -- ver
+  real, con un selector para alternar entre las 7 zonas de evaluación OOD y las
+  8 de entrenamiento (in-sample para el encoder), export de la vista a PNG/JPG.
+  Solo local -- ver
   [§ Visor del mapa de clusters](#visor-del-mapa-de-clusters-vizclusters) más abajo.
 - **Mapas estáticos de pérdida de cobertura** (`scripts/plot_process_maps.py`):
   6 PNG (uno por corrida) faceteados por región, con las trayectorias de
@@ -463,8 +465,12 @@ python scripts/extract_embeddings.py --model models/autoencoder_v2 --zone ibera
 ### Visor del mapa de clusters (`viz/clusters/`)
 
 Visor estático (Leaflet vendorizado, sin build, sin CDN) para ver **dónde cae
-cada cluster** de las 6 clusterizaciones de la v2 sobre el mapa real de las 7
-zonas de evaluación out-of-domain. Complementa al navegador de tipologías
+cada cluster** de las 6 clusterizaciones de la v2 sobre el mapa real. Un
+selector **Conjunto de zonas** alterna entre las **7 zonas de evaluación**
+out-of-domain (el benchmark) y las **8 zonas de entrenamiento** (in-sample
+para el encoder, out-of-sample para el clustering -- nunca se mezclan en la
+misma vista, ver el detalle y el paso extra de `scripts/assign_train_clusters.py`
+en `viz/clusters/README.md`). Complementa al navegador de tipologías
 (`viz/typology/`): aquel responde *cómo es* cada cluster (cronograma, secuencia
 modal, índices); éste, *dónde está*.
 
@@ -475,6 +481,10 @@ python scripts/describe_clusters.py          # (si falta) viz/typology/typology_
 python scripts/build_cluster_map.py          # genera viz/clusters/data/*.{json,png} (local, gitignoreado)
 python -m http.server -d viz/clusters 8001   # -> http://localhost:8001
 ```
+
+Para que el conjunto de entrenamiento tenga puntos (no solo fondo/imagen
+satelital), hace falta antes extraer sus embeddings y asignarles cluster --
+ver "Zonas de entrenamiento" en `viz/clusters/README.md`.
 
 `build_cluster_map.py` solo usa la librería estándar (`csv`/`zipfile`/`json`/`zlib`)
 -- no necesita pandas ni torch. Cruza `data/clusters_*.zip` (etiqueta de cluster
@@ -510,6 +520,10 @@ servirlo por HTTP (el comando de arriba).
     (incluye las constantes submuestreadas al 15%), **asignadas** por centroide
     más cercano; las que quedan lejos de todo centroide salen como `−1` ("sin
     tipificar"). Ver docs §7.2, Nota metodológica.
+
+  En el conjunto de entrenamiento hay un único set, `train · pool aplicado`
+  (`clusters_train_pooled*.zip`): mismo criterio de asignación por centroide,
+  sobre las 8 zonas de entrenamiento.
 - **Vista**: selector de zona (con zoom automático a su bounding box), **modo de
   color** (`proceso` / `cluster`), sliders de tamaño y opacidad de punto, un
   toggle **`tamaño = píxel real (300 m)`** (el marcador escala con el zoom para
