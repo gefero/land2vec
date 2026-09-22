@@ -199,7 +199,7 @@ Flags relevantes, todos con default razonable:
 | `--cloud-cover N` | nubosidad máxima admitida por escena (default 50). Subir a 80 en zonas con pocas escenas despejadas |
 | `--pad-months N` | ancho de la ventana de fechas (default 5) |
 | `--max-side N` | lado máximo del PNG en píxeles (default 2000) |
-| `--landsat-fallback` | ver más abajo -- solo hace falta en 3 zonas puntuales |
+| `--landsat-fallback` | ver más abajo -- solo hace falta en 4 zonas puntuales |
 | `--force` | reprocesa aunque ya exista el PNG |
 
 **Límite de memoria del servidor de Earth Engine.** Un compuesto de mediana
