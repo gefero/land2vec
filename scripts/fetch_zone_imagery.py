@@ -51,6 +51,7 @@ requirements.txt) además de Pillow y numpy, que ya son parte del entorno.
 
 import argparse
 import json
+import sys
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
@@ -66,16 +67,18 @@ from PIL import Image
 from rasterio.enums import Resampling
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+from land2vec.zones import ZONE_LABELS, ZONES_BY_GROUP  # noqa: E402
+
 CLUSTER_MANIFEST = ROOT / "viz" / "clusters" / "data" / "index.json"
 OUT_DIR = ROOT / "viz" / "clusters" / "data" / "imagery"
 LATLON_DIR = ROOT / "data"
 
-# zonas sin clustering (training, no las 7 OOD de build_cluster_map.py) para
+# zonas de entrenamiento (no las 7 de evaluación de build_cluster_map.py) para
 # las que igual queremos la imagen satelital de referencia -- bbox calculado
 # de su lat_long_df_*.zip, no de index.json.
-EXTRA_ZONE_LABELS = {
-    "chaco_santiago_frontier": "Chaco-Santiago (frontera, train)",
-}
+EXTRA_ZONE_LABELS = {z: ZONE_LABELS[z] for z in ZONES_BY_GROUP["train"]}
 
 STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 # timeouts explícitos: sin esto, una conexión colgada a Azure Blob deja

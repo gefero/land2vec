@@ -58,16 +58,9 @@ from sklearn.preprocessing import StandardScaler, normalize
 
 from land2vec.extract import constant_mask
 from land2vec.tokenizer import Tokenizer
+from land2vec.zones import EVAL_ZONES
 
-ZONES = [
-    "puna_noa",
-    "patagonia_estepa",
-    "periurbano_cordoba",
-    "ibera",
-    "delta_parana",
-    "pampa_nucleo",
-    "misiones_selva",
-]
+ZONES = list(EVAL_ZONES)
 
 VALID_LABELS = [i for i in Tokenizer.VOCAB.values() if i != Tokenizer.VOCAB["[UNK]"]]
 LABEL_NAMES = [Tokenizer.REVERSE_VOCAB[i] for i in VALID_LABELS]

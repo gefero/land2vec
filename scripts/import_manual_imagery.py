@@ -13,8 +13,8 @@ scripts/make_zone_kml.py):
 
 `{zona}` es el id tal cual aparece en viz/clusters/data/index.json (puna_noa,
 patagonia_estepa, periurbano_cordoba, ibera, delta_parana, pampa_nucleo,
-misiones_selva) o chaco_santiago_frontier (la zona de training, sin
-clustering -- ver scripts/fetch_zone_imagery.py::EXTRA_ZONE_LABELS).
+misiones_selva) o alguna de las 8 zonas de entrenamiento
+(`land2vec.zones.ZONES_BY_GROUP["train"]`).
 
 Uso:
     python scripts/import_manual_imagery.py ~/Desktop/capturas_earth/
@@ -36,18 +36,21 @@ homografía ni calibración de esquinas en esta primera versión.
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+from land2vec.zones import ZONE_LABELS, ZONES_BY_GROUP  # noqa: E402
+
 CLUSTER_MANIFEST = ROOT / "viz" / "clusters" / "data" / "index.json"
 OUT_DIR = ROOT / "viz" / "clusters" / "data" / "imagery"
 LATLON_DIR = ROOT / "data"
 
-EXTRA_ZONE_LABELS = {
-    "chaco_santiago_frontier": "Chaco-Santiago (frontera, train)",
-}
+EXTRA_ZONE_LABELS = {z: ZONE_LABELS[z] for z in ZONES_BY_GROUP["train"]}
 
 FNAME_RE = re.compile(r"^(?P<zone>.+)_(?P<year>2000|2022)\.(png|jpg|jpeg)$", re.IGNORECASE)
 

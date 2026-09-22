@@ -36,34 +36,13 @@ from land2vec.extract import (
     save_zone_csvs,
     subsample_constant_sequences,
 )
+from land2vec.zones import CHACO_ZONE, EVAL_ZONES, TRAIN_ZONES
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # bbox = (minx, miny, maxx, maxy) en lon/lat
-TRAIN_BBOX = (-63.44994621163554, -28.12819902009702, -59.37401847726054, -25.431378332142593)
+TRAIN_BBOX = CHACO_ZONE["chaco_santiago_frontier"]
 TEST_BBOX = (-63.583374, -29.623609, -59.067993, -25.372568)
-
-EVAL_ZONES: dict[str, tuple[float, float, float, float]] = {
-    "puna_noa": (-67.0, -23.5, -65.0, -22.0),
-    "patagonia_estepa": (-70.0, -43.0, -66.0, -40.0),
-    "periurbano_cordoba": (-64.4, -31.6, -64.0, -31.2),
-    "ibera": (-58.0, -29.0, -56.5, -27.5),
-    "delta_parana": (-59.6, -33.8, -58.6, -32.4),
-    "pampa_nucleo": (-62.0, -35.0, -60.0, -33.0),
-    "misiones_selva": (-55.5, -27.5, -54.0, -25.5),
-}
-
-# Mismas ecorregiones que EVAL_ZONES (ver la tabla en el plan de la v2), bboxes
-# distintos y disjuntos de ellas.
-TRAIN_ZONES: dict[str, tuple[float, float, float, float]] = {
-    "puna_salta_catamarca": (-68.5, -26.5, -66.5, -24.5),
-    "patagonia_santacruz": (-71.0, -49.0, -67.0, -46.0),
-    "periurbano_gba": (-58.8, -34.9, -58.3, -34.4),
-    "corrientes_humedal": (-58.9, -27.4, -58.1, -26.3),
-    "delta_oeste": (-59.95, -33.8, -59.65, -32.6),
-    "pampa_deprimida": (-60.0, -37.5, -58.0, -36.0),
-    "yungas": (-64.8, -25.5, -64.0, -24.0),
-}
 
 ZONE_SETS: dict[str, dict[str, tuple[float, float, float, float]]] = {
     "eval": EVAL_ZONES,

@@ -36,7 +36,8 @@ Salida: mismo formato que `fetch_zone_imagery.py` / `import_manual_imagery.py`
 (`viz/clusters/data/imagery/{zona}_{año}.png` + `imagery/index.json`), así
 `index.html` no distingue de dónde salió cada imagen.
 
-Sin --zone/--year corre las 7 zonas OOD × (2000, 2022) -- 14 combinaciones.
+Sin --zone/--year corre las 15 zonas (7 de evaluación + 8 de entrenamiento,
+`land2vec.zones.ZONES_BY_GROUP`) × (2000, 2022) -- 30 combinaciones.
 Si {zona}_{año}.png ya existe (y su entrada en el manifiesto), la salta; para
 forzar que la rehaga, `--force`. Así se puede cortar la corrida a mitad de
 camino y retomarla después sin perder lo ya bajado.
@@ -51,6 +52,7 @@ import argparse
 import csv
 import io
 import json
+import sys
 import zipfile
 from pathlib import Path
 
@@ -58,15 +60,18 @@ import ee
 import requests
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+from land2vec.zones import ZONE_LABELS, ZONES_BY_GROUP  # noqa: E402
+
 CLUSTER_MANIFEST = ROOT / "viz" / "clusters" / "data" / "index.json"
 OUT_DIR = ROOT / "viz" / "clusters" / "data" / "imagery"
 LATLON_DIR = ROOT / "data"
 
-# zonas sin clustering (training) para las que igual queremos imagen -- mismo
-# criterio que scripts/fetch_zone_imagery.py.
-EXTRA_ZONE_LABELS = {
-    "chaco_santiago_frontier": "Chaco-Santiago (frontera, train)",
-}
+# zonas de entrenamiento -- si build_cluster_map.py todavía no las procesó (no
+# hay clusters_train_pooled*.zip), no están en index.json y hay que calcularles
+# el bbox a mano con bbox_from_latlon_zip().
+EXTRA_ZONE_LABELS = {z: ZONE_LABELS[z] for z in ZONES_BY_GROUP["train"]}
 
 YEARS = [2000, 2022]
 MAX_SIDE_DEFAULT = 2000
@@ -114,10 +119,12 @@ def load_zones(only=None):
         zones = [z for z in zones if z["id"] in wanted]
         missing = wanted - {z["id"] for z in zones}
     else:
-        # sin --zone: "todas" son las 7 OOD + las de EXTRA_ZONE_LABELS (training,
-        # sin clustering -- no están en index.json porque build_cluster_map.py
-        # nunca las procesa).
-        missing = set(EXTRA_ZONE_LABELS)
+        # sin --zone: "todas" son las zonas del manifiesto (eval + train, una
+        # vez que build_cluster_map.py procesó los clusters_train_pooled*.zip)
+        # más las de EXTRA_ZONE_LABELS que todavía no estén ahí -- p. ej. antes
+        # de correr assign_train_clusters.py, ninguna zona de train figura en
+        # index.json y esta rama es la única fuente de sus bounds.
+        missing = set(EXTRA_ZONE_LABELS) - {z["id"] for z in zones}
     for zid in sorted(missing):
         bounds = bbox_from_latlon_zip(zid)
         if bounds is None:

@@ -1,12 +1,12 @@
-"""Genera un KML con el rectángulo de cada zona (7 de evaluación OOD +
-`chaco_santiago_frontier`, la base de entrenamiento) para volar al mismo
-encuadre en Google Earth Pro al capturar las imágenes de inicio/fin de
-período a mano (ver viz/clusters/README.md, sección "Imagen satelital -- a
-mano con Google Earth Pro").
+"""Genera un KML con el rectángulo de cada zona (7 de evaluación OOD + las 8
+de entrenamiento) para volar al mismo encuadre en Google Earth Pro al
+capturar las imágenes de inicio/fin de período a mano (ver
+viz/clusters/README.md, sección "Imagen satelital -- a mano con Google Earth
+Pro").
 
-Los bounds de las 7 OOD salen de viz/clusters/data/index.json (los mismos que
-usa el visor); el de chaco_santiago_frontier se calcula de su
-data/lat_long_df_chaco_santiago_frontier.zip, igual que en
+Los bounds de las 7 de evaluación salen de viz/clusters/data/index.json (los
+mismos que usa el visor, si ya se generaron); los de las zonas de
+entrenamiento se calculan de su data/lat_long_df_<zona>.zip, igual que en
 scripts/fetch_zone_imagery.py::bbox_from_latlon_zip.
 
 Uso:
@@ -17,20 +17,23 @@ Uso:
 import csv
 import io
 import json
+import sys
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+from land2vec.zones import ZONE_LABELS, ZONES_BY_GROUP  # noqa: E402
+
 CLUSTER_MANIFEST = ROOT / "viz" / "clusters" / "data" / "index.json"
 LATLON_DIR = ROOT / "data"
 OUT_PATH = ROOT / "viz" / "clusters" / "zonas_imagenes.kml"
 
-# zonas sin clustering (training) para las que igual queremos encuadre --
-# mismo criterio y misma etiqueta que scripts/fetch_zone_imagery.py.
-EXTRA_ZONE_LABELS = {
-    "chaco_santiago_frontier": "Chaco-Santiago (frontera, train)",
-}
+# zonas de entrenamiento para las que igual queremos encuadre -- mismo
+# criterio y misma etiqueta que scripts/fetch_zone_imagery.py.
+EXTRA_ZONE_LABELS = {z: ZONE_LABELS[z] for z in ZONES_BY_GROUP["train"]}
 
 
 def bbox_from_latlon_zip(zone_id):
