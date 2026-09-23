@@ -589,13 +589,15 @@ ruido"; en el *pool* cartográfico significa "queda lejos de todo centroide". La
 comparaciones entre particiones reportan siempre la cobertura junto al
 estadístico (§ 5.7).
 
-### 5.7 Validación externa e interpretación de las tipologías
+### 5.7 Validación en el espacio de secuencias e interpretación de las tipologías
 
 Los indicadores de § 5.3 validan las particiones pero se computan, en su mayor
 parte, dentro del mismo espacio $z$ que las generó. Para evaluarlas en un
-espacio independiente, y para hacerlas interpretables, se incorporó el
-instrumental del **análisis de secuencias** (tradición TraMineR), reimplementado
-sobre las matrices de tokens de cada grupo.
+espacio independiente —aunque todavía interno al propio conjunto de
+entrenamiento, ver § 5.8 para una validación externa *strictu sensu*—, y para
+hacerlas interpretables, se incorporó el instrumental del **análisis de
+secuencias** (tradición TraMineR), reimplementado sobre las matrices de tokens
+de cada grupo.
 
 **Disimilitud entre trayectorias.** El *pool* dinámico contiene solamente
 **1.128 secuencias distintas** entre sus 107.362 filas; colapsado a ese conjunto
@@ -664,6 +666,249 @@ de las dos particiones dejó como ruido, acompañado de la cobertura de esa
 intersección —las fracciones de ruido varían entre 0 % y 24 %, por lo que el ARI
 no es interpretable sin ella—, y como medida secundaria el ARI tratando −1 como
 una etiqueta más.
+
+### 5.8 Validación contra datos independientes de desmonte
+
+> Esta sección reporta una validación externa *strictu sensu*: contra un dato
+> de terceros que nunca intervino en el ajuste del encoder ni del clustering.
+> Los resultados de § 5.8.5 corresponden a la corrida de
+> `scripts/eval_desmonte.py --n-boot 999` sobre las tres zonas (999 réplicas de
+> *bootstrap* por bloques espaciales, `τ = 0,5`); el detalle completo —tabla
+> por proceso conceptual, controles, curvas de ganancia y análisis de
+> errores— vive en `notebooks/desmonte_validation.ipynb`.
+
+Las validaciones de § 5.3 y § 5.7 son internas: miden coherencia dentro del
+espacio $z$ o de las secuencias, nunca contra un fenómeno territorial observado
+de forma independiente. Esta sección incorpora una **referencia externa**: los
+polígonos de desmonte de la Colección 13.0 (monitoreodesmonte.com.ar),
+digitalizados manualmente sobre imágenes satelitales, con `FECHA_DESM` (año de
+detección) y `SUPERF_ha` por polígono.
+
+#### 5.8.1 Fuente y cobertura
+
+216.285 polígonos, Argentina 1976-2024, en
+`data/geo/data_validacion_chaco_Coleccion_13.0.rar` (pese al nombre, un
+archivo ZIP; se lee sin descomprimir vía GDAL `/vsizip/`, ver
+`land2vec.geo.read_desmonte`). `FECHA_DESM` no es una serie anual homogénea:
+1976/1986/1996/2000 son épocas acumuladas de línea de base, y la serie anual
+continua empieza recién en 2001. El CRS es WGS84 geográfico (EPSG:4326),
+idéntico al implícito de la grilla ESA CCI, así que el cruce no requiere
+reproyección.
+
+De las 15 zonas del proyecto, solo **`chaco_santiago_frontier`** cae en su
+totalidad dentro del Chaco Seco; el propio relevamiento parece confirmarlo —no
+hay un solo polígono al este de $-59{,}70°$ de longitud dentro de su
+*bounding box*, el límite aproximado con el Chaco Húmedo—. Esa observación se
+explota como **máscara de área relevada** (envolvente de los propios polígonos
+sobre una grilla gruesa de $0{,}1°$, con cierre morfológico y dilatación,
+`land2vec.geo.surveyed_mask`): fuera de ella, la ausencia de polígono no es
+evidencia de ausencia de desmonte, es ausencia de información. `yungas` y
+`periurbano_cordoba` caen en otras ecorregiones (selva de montaña y
+espinal/pampeano, respectivamente); sus resultados se reportan aparte, como
+contraste de generalización del encoder/clustering, nunca como evidencia sobre
+desmonte en el Chaco Seco.
+
+#### 5.8.2 El cruce polígono-píxel
+
+Cada píxel de la grilla ESA CCI ($1/360°$, ~300 m) se guarda solo por su
+centro; se reconstruye su huella cuadrada a partir de la resolución conocida y
+se calcula la **fracción areal** compartida con cada polígono que lo toca —no
+el criterio de centroide, que sesga sistemáticamente las fajas alargadas
+típicas del desmonte—: las celdas totalmente interiores a un polígono se
+resuelven sin calcular intersección (`shapely.contains_properly`); solo las de
+borde requieren el área exacta de la intersección. La salida primaria
+(`pixel_poly_fractions`) preserva la identidad de cada polígono, necesaria
+para la validación por polígono de § 5.8.4, que la agregación por píxel por sí
+sola no permite reconstruir.
+
+#### 5.8.3 Etiqueta de referencia
+
+Por píxel, según la fracción de área desmontada en cada tramo temporal (previo
+a 2001, ventana 2001-2022, posterior a 2022) y la máscara de relevamiento:
+
+| Clase | Regla ($\tau = 0{,}5$) |
+|---|---|
+| Positivo | fracción en ventana $\geq \tau$ y previa $< 0{,}1$ |
+| Negativo limpio | sin desmonte en ninguna época, dentro del área relevada |
+| Control pre-2000 | ya desmontado antes de la ventana |
+| Control post-2022 | bosque verificado en pie hasta 2022, desmontado después |
+| Excluido | fracción intermedia, mezcla de tramos, o fuera del área relevada |
+
+$\tau = 0{,}3$ y $0{,}7$ se reportan como sensibilidad. Los controles no son
+ruido descartable: tienen un resultado predicho. El control pre-2000 debería
+caer en clusters ya estables en agricultura o pastizal, nunca en
+`deforestacion`; el control post-2022 es el único negativo con bosque
+*verificado* en pie hasta el final de la ventana (el negativo limpio solo
+garantiza ausencia de polígono, no cobertura boscosa efectiva), así que da la
+estimación menos contaminada de falsos positivos sobre bosque real.
+
+#### 5.8.4 Métricas
+
+Tres métricas principales, más la validación temporal como *casi*-principal:
+
+1. **Ganancia acumulada**, con la tasa de desmonte de cada cluster estimada
+   *out-of-fold* por bloque espacial de $0{,}05°$: ordenando los clusters por
+   esa tasa, ¿qué fracción de los positivos captura el 10 % del área con mayor
+   tasa? Corrige el sesgo mecánico hacia $k$ grande que tendría una tasa
+   estimada *in-sample*.
+2. **MCC** de la regla semántica determinista `classify_process(inicio, fin,
+   forma)` —ya usada para el etiquetado visual de `viz/clusters/`— contra la
+   etiqueta de referencia; no hay circularidad porque la regla nunca vio el
+   shapefile de desmonte, solo la secuencia modal del cluster. Se reporta con
+   doble lectura de $-1$ ("sin tipificar", § 5.6): como negativo (lectura
+   conservadora, comparable entre corridas con distinta cobertura) y
+   excluyéndolo (calidad condicional a estar tipificado).
+3. **Tasa de detección por polígono**, ponderada por la fracción de la
+   superficie *del polígono* (no del píxel) que cae en píxeles con proceso de
+   pérdida forestal, estratificada por superficie con cortes en 1 y 3 píxeles
+   ($8{,}56$ y $25{,}7$ ha). El punto donde la curva cruza el 50 % define la
+   unidad mínima detectable efectiva del método.
+
+**Líneas de base.** `R0` (existe un año con bosque seguido de un año posterior
+en agricultura o pastizal, sobre la secuencia cruda, sin modelo) y `R1` (la
+misma regla exigiendo $\geq 3$ años de permanencia antes y después del
+cambio); ambas con cobertura del 100 %. Una permutación espacial del vector de
+cluster (rompe la coherencia espacial, preserva el tamaño de cada grupo) da la
+línea de base de significancia.
+
+**Incertidumbre.** *Bootstrap* por bloques espaciales no solapados de
+$0{,}05°$ (~5,5 km), remuestreados con reposición ($B=999$); el número de
+bloques —no de píxeles— es el grado de libertad real, dada la fuerte
+autocorrelación espacial del fenómeno. En esta implementación el intervalo se
+calculó únicamente para el MCC (métrica 2): la ganancia@10 % y la detección
+por polígono (métricas 1 y 3, § 5.8.5) se reportan como estimador puntual, sin
+intervalo, por costo computacional —cada réplica de esas dos requiere
+reordenar clusters o recorrer polígonos, más caro que recomputar una matriz de
+confusión—; queda como extensión pendiente.
+
+**Selección externa de granularidad.** Mayor MCC (lectura $-1$=negativo),
+desempate por mayor coeficiente de incertidumbre $U(D \mid C)$ ajustado por
+permutación. Es, por construcción, la primera vez que las seis corridas se
+ordenan con un criterio que no vive dentro del espacio $z$ que las produjo
+(§ 5.3, § 5.7); una discrepancia con la recomendación interna (§ 5.5,
+media/HDBSCAN, $k=31$) sería en sí misma un hallazgo sobre cuánto anticipa la
+selección por métricas internas el desempeño contra un fenómeno externo.
+
+#### 5.8.5 Resultados
+
+**Chaco Seco (`chaco_santiago_frontier`, $n=1.424.457$ píxeles, 4.510 bloques,
+prevalencia 26,0 %).** Este es el resultado *headline*: la única zona que cae
+en su totalidad dentro de la ecorregión.
+
+| Tipología | $k$ | Cobertura | Ganancia@10 % (OOF) | MCC ($-1$=neg.) [IC 95 %] | Precisión | Exhaustividad | Mediana \|error año\| | Detección polígonos $\geq 3$ px |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **Fina / HDBSCAN** | 118 | 14,0 % | 33,3 % | **0,553** [0,538;0,568] | 0,837 | 0,484 | 1 | 43,6 % |
+| Fina / GMM | 120 | 29,1 % | 33,6 % | 0,534 [0,521;0,546] | 0,611 | 0,723 | 2 | 70,9 % |
+| Media / HDBSCAN | 31 | 25,6 % | 33,2 % | 0,450 [0,435;0,464] | 0,582 | 0,613 | 2 | 59,6 % |
+| Media / GMM | 40 | 55,2 % | 33,5 % | 0,514 [0,498;0,529] | 0,533 | 0,830 | 2 | 85,5 % |
+| Gruesa / HDBSCAN | 17 | 53,0 % | 29,2 % | 0,415 [0,400;0,428] | 0,567 | 0,567 | 6 | 54,3 % |
+| Gruesa / GMM | 18 | 55,1 % | 28,4 % | 0,466 [0,450;0,482] | 0,518 | 0,768 | 3 | 79,0 % |
+| `R0` | — | 100 % | — | 0,399 [0,387;0,412] | 0,873 | 0,254 | 1 | — |
+| `R1` | — | 100 % | — | 0,360 [0,347;0,373] | 0,887 | 0,203 | 1 | — |
+
+Las seis tipologías superan ampliamente ambas líneas de base triviales ($R0$,
+$R1$) y la permutación espacial (MCC $\approx 0$, no tabulada). La granularidad
+con mayor MCC es **Fina/HDBSCAN**, no la recomendación interna de § 5.5
+(Media/HDBSCAN): la discrepancia anticipada en § 5.8.4 ocurre, y en la
+dirección menos trivial. Fina/HDBSCAN gana pese a tener la **menor cobertura
+de las seis** (14,0 % de los píxeles reciben un cluster válido en el *pool*
+cartográfico completo, § 5.6; el resto queda *sin tipificar* y cuenta como
+negativo bajo esta lectura de $-1$): su precisión entre los píxeles que sí
+tipifica (0,837) compensa una exhaustividad baja (0,484). Media/GMM ($k=40$),
+en cambio, dominaría bajo un criterio orientado a cobertura y detección: mejor
+exhaustividad (0,830), mejor detección por polígono (85,5 % de los $\geq 3$ px,
+frente a 43,6 % de Fina/HDBSCAN) y coeficiente MCC solo 0,04 por debajo del
+máximo. La elección "mejor" tipología depende, pues, de si el uso previsto
+pesa más la precisión puntual o la cobertura territorial — el criterio de § 5.5
+(fidelidad de prototipo, pensado para la narrativa por tipo) no es el mismo
+que el de esta sección (concordancia con desmonte observado).
+
+El sesgo temporal es prácticamente nulo para Fina/HDBSCAN (mediana de error
+0 años, no tabulado arriba; ver notebook) y crece con la granularidad gruesa
+(hasta 6 años en Gruesa/HDBSCAN), consistente con que agrupar más años de
+trayectoria en un mismo cluster diluye la fecha de transición modal.
+
+**Fuera de ecorregión — comparación de generalización.** `yungas` y
+`periurbano_cordoba` no son Chaco Seco (§ 5.8.1); se reportan aparte y nunca se
+citan como evidencia sobre desmonte en la ecorregión de ajuste.
+
+*`yungas`* ($n=20.505$ píxeles existentes en el *pool* cartográfico —de una
+grilla completa de $\approx$155.500 por el submuestreo de trayectorias
+constantes en la extracción original; corregido por ponderación de probabilidad
+inversa, § Fase 1 del plan de implementación—, 480 bloques, prevalencia 17,9 %):
+
+| Tipología | $k$ | Cobertura | Ganancia@10 % (OOF) | MCC ($-1$=neg.) [IC 95 %] | Precisión | Exhaustividad | Mediana \|error año\| | Detección polígonos $\geq 3$ px |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Fina / HDBSCAN | 118 | 66,1 % | 48,8 % | 0,598 [0,546;0,651] | 0,878 | 0,476 | 1 | 68,9 % |
+| Fina / GMM | 120 | 81,2 % | 49,6 % | 0,605 [0,552;0,656] | 0,675 | 0,676 | 1 | 83,6 % |
+| Media / HDBSCAN | 31 | 62,1 % | 46,4 % | 0,523 [0,466;0,575] | 0,650 | 0,557 | 2 | 65,6 % |
+| **Media / GMM** | 40 | 87,9 % | 49,2 % | **0,638** [0,577;0,693] | 0,630 | 0,799 | 2 | 87,6 % |
+| Gruesa / HDBSCAN | 17 | 75,4 % | 39,1 % | 0,508 [0,454;0,564] | 0,641 | 0,540 | 5 | 62,5 % |
+| Gruesa / GMM | 18 | 84,5 % | 41,3 % | 0,548 [0,486;0,607] | 0,598 | 0,671 | 3 | 70,1 % |
+| `R0` | — | 100 % | — | 0,462 [0,415;0,510] | 0,893 | 0,289 | 1 | — |
+| `R1` | — | 100 % | — | 0,427 [0,378;0,477] | 0,894 | 0,248 | 1 | — |
+
+En `yungas` la mejor tipología por MCC es Media/GMM, distinta de la ganadora en
+Chaco: un primer indicio de que la selección de granularidad no generaliza
+entre ecorregiones y de que ninguna de las seis corridas está sobreajustada a
+una en particular.
+
+*`periurbano_cordoba`* ($n=20.736$ píxeles, 64 bloques, prevalencia 4,3 %,
+apenas 80 polígonos en la ventana): potencia estadística baja y resultados no
+robustos —`R0`, `R1` y Fina/HDBSCAN dan MCC **negativo** (peor que la
+permutación espacial), y los IC de *bootstrap* de las configuraciones con MCC
+positivo cruzan ampliamente cero o son muy anchos—. Se reporta por completitud,
+no como evidencia de desempeño:
+
+| Tipología | $k$ | Cobertura | Ganancia@10 % (OOF) | MCC ($-1$=neg.) [IC 95 %] | Precisión | Exhaustividad | Mediana \|error año\| | Detección polígonos $\geq 3$ px |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Fina / HDBSCAN | 118 | 7,8 % | 10,8 % | $-$0,033 [$-$0,064;$-$0,005] | 0,000 | 0,000 | 14 | 0,0 % |
+| Fina / GMM | 120 | 14,2 % | 20,7 % | 0,137 [$-$0,072;0,436] | 0,121 | 0,315 | 1 | 30,0 % |
+| Media / HDBSCAN | 31 | 11,2 % | 17,8 % | 0,139 [$-$0,071;0,438] | 0,123 | 0,315 | 1 | 30,0 % |
+| Media / GMM | 40 | 91,1 % | 18,3 % | 0,089 [0,002;0,208] | 0,062 | 0,680 | 1 | 83,3 % |
+| Gruesa / HDBSCAN | 17 | 91,1 % | 3,3 % | 0,133 [$-$0,074;0,430] | 0,117 | 0,315 | 16 | 30,0 % |
+| Gruesa / GMM | 18 | 81,2 % | 4,1 % | 0,092 [0,007;0,208] | 0,062 | 0,689 | 1 | 83,3 % |
+| `R0` | — | 100 % | — | $-$0,015 [$-$0,030;$-$0,003] | 0,000 | 0,000 | — | — |
+| `R1` | — | 100 % | — | $-$0,013 [$-$0,028;$-$0,002] | 0,000 | 0,000 | — | — |
+
+Resultados completos —tabla por proceso conceptual, estratos de control,
+curvas de ganancia acumulada, violines de error temporal y análisis de
+errores— en `notebooks/desmonte_validation.ipynb`.
+
+#### 5.8.6 Limitaciones
+
+- **Confusión `F`/`Sh` de ESA CCI a 300 m en el Chaco Seco.** El bosque
+  xerófilo abierto oscila entre ambas clases sin cambio real (infla
+  `degradacion_forestal`, baja la precisión); el desmonte selectivo o la
+  ganadería bajo monte no siempre cambian de clase (baja la exhaustividad). El
+  sesgo no tiene una dirección única.
+- **Desajuste de resolución.** El 12,5 % de los polígonos de la ventana caben
+  en menos de un píxel; la lectura por superficie de § 5.8.4 lo hace explícito
+  en vez de promediarlo.
+- **Estatus in/out-of-sample no uniforme.** `chaco_santiago_frontier` y
+  `yungas` son in-sample para el encoder; `periurbano_cordoba`, para el
+  clustering. Ninguna zona es limpia en ambas dimensiones a la vez (§ 1.3).
+- **La máscara de área relevada es determinante del resultado.** Se reporta
+  bajo su definición primaria (envolvente de polígonos) y como sensibilidad
+  bajo un corte duro de longitud.
+- **Relevamiento manual.** Sesga hacia parches grandes, geométricos y
+  contiguos a áreas ya abiertas; las épocas 1976/1986/1996/2000 son
+  acumuladas, no años puntuales.
+- **Cobertura de `cluster = -1`.** Entre 20,9 % y 35,1 % de las filas del *pool*
+  dinámico de ajuste según la granularidad (§ 5.6); en el *pool* cartográfico
+  completo que consume esta sección la cobertura es sustancialmente menor y
+  depende de la zona (14,0 %-55,2 % en Chaco Seco, tabla § 5.8.5), porque el
+  umbral de distancia se calibró sobre puntos mayormente dinámicos y las
+  trayectorias constantes —ausentes del ajuste, § Fase 1— quedan en promedio
+  más lejos de todo centroide. Todo estadístico de esta sección se reporta
+  junto a su cobertura por esa razón.
+- **La permutación espacial (§ 5.8.4) es una única réplica**, no las 199 que
+  proponía el diseño original, por simplicidad de implementación: una rotación
+  toroidal exacta de la grilla 2D completa quedó fuera de alcance de esta
+  corrida. Sirve como chequeo direccional (¿el MCC de la corrida real es
+  claramente mayor que el de una partición sin coherencia espacial?, § 5.8.5)
+  y no como *p*-valor formal; el MCC de permutación resultó $\approx 0$ en las
+  tres zonas, consistente con lo esperado.
 
 ---
 

@@ -229,3 +229,8 @@ models/cluster_v2/typology*
 # coordenadas por parcela cruzadas con la etiqueta de cluster -- se regeneran en
 # la máquina, no se versionan. Ver viz/clusters/README.md.
 viz/clusters/data/
+
+# Shapefile de desmonte extraído del .rar por land2vec.geo.ensure_shapefile_extracted
+# (GDAL /vsizip/ no reconoce la extensión .rar como archivo comprimido) -- se
+# regenera solo, no se versiona. Ver docs/paper_metodologia.md §5.8.
+data/geo/.*_extracted/

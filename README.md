@@ -452,6 +452,29 @@ de probing, PCA). Resumen:
   deforestación, degradación forestal y urbanización coloreadas por proceso.
   Reusa la clasificación de `build_cluster_map.py`. `python scripts/plot_process_maps.py`
   -> `imgs/process_maps_<corrida>_<set>.png`.
+- **Validación externa contra polígonos de desmonte** (`src/land2vec/geo.py` +
+  `scripts/build_desmonte_labels.py` + `scripts/eval_desmonte.py`): cruza las 6
+  tipologías contra 216.285 polígonos de desmonte del Chaco Seco (Colección
+  13.0, monitoreodesmonte.com.ar, digitalización manual 1976-2024) -- la
+  primera validación contra un dato de terceros, no solo interna al espacio
+  `z` o a las secuencias. Ganancia acumulada *out-of-fold*, MCC de la regla
+  semántica de `classify_process`, detección por polígono ponderada por
+  superficie, error temporal contra `FECHA_DESM`, líneas de base sobre la
+  secuencia cruda sin modelo. **Resultado principal** (Chaco Seco): la
+  granularidad con mayor MCC externo es Fina/HDBSCAN (0,553), no la
+  recomendación interna de §5.5 (Media/HDBSCAN) -- discrepancia esperada entre
+  selección por métricas internas y desempeño contra un fenómeno observado.
+  Detalle completo:
+  [`docs/paper_metodologia.md` §5.8](docs/paper_metodologia.md#58-validación-contra-datos-independientes-de-desmonte),
+  bitácora de la corrida en `docs/v2_autoencoder_training.md` §9, tablas y
+  figuras ya ejecutadas en `notebooks/desmonte_validation.ipynb`.
+
+  ```bash
+  python scripts/assign_train_clusters.py --group all --max-constant-fraction 1.0 --out-tag _full
+  python scripts/build_desmonte_labels.py    # cruza las 3 zonas con polígonos
+  python scripts/eval_desmonte.py --n-boot 999
+  jupyter nbconvert --to notebook --execute --output desmonte_validation.ipynb notebooks/desmonte_validation.ipynb
+  ```
 - **Próximo paso**: macro F1 restringido a clases con soporte por
   subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
 

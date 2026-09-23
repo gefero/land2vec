@@ -1,0 +1,91 @@
+decil,n,tasa_deteccion,zone,suffix
+<1px (<8.56ha),3053,0.2433671798231248,chaco_santiago_frontier,
+1-3px,4894,0.30057212913771963,chaco_santiago_frontier,
+3-6px (25.7-50ha),6260,0.3819488817891374,chaco_santiago_frontier,
+50-100ha,6453,0.45172787850612117,chaco_santiago_frontier,
+>100ha,4809,0.4845082137658557,chaco_santiago_frontier,
+<1px (<8.56ha),3053,0.48869963969865704,chaco_santiago_frontier,_parametric
+1-3px,4894,0.5555782590927667,chaco_santiago_frontier,_parametric
+3-6px (25.7-50ha),6260,0.6535143769968051,chaco_santiago_frontier,_parametric
+50-100ha,6453,0.7271036727103672,chaco_santiago_frontier,_parametric
+>100ha,4809,0.7569141193595342,chaco_santiago_frontier,_parametric
+<1px (<8.56ha),3053,0.44546347854569274,chaco_santiago_frontier,_medium
+1-3px,4894,0.49550469963220267,chaco_santiago_frontier,_medium
+3-6px (25.7-50ha),6260,0.55814696485623,chaco_santiago_frontier,_medium
+50-100ha,6453,0.609019060901906,chaco_santiago_frontier,_medium
+>100ha,4809,0.6281971303805365,chaco_santiago_frontier,_medium
+<1px (<8.56ha),3053,0.8417949557811988,chaco_santiago_frontier,_medium_parametric
+1-3px,4894,0.8291785860237025,chaco_santiago_frontier,_medium_parametric
+3-6px (25.7-50ha),6260,0.8329073482428115,chaco_santiago_frontier,_medium_parametric
+50-100ha,6453,0.8640942197427554,chaco_santiago_frontier,_medium_parametric
+>100ha,4809,0.8710750675816178,chaco_santiago_frontier,_medium_parametric
+<1px (<8.56ha),3053,0.4097608909269571,chaco_santiago_frontier,_coarse
+1-3px,4894,0.4540253371475276,chaco_santiago_frontier,_coarse
+3-6px (25.7-50ha),6260,0.5177316293929712,chaco_santiago_frontier,_coarse
+50-100ha,6453,0.5510615217728189,chaco_santiago_frontier,_coarse
+>100ha,4809,0.5658140985651903,chaco_santiago_frontier,_coarse
+<1px (<8.56ha),3053,0.8090402882410743,chaco_santiago_frontier,_coarse_parametric
+1-3px,4894,0.7938291785860238,chaco_santiago_frontier,_coarse_parametric
+3-6px (25.7-50ha),6260,0.7715654952076677,chaco_santiago_frontier,_coarse_parametric
+50-100ha,6453,0.7901751123508446,chaco_santiago_frontier,_coarse_parametric
+>100ha,4809,0.8155541692659597,chaco_santiago_frontier,_coarse_parametric
+<1px (<8.56ha),131,0.6259541984732825,yungas,
+1-3px,259,0.6216216216216216,yungas,
+3-6px (25.7-50ha),336,0.6964285714285714,yungas,
+50-100ha,529,0.6899810964083176,yungas,
+>100ha,337,0.6795252225519288,yungas,
+<1px (<8.56ha),131,0.7175572519083969,yungas,_parametric
+1-3px,259,0.7374517374517374,yungas,_parametric
+3-6px (25.7-50ha),336,0.7976190476190477,yungas,_parametric
+50-100ha,529,0.8487712665406427,yungas,_parametric
+>100ha,337,0.8545994065281899,yungas,_parametric
+<1px (<8.56ha),131,0.5877862595419847,yungas,_medium
+1-3px,259,0.5637065637065637,yungas,_medium
+3-6px (25.7-50ha),336,0.6428571428571429,yungas,_medium
+50-100ha,529,0.6635160680529301,yungas,_medium
+>100ha,337,0.658753709198813,yungas,_medium
+<1px (<8.56ha),131,0.8091603053435115,yungas,_medium_parametric
+1-3px,259,0.7992277992277992,yungas,_medium_parametric
+3-6px (25.7-50ha),336,0.8333333333333334,yungas,_medium_parametric
+50-100ha,529,0.8809073724007561,yungas,_medium_parametric
+>100ha,337,0.9109792284866469,yungas,_medium_parametric
+<1px (<8.56ha),131,0.648854961832061,yungas,_coarse
+1-3px,259,0.5984555984555985,yungas,_coarse
+3-6px (25.7-50ha),336,0.6130952380952381,yungas,_coarse
+50-100ha,529,0.6483931947069943,yungas,_coarse
+>100ha,337,0.599406528189911,yungas,_coarse
+<1px (<8.56ha),131,0.6870229007633588,yungas,_coarse_parametric
+1-3px,259,0.6795366795366795,yungas,_coarse_parametric
+3-6px (25.7-50ha),336,0.6964285714285714,yungas,_coarse_parametric
+50-100ha,529,0.6975425330812854,yungas,_coarse_parametric
+>100ha,337,0.712166172106825,yungas,_coarse_parametric
+<1px (<8.56ha),23,0.0,periurbano_cordoba,
+1-3px,27,0.0,periurbano_cordoba,
+3-6px (25.7-50ha),14,0.0,periurbano_cordoba,
+50-100ha,11,0.0,periurbano_cordoba,
+>100ha,5,0.0,periurbano_cordoba,
+<1px (<8.56ha),23,0.043478260869565216,periurbano_cordoba,_parametric
+1-3px,27,0.037037037037037035,periurbano_cordoba,_parametric
+3-6px (25.7-50ha),14,0.14285714285714285,periurbano_cordoba,_parametric
+50-100ha,11,0.36363636363636365,periurbano_cordoba,_parametric
+>100ha,5,0.6,periurbano_cordoba,_parametric
+<1px (<8.56ha),23,0.043478260869565216,periurbano_cordoba,_medium
+1-3px,27,0.037037037037037035,periurbano_cordoba,_medium
+3-6px (25.7-50ha),14,0.14285714285714285,periurbano_cordoba,_medium
+50-100ha,11,0.36363636363636365,periurbano_cordoba,_medium
+>100ha,5,0.6,periurbano_cordoba,_medium
+<1px (<8.56ha),23,0.6521739130434783,periurbano_cordoba,_medium_parametric
+1-3px,27,0.5925925925925926,periurbano_cordoba,_medium_parametric
+3-6px (25.7-50ha),14,0.7142857142857143,periurbano_cordoba,_medium_parametric
+50-100ha,11,0.9090909090909091,periurbano_cordoba,_medium_parametric
+>100ha,5,1.0,periurbano_cordoba,_medium_parametric
+<1px (<8.56ha),23,0.043478260869565216,periurbano_cordoba,_coarse
+1-3px,27,0.037037037037037035,periurbano_cordoba,_coarse
+3-6px (25.7-50ha),14,0.14285714285714285,periurbano_cordoba,_coarse
+50-100ha,11,0.36363636363636365,periurbano_cordoba,_coarse
+>100ha,5,0.6,periurbano_cordoba,_coarse
+<1px (<8.56ha),23,0.6521739130434783,periurbano_cordoba,_coarse_parametric
+1-3px,27,0.5925925925925926,periurbano_cordoba,_coarse_parametric
+3-6px (25.7-50ha),14,0.7142857142857143,periurbano_cordoba,_coarse_parametric
+50-100ha,11,0.9090909090909091,periurbano_cordoba,_coarse_parametric
+>100ha,5,1.0,periurbano_cordoba,_coarse_parametric

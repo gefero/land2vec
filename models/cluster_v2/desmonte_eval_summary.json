@@ -1,0 +1,32 @@
+{
+  "zonas": [
+    "chaco_santiago_frontier",
+    "yungas",
+    "periurbano_cordoba"
+  ],
+  "suffixes": [
+    "",
+    "_parametric",
+    "_medium",
+    "_medium_parametric",
+    "_coarse",
+    "_coarse_parametric"
+  ],
+  "n_boot": 999,
+  "tau": 0.5,
+  "tiempo_total_seg": 3271.4,
+  "por_zona": {
+    "chaco_santiago_frontier": {
+      "fuera_ecorregion": false,
+      "mejor_suffix_mcc_oof": ""
+    },
+    "yungas": {
+      "fuera_ecorregion": true,
+      "mejor_suffix_mcc_oof": "_medium_parametric"
+    },
+    "periurbano_cordoba": {
+      "fuera_ecorregion": true,
+      "mejor_suffix_mcc_oof": "_medium"
+    }
+  }
+}

@@ -752,3 +752,91 @@ más que "solo agregados", así que por ahora se genera y se mira en local
    decodifica una sola vez de forma global) -- útil sobre todo para la
    tipología fina (k=118), donde un mismo cluster puede tener composición
    de zona mixta.
+
+## 9. Validación externa contra polígonos de desmonte
+
+Todo lo de §7 valida contra el propio dataset (reconstrucción, `pseudo_r2`/ASW
+sobre secuencias, acuerdo entre particiones) o contra métricas internas del
+espacio `z`. Ninguna tipología se había comparado nunca contra un dato de
+terceros.
+
+Apareció sin usar en el repo `data/geo/data_validacion_chaco_Coleccion_13.0.rar`
+-- 216.285 polígonos de desmonte del Chaco Seco (Colección 13.0,
+monitoreodesmonte.com.ar, digitalización manual 1976-2024). Armamos un
+pipeline nuevo para cruzarlo contra la grilla y contra las 6 tipologías:
+
+- `src/land2vec/geo.py` -- geometría: lectura del shapefile sin descomprimir
+  (es un ZIP con extensión `.rar`, vía `/vsizip/`), reconstrucción de la
+  huella cuadrada del píxel desde su centro, fracción areal polígono↔píxel
+  (no centroide), máscara de área relevada.
+- `scripts/build_desmonte_labels.py` -- productor: cruza y escribe
+  `data/desmonte_px*`/`data/desmonte_poly_px*` por zona.
+- `scripts/eval_desmonte.py` -- etiqueta de referencia por píxel + métricas:
+  ganancia acumulada *out-of-fold*, MCC de la regla semántica de
+  `classify_process` (§7.2/`scripts/build_cluster_map.py`), detección por
+  polígono ponderada por superficie, error temporal, líneas de base `R0`/`R1`
+  sobre la secuencia cruda sin modelo, *bootstrap* por bloques espaciales.
+- `notebooks/desmonte_validation.ipynb` -- tablas y figuras, análisis de
+  errores.
+
+Detalle metodológico completo en `docs/paper_metodologia.md` §5.8 (definición
+de la etiqueta, las tres métricas principales y las limitaciones, con
+dirección del sesgo).
+
+De las 15 zonas del proyecto, solo `chaco_santiago_frontier` cae dentro del
+Chaco Seco -- el propio relevamiento parece confirmarlo, no hay un solo
+polígono al este de lon −59,70° dentro de su bbox. `yungas` y
+`periurbano_cordoba` quedan como paneles "fuera de ecorregión" (contraste de
+generalización del encoder/clustering, nunca evidencia de desmonte en el
+Chaco Seco).
+
+`scripts/assign_train_clusters.py` necesitó un cambio chico (`--group`,
+`--out-tag`) para poder generar cobertura completa -- sin el submuestreo de
+constantes al 15 % -- sin pisar los `data/clusters_train_pooled*.zip` que
+consume `viz/clusters/`.
+
+Corrida completa (`python scripts/eval_desmonte.py --n-boot 999`, 3 zonas x 6
+corridas x 999 réplicas de bootstrap por bloques): **54m 31s** en la máquina
+local, dominado por Chaco (52m 22s de los 54m 31s -- 1,42 M píxeles vs. ~20 k de
+las otras dos zonas). `yungas` corrigió con la ponderación por inverso de
+probabilidad (`w_constante=44,91`, 3.075 filas constantes reponderadas --
+reconstruye ~155.500 píxeles de grilla total contra los 20.505 efectivamente
+guardados, exactamente el 86,8 % de huecos ya diagnosticado en la corrida de
+`build_desmonte_labels.py`).
+
+**Resultado principal (Chaco Seco, `chaco_santiago_frontier`):** las seis
+tipologías superan ampliamente `R0`/`R1` y la permutación espacial. La
+granularidad con mayor MCC ($-1$=negativo) es **Fina/HDBSCAN** (0,553 [IC
+0,538-0,568]), no la recomendación interna de §5.5 (Media/HDBSCAN, k=31,
+MCC 0,450) -- la discrepancia que se anticipaba en el plan, y en la dirección
+menos obvia: Fina/HDBSCAN gana con la **menor cobertura de las seis** (14,0 %
+de los píxeles tipificados en el *pool* cartográfico completo -- el resto
+cuenta como negativo bajo `-1`=neg). Si el criterio pesa cobertura/detección en
+vez de precisión puntual, Media/GMM (k=40) es la alternativa más razonable:
+exhaustividad 0,830, detección por polígono $\geq 3$ px de 85,5 % (vs. 43,6 %
+de Fina/HDBSCAN), MCC apenas 0,04 por debajo del máximo.
+
+En `yungas` la mejor tipología por MCC es distinta (Media/GMM, 0,638) --
+primer indicio de que la selección de granularidad no generaliza entre
+ecorregiones. `periurbano_cordoba` (n=80 polígonos, 64 bloques) tiene potencia
+estadística demasiado baja para ser evidencia: `R0`, `R1` y Fina/HDBSCAN dan
+MCC negativo, y los IC de las configuraciones con MCC positivo cruzan cero.
+
+Dos simplificaciones a tener presentes al leer los resultados (documentadas en
+`docs/paper_metodologia.md` §5.8.6): el IC de *bootstrap* ($B=999$) solo se
+calculó para el MCC, no para ganancia@10 % ni detección por polígono (quedan
+como estimador puntual); y la línea de base de permutación espacial es una
+única réplica, no las 199 planeadas originalmente -- sirve como chequeo
+direccional (dio MCC $\approx 0$ en las tres zonas, como se esperaba), no como
+test de significancia formal.
+
+Tablas completas (las tres zonas, con IC de bootstrap) en
+`docs/paper_metodologia.md` §5.8.5; tabla por proceso conceptual, estratos de
+control, curvas de ganancia y análisis de errores en
+`notebooks/desmonte_validation.ipynb` -- ya ejecutado de punta a punta (27
+celdas, sin errores). Encontramos y corregimos ahí un bug real durante la
+primera corrida: la figura F4 (detección por polígono vs. superficie) salía
+en blanco para Chaco porque `pandas.read_csv` lee la columna `suffix` de la
+corrida "fina" (`suffix=""`) como `NaN`, y la celda comparaba contra
+`best_suffix or ""` -- `NaN == ""` nunca matchea. Se normaliza `suffix` a
+cadena vacía justo después de cargar los CSV.

@@ -128,6 +128,22 @@ constantes y (opcionalmente) la imagen satelital de las 8 zonas de
 entrenamiento **no dependen de este paso** -- se generan aunque todavía no
 haya embeddings, porque solo necesitan `id_seqs_text_*`/`lat_long_df_*`.
 
+`assign_train_clusters.py` acepta además `--group {train,eval,all}` y
+`--out-tag`, agregados para la validación externa contra polígonos de
+desmonte (`docs/paper_metodologia.md` §5.8): con `--out-tag`, el archivo de
+salida pasa a ser `data/clusters_train_pooled{suffix}{out_tag}.zip`, así que
+correr
+
+```bash
+python scripts/assign_train_clusters.py --group all --max-constant-fraction 1.0 --out-tag _full
+```
+
+deja `data/clusters_train_pooled{suffix}_full.zip` (cobertura completa, sin el
+submuestreo de constantes al 15 %, y sumando las zonas de evaluación) **sin
+tocar** los `clusters_train_pooled{suffix}.zip` que consume este visor --
+`build_cluster_map.py` busca nombres exactos y los `_full` no matchean
+ninguno, así que los ignora.
+
 ## Cómo levantarlo
 
 ```bash
