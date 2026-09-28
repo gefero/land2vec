@@ -954,12 +954,18 @@ del Climate Data Store de Copernicus.
 
 El visor interactivo (`viz/clusters/`) superpone los puntos clasificados por
 cada tipología (§5.5) sobre un mosaico satelital de **inicio y fin de
-período**, para las siete zonas de evaluación y para `chaco_santiago_frontier`
-—la zona base del conjunto de ajuste (§1.3)—, a la que no se le calculó ninguna
-partición por no formar parte de la evaluación. El objetivo es exclusivamente
-exploratorio: identificar a simple vista si un cluster corresponde a un patrón
-territorial reconocible (frente de deforestación, urbanización, humedal) antes
-o en paralelo a la caracterización estadística de §5.7.
+período**. Cubre las quince zonas del proyecto, separadas por un selector que
+nunca las mezcla en una misma vista ni en los porcentajes reportados: las
+**siete de evaluación**, con los dos conjuntos de etiquetas de §4.2, y las
+**ocho de entrenamiento** (`chaco_santiago_frontier` más las siete de la v2,
+§1.3), a las que se les asigna una partición por centroide más cercano contra
+las tipologías ya elegidas, sin reajustar nada. Estas últimas se rotulan
+explícitamente como *in-sample* para el codificador —lo son para los
+*embeddings*, no para el agrupamiento— de modo que su lectura no se confunda
+con evidencia de generalización. El objetivo es exclusivamente exploratorio:
+identificar a simple vista si un cluster corresponde a un patrón territorial
+reconocible (frente de deforestación, urbanización, humedal) antes o en
+paralelo a la caracterización estadística de §5.7.
 
 ### 7.2 Fuente de las imágenes
 
@@ -1013,6 +1019,42 @@ generadas y solo completa lo faltante. Un intento previo basado en capturas
 manuales de Google Earth Pro (`scripts/make_zone_kml.py` +
 `scripts/import_manual_imagery.py`) queda documentado en
 `viz/clusters/README.md` como alternativa no automatizable a escala.
+
+### 7.5 Atlas estático por zona
+
+Para su uso fuera de la herramienta interactiva se deriva, por zona, una
+lámina de tres paneles —imagen satelital de 2000, de 2022, y el mapa de
+trayectorias— generada por `scripts/plot_zone_atlas.py`. El tercer panel
+combina el fondo de trayectorias constantes con los píxeles agrupados,
+coloreados por proceso conceptual; donde no hay clasificación se deja ver la
+imagen satelital de fin de período, de modo que la ausencia de dato no se
+confunda visualmente con una categoría. La leyenda agrupa por proceso y no por
+*cluster*, lo que mantiene la lámina legible también en la granularidad fina
+(*k* = 118). El procedimiento no reejecuta el modelo ni el agrupamiento:
+consume los mismos artefactos que alimentan al visor.
+
+### 7.6 Nota de cobertura: asimetría entre zonas
+
+La densidad del fondo de trayectorias constantes no es homogénea entre zonas,
+por una razón ajena a la cartografía. Las trayectorias constantes se
+submuestrean al 15 % para el ajuste del codificador (§4.2) —sin ese balanceo el
+modelo aprende poco más que a reconstruir una secuencia invariante—, y en las
+siete zonas de entrenamiento incorporadas en la v2 ese submuestreo quedó
+*escrito en los archivos de zona*, no aplicado en memoria como en
+`chaco_santiago_frontier`. En consecuencia, el fondo cartográfico de esas siete
+zonas se construía sobre un remanente de constantes: en el caso extremo
+(`pampa_deprimida`), 105 píxeles frente a los 388.201 efectivos.
+
+La situación no afecta a ningún resultado reportado: el agrupamiento se ajusta
+y evalúa sobre el *pool* dinámico de las siete zonas de evaluación (§4.2), que
+conservan su cobertura íntegra, y las trayectorias con transición —las únicas
+que la tipología describe— nunca fueron submuestreadas. Para la representación
+cartográfica se reextrajeron esas siete zonas del netCDF sin el tope de
+constantes, en un directorio separado que no sustituye a los archivos de ajuste
+del codificador; el procedimiento se documenta en `viz/clusters/README.md`. La
+reconstrucción resultante coincide con la grilla completa de cada zona y, en
+`yungas`, con la estimación por inverso de probabilidad empleada en §5.8
+(138.090 píxeles observados frente a 138.098 estimados).
 
 ---
 

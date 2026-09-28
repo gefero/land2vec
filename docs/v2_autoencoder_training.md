@@ -275,6 +275,20 @@ vienen submuestreadas en el archivo — su patrón disperso en el mapa
 (puntos salteados en vez de un bloque sólido) refleja exactamente qué
 píxeles quedaron después de aplicar el mismo criterio.
 
+*Nota agregada (2026-09-28)*: esa asimetría —submuestreo **en memoria** para
+Chaco, **persistido en disco** para las 7 zonas nuevas— no tiene consecuencias
+para el entrenamiento ni para el clustering (que se ajusta sobre las zonas de
+evaluación, completas al 100 %, §5), pero sí las tenía para la **cartografía**:
+el fondo de trayectorias constantes de esas 7 zonas se generaba a partir de los
+mismos archivos recortados y salía casi vacío (`pampa_deprimida`: 105 píxeles
+constantes contra 388.201 reales). Se resolvió re-extrayendo esas 7 zonas del
+netCDF sin el tope, a **`data/zones_full/`**, usado *exclusivamente* para
+regenerar el fondo del visor y del atlas — receta completa en
+`viz/clusters/README.md`, "Cobertura completa del fondo". Las trayectorias
+dinámicas nunca se recortaron, así que no hizo falta re-entrenar, re-extraer
+embeddings ni re-clusterizar. **`data/zones_full/` no debe usarse para
+entrenar**: cambiaría las 400.460 filas de esta misma sección.
+
 ### 4.3 Composición por clase de cada zona nueva de entrenamiento
 
 Distribución de clases (sobre el total de tokens, 23 años × N píxeles) tras

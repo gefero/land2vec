@@ -30,7 +30,8 @@ src/land2vec/
   seqdist.py    # Distancias entre secuencias (Optimal Matching, Hamming)
   typology.py   # Firma descriptiva y etiqueta automática por cluster (STATE_COLORS, GLOSSES, auto_label)
 scripts/        # tune_clustering, describe_clusters, build_cluster_map, check_cluster_palette,
-                #   plot_process_maps, build_eval_zones, extract_embeddings, train_autoencoder …
+                #   plot_process_maps, plot_zone_atlas, build_eval_zones, assign_train_clusters,
+                #   fetch_zone_imagery_gee, eval_desmonte, extract_embeddings, train_autoencoder …
 viz/
   typology/     # Navegador estático de tipologías (cómo es cada cluster)
   clusters/     # Visor Leaflet del mapa de clusters (dónde cae cada cluster) + factordata-logo
@@ -345,6 +346,31 @@ tanto en estas 7 zonas nuevas como en Chaco-Santiago al combinarlas para
 entrenar -- si no, el autoencoder aprende poco más que reconstruir "23 años
 de lo mismo".
 
+> **Dónde se aplica ese submuestreo (importa para cartografía).** En
+> Chaco-Santiago se aplica **en memoria, al entrenar**: el archivo en `data/`
+> conserva sus 1.424.457 píxeles completos. En las **7 zonas nuevas**, en
+> cambio, quedó **persistido en disco** (`build_eval_zones.py --zone-set train
+> --max-constant-fraction 0.15`), así que sus `id_seqs_text_*`/`lat_long_df_*`
+> tienen solo las dinámicas completas más un resto de constantes: entre 704 y
+> 31.518 filas por zona, contra las 32.400–1.555.200 de la grilla real.
+>
+> Para el **entrenamiento y el clustering esto es correcto y deliberado** --
+> el clustering, además, ni siquiera las usa: se ajusta sobre el pool dinámico
+> de las 7 zonas de **evaluación**, que están completas al 100%
+> (`docs/paper_metodologia.md` §4.2). Pero para **dibujar mapas** el recorte se
+> filtraba a una etapa donde no correspondía: el fondo de trayectorias
+> constantes de esas 7 zonas salía casi vacío (`pampa_deprimida`: 105 píxeles
+> constantes de 388.201 reales).
+>
+> Por eso existe **`data/zones_full/`**: las mismas 7 zonas re-extraídas del
+> netCDF **sin** el tope de constantes, en un directorio aparte para no pisar
+> los archivos con los que se entrenó el encoder (las 400.460 filas
+> documentadas en `docs/v2_autoencoder_training.md` §4.2). Se usa
+> **exclusivamente** para regenerar el fondo cartográfico -- ver "Cobertura
+> completa del fondo" en `viz/clusters/README.md`. **No lo uses para
+> entrenar**: cambiaría la composición del dataset y rompería la
+> reproducibilidad de §4.2/§4.3.
+
 ### Mapa de zonas de entrenamiento y evaluación
 
 ![Zonas de entrenamiento (Chaco-Santiago + 7 nuevas) y de evaluación out-of-domain (7, held-out)](imgs/v2_train_eval_zones.png)
@@ -452,6 +478,26 @@ de probing, PCA). Resumen:
   deforestación, degradación forestal y urbanización coloreadas por proceso.
   Reusa la clasificación de `build_cluster_map.py`. `python scripts/plot_process_maps.py`
   -> `imgs/process_maps_<corrida>_<set>.png`.
+- **Atlas por zona** (`scripts/plot_zone_atlas.py`): un PNG de 3 paneles por
+  zona (satelital 2000 · satelital 2022 · píxeles clusterizados coloreados por
+  proceso sobre el fondo de trayectorias constantes) -- el mismo contenido del
+  visor con "color: proceso" + fondo de constantes activados y el ruido
+  oculto, pero como imagen fija. Donde no hay clasificación (ni constante ni
+  cluster visible) se ve la satelital 2022 de fondo, igual que en el visor el
+  raster va sobre los tiles. Reusa `viz/clusters/data/` tal cual, sin re-correr
+  el modelo ni el clustering. La leyenda agrupa **por proceso**, así que las
+  seis corridas quedan igual de legibles aunque `fina` tenga 118 clusters.
+
+  ```bash
+  python scripts/plot_zone_atlas.py                    # 15 zonas × media/HDBSCAN y media/paramétrico
+  python scripts/plot_zone_atlas.py --corrida fine coarse_parametric
+  python scripts/plot_zone_atlas.py --zonas yungas pampa_deprimida --dpi 200
+  ```
+
+  Salida: `imgs/zone_atlas/<corrida>/<zona>.png`, un subdirectorio por corrida
+  (`fine`, `fine_parametric`, `medium`, `medium_parametric`, `coarse`,
+  `coarse_parametric`), así que no se pisan entre sí. Necesita numpy +
+  matplotlib (local, no corre en el contenedor).
 - **Validación externa contra polígonos de desmonte** (`src/land2vec/geo.py` +
   `scripts/build_desmonte_labels.py` + `scripts/eval_desmonte.py`): cruza las 6
   tipologías contra 216.285 polígonos de desmonte del Chaco Seco (Colección

@@ -70,6 +70,8 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
   **integrada al sistema de procesos** (bosque = verde como "regeneración de
   bosque", agua = azul como "dinámica hídrica"…, pero mucho más claro). Se genera
   de `data/id_seqs_text_*` + `lat_long_df_*`, sin re-correr el modelo.
+  Para 7 de las 8 zonas de entrenamiento ese fondo hay que generarlo desde
+  `data/zones_full/`, no desde `data/` -- ver "Cobertura completa del fondo".
 - **Imagen satelital de inicio/fin** — toggle `imagen satelital (inicio/fin)` con
   switch de año (`2000` / `2022`) y su opacidad, para inspeccionar visualmente
   el paisaje real detrás de una trayectoria o un cluster. Se arma con
@@ -143,6 +145,71 @@ submuestreo de constantes al 15 %, y sumando las zonas de evaluación) **sin
 tocar** los `clusters_train_pooled{suffix}.zip` que consume este visor --
 `build_cluster_map.py` busca nombres exactos y los `_full` no matchean
 ninguno, así que los ignora.
+
+### Cobertura completa del fondo (`data/zones_full/`)
+
+7 de las 8 zonas de entrenamiento (todas menos `chaco_santiago_frontier`)
+tienen el submuestreo de constantes al 15 % **persistido en el archivo**, no
+aplicado al entrenar (ver el recuadro en "Datos de entrenamiento" del README
+raíz). Consecuencia para este visor: su fondo de trayectorias constantes salía
+casi vacío -- `pampa_deprimida` tenía **105** píxeles constantes contra los
+**388.201** reales, y el mapa se leía como si la zona no tuviera nada.
+
+No afecta al clustering (se ajusta sobre las zonas de evaluación, completas al
+100 %) ni a los puntos del visor: las trayectorias **dinámicas** nunca se
+recortaron, así que `train_pooled` ya las tiene todas. Es un problema de fondo
+cartográfico solamente, y se arregla **sin re-entrenar ni re-clusterizar**:
+
+```bash
+# 1. re-extraer esas 7 zonas del netCDF SIN tope de constantes, a un dir aparte
+mkdir -p data/zones_full
+python scripts/build_eval_zones.py --zone-set train \
+    --zones puna_salta_catamarca patagonia_santacruz periurbano_gba \
+            corrientes_humedal delta_oeste pampa_deprimida yungas \
+    --out-dir data/zones_full
+
+# 2. chaco ya está completo en data/, pero tiene que estar en el mismo dir:
+#    _rebuild_constants_only() descarta del manifiesto las zonas del grupo
+#    pedido que no encuentre, así que sin esto su entrada se pierde
+cp data/id_seqs_text_2000_2022_chaco_santiago_frontier.zip \
+   data/lat_long_df_chaco_santiago_frontier.zip data/zones_full/
+
+# 3. regenerar solo el fondo de las 8 zonas de train (parcha index.json
+#    in situ: conserva `runs` y las constantes de evaluación)
+python scripts/build_cluster_map.py --only-constants --constants-groups train \
+    --data-dir data/zones_full
+```
+
+Verificación (`pampa_deprimida` debe pasar de 105 a ~388.000, y
+`chaco_santiago_frontier` seguir en 1.167.728 -- si aparece en 0, se salteó el
+paso 2):
+
+```bash
+python - <<'EOF'
+import json
+m = json.load(open('viz/clusters/data/index.json'))
+for z, c in sorted(m['constants'].items()):
+    print(f"{z:26} {sum(c['by_state'].values()):>10,}")
+EOF
+```
+
+Las cuentas cierran contra la grilla real, porque las dinámicas están intactas:
+`pampa_deprimida` 388.201 + 599 = 388.800; `yungas` 138.090 + 17.430 = 155.520;
+`puna_salta_catamarca` 491.609 + 26.791 = 518.400. (El 138.090 de `yungas`
+confirma además, a 0,006 % de error, la ponderación por inverso de probabilidad
+`w_constante=44,91` que usó `eval_desmonte.py` para estimarlo sin tener estos
+píxeles -- `docs/paper_metodologia.md` §5.8.)
+
+Dos cosas que **no** hay que hacer: correr `build_cluster_map.py` sin
+`--only-constants` contra `data/zones_full` (reconstruiría los sets de puntos
+desde el pool completo y pediría embeddings de ~2,45 M píxeles nuevos), ni
+apuntar `assign_train_clusters.py` ahí. Y `data/zones_full/` **no** sirve para
+entrenar: cambiaría la composición del dataset de `docs/v2_autoencoder_training.md`
+§4.2.
+
+Después de esto conviene recargar el visor con **Ctrl+Shift+R**: los
+`constants_*.png` mantienen el nombre, así que el navegador sirve los viejos
+desde caché.
 
 ## Cómo levantarlo
 

@@ -230,6 +230,13 @@ models/cluster_v2/typology*
 # la máquina, no se versionan. Ver viz/clusters/README.md.
 viz/clusters/data/
 
+# Reextracción de las 7 zonas de entrenamiento de la v2 sin el tope de constantes
+# al 15% (scripts/build_eval_zones.py --out-dir), usada solo para regenerar el
+# fondo cartográfico del visor/atlas. Se regenera del netCDF versionado, no
+# sustituye a los archivos de ajuste del encoder. Ver viz/clusters/README.md,
+# "Cobertura completa del fondo".
+data/zones_full/
+
 # Shapefile de desmonte extraído del .rar por land2vec.geo.ensure_shapefile_extracted
 # (GDAL /vsizip/ no reconoce la extensión .rar como archivo comprimido) -- se
 # regenera solo, no se versiona. Ver docs/paper_metodologia.md §5.8.
