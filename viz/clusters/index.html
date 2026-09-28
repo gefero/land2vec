@@ -199,7 +199,14 @@
         <label for="zoneSel">Zona</label>
         <select id="zoneSel"><option value="__all__">Todas</option></select>
       </div>
-      <div class="seg" id="segColor" style="margin-top:8px">
+      <label class="check" style="margin-top:8px">
+        <input type="checkbox" id="pointsOn" checked> píxeles clusterizados
+      </label>
+    </div>
+
+    <div class="group">
+      <div class="lab">Estilo de punto</div>
+      <div class="seg" id="segColor">
         <button data-v="proceso" aria-pressed="true">color: proceso</button>
         <button data-v="cluster">cluster</button>
       </div>
@@ -209,27 +216,31 @@
         <input type="range" id="sizeR" min="1" max="6" step="0.5" value="2.5">
         <span class="val" id="sizeV">2.5</span>
       </div>
+      <label class="check" style="margin-top:8px">
+        <input type="checkbox" id="pxMode"> tamaño = píxel real (300 m)
+      </label>
+      <div class="hint" id="pxHint" hidden>el marcador escala con el zoom para cubrir el píxel ESA CCI; el deslizador pasa a ser factor (2.5 = 1&times;)</div>
       <div class="row" style="margin-top:6px">
         <label for="opacR">Opacidad</label>
         <input type="range" id="opacR" min="0.15" max="1" step="0.05" value="0.75">
         <span class="val" id="opacV">.75</span>
       </div>
       <label class="check" style="margin-top:8px">
-        <input type="checkbox" id="pxMode"> tamaño = píxel real (300 m)
-      </label>
-      <div class="hint" id="pxHint" hidden>el marcador escala con el zoom para cubrir el píxel ESA CCI; el deslizador pasa a ser factor (2.5 = 1&times;)</div>
-      <label class="check" style="margin-top:8px">
         <input type="checkbox" id="showNoise"> mostrar sin tipificar (&minus;1)
       </label>
-      <label class="check" style="margin-top:8px" id="constWrap" hidden>
-        <input type="checkbox" id="constBg"> fondo: trayectorias constantes
+    </div>
+
+    <div class="group">
+      <div class="lab">Capas de fondo</div>
+      <label class="check" id="constWrap" hidden>
+        <input type="checkbox" id="constBg"> trayectorias constantes
       </label>
       <div class="row" id="constOpacRow" hidden style="margin-top:6px">
         <label for="constOpacR">Op. fondo</label>
         <input type="range" id="constOpacR" min="0.1" max="1" step="0.05" value="0.55">
         <span class="val" id="constOpacV">.55</span>
       </div>
-      <label class="check" style="margin-top:8px" id="imgWrap" hidden>
+      <label class="check" id="imgWrap" hidden style="margin-top:8px">
         <input type="checkbox" id="imgBg"> imagen satelital (inicio/fin)
       </label>
       <div class="seg" id="segImgYear" hidden style="margin-top:6px">
@@ -304,7 +315,7 @@ const SET_HINT = {
 
 const state = {
   gran: "fine", fam: "hdbscan", set: "dynamic", group: "eval",
-  zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false,
+  zone: "__all__", size: 2.5, opacity: 0.75, showNoise: false, pxMode: false, pointsOn: true,
   scale: 1, selected: new Set(), isolatedProc: null, colorMode: "proceso",
   constBg: false, constOpacity: 0.55, constSelected: new Set(),
   imgBg: false, imgOpacity: 0.8, imgYear: "2022",
@@ -438,7 +449,7 @@ const ClusterCanvas = L.Layer.extend({
     const ctx = cv.getContext("2d");
     ctx.clearRect(0, 0, cv.width, cv.height);
     this._drawn.length = 0;
-    if (!current) return;
+    if (!current || !state.pointsOn) return;
 
     const d = markerSide(map.getCenter().lat, map.getZoom()), r = d / 2;
     this._lastR = r;
@@ -1088,6 +1099,10 @@ function wireControls() {
   sizeR.addEventListener("input", () => {
     state.size = +sizeR.value; syncSizeReadout(); pointLayer._redraw();
   });
+  $("#pointsOn").addEventListener("change", (e) => {
+    state.pointsOn = e.target.checked;
+    pointLayer._redraw();
+  });
   $("#pxMode").addEventListener("change", (e) => {
     state.pxMode = e.target.checked;
     $("#pxHint").hidden = !state.pxMode;
@@ -1299,26 +1314,28 @@ async function exportView(fmt) {
     }
 
     // --- puntos ---
-    const d = state.pxMode
-      ? Math.max(1, (PIXEL_M / metersPerPixel(map.getCenter().lat, tileZoom)) * (state.size / 2.5))
-      : state.size * s * 2;
-    const r = d / 2;
-    ctx.globalAlpha = Math.min(1, state.opacity + 0.1);
-    for (const [zid, zd] of Object.entries(current.data.zones)) {
-      if (!zoneAllowed(zid)) continue;
-      for (const [cidStr, flat] of Object.entries(zd.points)) {
-        const cid = +cidStr;
-        if (!clusterVisible(cid)) continue;
-        ctx.fillStyle = colorFor(cid);
-        for (let i = 0; i < flat.length; i += 3) {
-          const p = map.project([flat[i], flat[i + 1]], tileZoom);
-          const x = p.x - originPx.x, y = p.y - originPx.y;
-          if (x < -d || y < -d || x > W + d || y > H + d) continue;
-          ctx.fillRect(x - r, y - r, d, d);
+    if (state.pointsOn) {
+      const d = state.pxMode
+        ? Math.max(1, (PIXEL_M / metersPerPixel(map.getCenter().lat, tileZoom)) * (state.size / 2.5))
+        : state.size * s * 2;
+      const r = d / 2;
+      ctx.globalAlpha = Math.min(1, state.opacity + 0.1);
+      for (const [zid, zd] of Object.entries(current.data.zones)) {
+        if (!zoneAllowed(zid)) continue;
+        for (const [cidStr, flat] of Object.entries(zd.points)) {
+          const cid = +cidStr;
+          if (!clusterVisible(cid)) continue;
+          ctx.fillStyle = colorFor(cid);
+          for (let i = 0; i < flat.length; i += 3) {
+            const p = map.project([flat[i], flat[i + 1]], tileZoom);
+            const x = p.x - originPx.x, y = p.y - originPx.y;
+            if (x < -d || y < -d || x > W + d || y > H + d) continue;
+            ctx.fillRect(x - r, y - r, d, d);
+          }
         }
       }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
 
     drawFooter(ctx, W, H, footH, s, attr);
 
@@ -1363,10 +1380,13 @@ function drawFooter(ctx, W, H, footH, s, attr) {
     pad, H + pad + 18 * s);
 
   // leyenda compacta: por proceso (modo "proceso") o por cluster
+  // (vacía si los píxeles clusterizados están apagados -- nada que referenciar)
   const counts = aggregateCounts();
   const grouped = state.colorMode === "proceso" && Object.keys(runLabels()).length > 0;
-  let items;   // [{color, txt}]
-  if (grouped) {
+  let items = [];   // [{color, txt}]
+  if (!state.pointsOn) {
+    // items queda vacío
+  } else if (grouped) {
     const byProc = new Map();
     for (const [cid, n] of counts) {
       if (!clusterVisible(cid) || cid === -1) continue;
