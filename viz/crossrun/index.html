@@ -172,12 +172,16 @@
 <header>
   <div class="titlerow">
     <h1>Concordancia entre clusterizaciones</h1>
-    <span class="sub">land2vec v2 · pool dinámico, 7 zonas de evaluación</span>
+    <span class="sub" id="subt">land2vec v2 · 7 zonas de evaluación</span>
     <span class="spacer"></span>
     <span class="status" id="status">cargando…</span>
     <button id="themeBtn" title="alternar tema">tema</button>
   </div>
   <div class="ctrls">
+    <div class="ctl">
+      <label class="lab" for="selSet">Conjunto</label>
+      <select id="selSet"></select>
+    </div>
     <div class="ctl">
       <span class="lab">Vista</span>
       <div class="seg" id="segView">
@@ -230,6 +234,7 @@
         <option value="proc">acuerdo de proceso</option>
         <option value="ariproc">ARI de proceso</option>
         <option value="aricl">ARI de cluster</option>
+        <option value="nest">anidamiento (fila dentro de columna)</option>
       </select>
     </div>
     <div class="ctl" data-only="matriz">
@@ -275,10 +280,15 @@ const state = {
   colorBy: "origen",
   diff: false,
   minFlow: 0,              // fracción de N
+  set: "dynamic",
   metric: "proc",
   noise: "excluir",
   focus: null,             // {side: "A"|"B", id}
 };
+
+/** Bloque del set activo: {n, runs, pairs}. Lo compartido (procesos, colores de
+ *  estado, etiqueta del -1) vive en la raíz del payload. */
+const S = () => PAY.sets[state.set];
 
 const $ = (s) => document.querySelector(s);
 const fmtInt = (n) => n.toLocaleString("es-AR");
@@ -295,7 +305,7 @@ const fetchJSON = (u) => fetch(u).then((r) => r.ok ? r.json() : Promise.reject(n
  *  El payload guarda solo los 15 pares no ordenados; para j < i se transpone. */
 function flows(i, j, level) {
   if (i === j) return null;
-  const t = i < j ? PAY.pairs[i + "-" + j][level] : PAY.pairs[j + "-" + i][level];
+  const t = i < j ? S().pairs[i + "-" + j][level] : S().pairs[j + "-" + i][level];
   if (i < j) return t;
   const out = new Array(t.length);
   for (let k = 0; k < t.length; k += 3) {
@@ -305,20 +315,20 @@ function flows(i, j, level) {
 }
 
 function metricsOf(i, j) {
-  return PAY.pairs[i < j ? i + "-" + j : j + "-" + i].m;
+  return S().pairs[i < j ? i + "-" + j : j + "-" + i].m;
 }
 
-const NOISE_PID = () => PAY.noise_pid;
+const NOISE_PID = () => S().noise_pid;
 
 /** Metadatos de un nodo (color, etiqueta) según el nivel. */
 function nodeMeta(runIdx, id, level) {
   if (level === "proceso") {
-    if (id === NOISE_PID()) return { color: null, label: PAY.noise_label, noise: true };
+    if (id === NOISE_PID()) return { color: null, label: S().noise_label, noise: true };
     const p = PAY.processes[id];
     return { color: p.color, label: p.label, gloss: p.gloss, noise: false };
   }
-  if (id === -1) return { color: null, label: PAY.noise_label, noise: true };
-  const n = PAY.runs[runIdx]._byId.get(id);
+  if (id === -1) return { color: null, label: S().noise_label, noise: true };
+  const n = S().runs[runIdx]._byId.get(id);
   return { color: (n && n.c) || "#999", label: (n && n.lab) || ("#" + id), noise: false,
            pid: n ? n.p : null };
 }
@@ -327,7 +337,7 @@ function nodeMeta(runIdx, id, level) {
 function nodePid(runIdx, id, level) {
   if (level === "proceso") return id;
   if (id === -1) return NOISE_PID();
-  const n = PAY.runs[runIdx]._byId.get(id);
+  const n = S().runs[runIdx]._byId.get(id);
   return n ? n.p : NOISE_PID();
 }
 
@@ -394,7 +404,7 @@ function weightedCrossings(tri, rankA, rankB) {
 const ranksOf = (order) => new Map(order.map((id, i) => [id, i]));
 
 function computeLayout(flat, ai, bi, level, H) {
-  const N = PAY.n;
+  const N = S().n;
   const sizesA = marginals(flat, "A"), sizesB = marginals(flat, "B");
   const idsA = [...sizesA.keys()], idsB = [...sizesB.keys()];
   const p = idsA.length, q = idsB.length;
@@ -476,7 +486,7 @@ function canvasHeight(flat) {
   const sa = marginals(flat, "A"), sb = marginals(flat, "B");
   const nmin = Math.min(Math.min(...sa.values()), Math.min(...sb.values()));
   const kmax = Math.max(sa.size, sb.size);
-  const ideal = PAY.n * (3 / nmin) + (kmax - 1) * GAP_MIN + PAD_T + PAD_B;
+  const ideal = S().n * (3 / nmin) + (kmax - 1) * GAP_MIN + PAD_T + PAD_B;
   return Math.max(560, Math.min(1500, Math.round(ideal)));
 }
 
@@ -533,7 +543,7 @@ function renderSankey() {
   svg.appendChild(defs);
 
   const gBands = el("g"), gNodes = el("g"), gHits = el("g");
-  const minN = state.minFlow * PAY.n;
+  const minN = state.minFlow * S().n;
   let hidden = 0;
 
   // bandas: las gruesas primero, así las finas quedan hovereables arriba
@@ -583,7 +593,7 @@ function renderSankey() {
           class: "nlabel" + (pp.h >= 16 ? " big" : ""),
           "data-nid": nid,
         });
-        const raw = m.noise ? PAY.noise_label + " (−1)" : m.label;
+        const raw = m.noise ? S().noise_label + " (−1)" : m.label;
         t.textContent = raw.length > 30 ? raw.slice(0, 29) + "…" : raw;
         gNodes.appendChild(t);
       }
@@ -603,9 +613,9 @@ function renderSankey() {
 
   applyFocus();
 
-  const total = PAY.n;
-  $("#headA").textContent = PAY.runs[a].name + "  →";
-  $("#headB").textContent = "→  " + PAY.runs[b].name;
+  const total = S().n;
+  $("#headA").textContent = S().runs[a].name + "  →";
+  $("#headB").textContent = "→  " + S().runs[b].name;
   const m = metricsOf(a, b);
   let msg = `${fmtInt(total)} píxeles · ${L.bands.length} flujos · `
           + `acuerdo de proceso ${num3(m.acu_proc11)} (con −1) / ${num3(m.acu_proc)} (sin −1)`;
@@ -661,7 +671,7 @@ function bandTip(bd) {
   const mA = nodeMeta(a, bd.src, level), mB = nodeMeta(b, bd.dst, level);
   const nA = LAYOUT.sizesA.get(bd.src), nB = LAYOUT.sizesB.get(bd.dst);
   return `<b>${esc(mA.label)}</b> → <b>${esc(mB.label)}</b><br>`
-       + `${fmtInt(bd.n)} píxeles · ${pct(bd.n / PAY.n, 2)} del total<br>`
+       + `${fmtInt(bd.n)} píxeles · ${pct(bd.n / S().n, 2)} del total<br>`
        + `<span class="dim2">${pct(bd.n / nA)} del origen · ${pct(bd.n / nB)} del destino</span>`;
 }
 
@@ -670,7 +680,7 @@ function bandTip(bd) {
  *  frecuente entre sus miembros y qué fracción de ellos la sigue exactamente. */
 function seqStrip(runIdx, id, level, small) {
   if (level !== "cluster" || id === -1) return "";
-  const node = PAY.runs[runIdx]._byId.get(id);
+  const node = S().runs[runIdx]._byId.get(id);
   if (!node || !node.seq) return "";
   const cols = PAY.state_colors || {};
   const toks = node.seq.split("-");
@@ -704,7 +714,7 @@ function nodeTip(side, id) {
           + ` · pureza ${num3(top.n / cleanN)} → ${esc(tm.label)}</span>`;
   }
   return `<b>${esc(m.label)}</b>${m.noise ? " (−1)" : ""}<br>`
-       + `${fmtInt(n)} píxeles · ${pct(n / PAY.n)} del total${extra}`
+       + `${fmtInt(n)} píxeles · ${pct(n / S().n)} del total${extra}`
        + seqStrip(runIdx, id, level, true);
 }
 
@@ -714,13 +724,22 @@ function nodeTip(side, id) {
 function metricValue(i, j) {
   const m = metricsOf(i, j);
   const c11 = state.noise === "cat11";
+  if (state.metric === "nest") {
+    // Asimétrica a propósito: "¿cada cluster de la FILA cae entero en uno de la
+    // COLUMNA?". Fino->grueso alto = escalera jerárquica; grueso->fino bajo por
+    // construcción. Siempre sobre la intersección no-ruido, así que el toggle
+    // del -1 no aplica.
+    const ab = i < j;
+    return { v: ab ? m.pur_ab : m.pur_ba, cob: m.cob,
+             spl: ab ? m.spl_ab : m.spl_ba, k: ab ? m.k_ab : m.k_ba };
+  }
   if (state.metric === "proc") return { v: c11 ? m.acu_proc11 : m.acu_proc, cob: c11 ? 1 : m.cob };
   if (state.metric === "ariproc") return { v: c11 ? m.ari_proc11 : m.ari_proc, cob: c11 ? 1 : m.cob };
   return { v: c11 ? m.ari_ruido : m.ari, cob: c11 ? 1 : m.cob };
 }
 
 function renderMatrix() {
-  const R = PAY.runs.length;
+  const R = S().runs.length;
   const t = document.createElement("table");
   t.className = "matrix";
   const head = document.createElement("tr");
@@ -728,7 +747,7 @@ function renderMatrix() {
   for (let j = 0; j < R; j++) {
     const th = document.createElement("th");
     th.className = "col";
-    th.textContent = PAY.runs[j].name;
+    th.textContent = S().runs[j].name;
     head.appendChild(th);
   }
   t.appendChild(head);
@@ -736,23 +755,28 @@ function renderMatrix() {
   for (let i = 0; i < R; i++) {
     const tr = document.createElement("tr");
     const th = document.createElement("th");
-    th.textContent = PAY.runs[i].name;
+    th.textContent = S().runs[i].name;
     tr.appendChild(th);
     for (let j = 0; j < R; j++) {
       const td = document.createElement("td");
       if (i === j) {
         td.className = "diag";
       } else {
-        const { v, cob } = metricValue(i, j);
+        const mv = metricValue(i, j), v = mv.v, cob = mv.cob;
         // dominio [0,4 , 1,0]: con [0,1] los 15 valores quedan en el tercio superior
         const t01 = Math.max(0, Math.min(1, (v - 0.4) / 0.6));
         const mixPct = Math.round(12 + t01 * 78);
         td.style.background = `color-mix(in oklab, var(--accent) ${mixPct}%, var(--surface))`;
         td.style.color = mixPct > 55 ? "var(--accent-ink)" : "var(--ink)";
+        const sub = state.metric === "nest"
+          ? `${mv.spl}/${mv.k} se parten`
+          : `cob ${num3(cob)}`;
         td.innerHTML = `<div class="v">${num3(v)}</div>`
-          + `<div class="c">cob ${num3(cob)}</div>`
+          + `<div class="c">${sub}</div>`
           + `<div class="covbar"><i style="width:${(100 * cob).toFixed(1)}%"></i></div>`;
-        td.title = `${PAY.runs[i].name} ↔ ${PAY.runs[j].name}`;
+        td.title = state.metric === "nest"
+          ? `${S().runs[i].name} dentro de ${S().runs[j].name}`
+          : `${S().runs[i].name} ↔ ${S().runs[j].name}`;
         td.addEventListener("click", () => {
           state.a = i; state.b = j; state.view = "flujo";
           syncSegs(); render();
@@ -766,6 +790,17 @@ function renderMatrix() {
   host.textContent = "";
   host.appendChild(t);
 
+  if (state.metric === "nest") {
+    $("#matrixNote").innerHTML =
+      `<b>Anidamiento</b>: qué fracción de la masa de cada cluster de la <b>fila</b> cae `
+      + `en un único cluster de la <b>columna</b>. A diferencia de las otras medidas, `
+      + `<b>esta matriz no es simétrica</b>: fino→grueso alto significa que la escalera de `
+      + `granularidad es una jerarquía real (cada cluster fino vive entero dentro de uno `
+      + `grueso); grueso→fino es bajo por construcción, porque un cluster grueso se parte. `
+      + `Se calcula siempre sobre la intersección no-ruido, así que el toggle del −1 no la `
+      + `afecta — pero la barra de cobertura sigue indicando sobre cuánta masa se midió.`;
+    return;
+  }
   const c11 = state.noise === "cat11";
   $("#matrixNote").innerHTML = c11
     ? `Con <b>«sin tipificar» como 11ª categoría</b> el denominador es N y la cobertura es 1,000. `
@@ -784,7 +819,7 @@ function renderLegend() {
   const host = $("#legend");
   host.textContent = "";
   const items = PAY.processes.map((p, i) => ({ id: i, color: p.color, label: p.label, gloss: p.gloss }));
-  items.push({ id: NOISE_PID(), color: null, label: PAY.noise_label + " (−1)", gloss: "sin tipología asignada" });
+  items.push({ id: NOISE_PID(), color: null, label: S().noise_label + " (−1)", gloss: "sin tipología asignada" });
   for (const it of items) {
     const d = document.createElement("span");
     d.className = "lgi";
@@ -812,10 +847,14 @@ function render() {
     ? `Cada banda es un conjunto de píxeles que la corrida de <b>origen</b> pone en un grupo y la de `
       + `<b>destino</b> en otro. El <b>−1 («sin tipificar»)</b> es un nodo más, tramado: los diagramas `
       + `estáticos de <code>imgs/</code> lo descartan y con eso esconden entre el 10 % y el 31 % de la masa.`
-    : `Acuerdo entre las 6 particiones sobre los mismos ${fmtInt(PAY.n)} píxeles. Click en una celda para ver su flujo.`;
+    : `Acuerdo entre las 6 particiones sobre los mismos ${fmtInt(S().n)} píxeles. Click en una celda para ver su flujo.`;
 
+  document.querySelectorAll("#segNoise button").forEach((b) => {
+    b.disabled = state.metric === "nest";
+    b.style.opacity = state.metric === "nest" ? .45 : 1;
+  });
   if (state.view === "flujo") { renderSankey(); renderLegend(); }
-  else { renderMatrix(); $("#status").textContent = `${fmtInt(PAY.n)} píxeles · 15 pares`; }
+  else { renderMatrix(); $("#status").textContent = `${fmtInt(S().n)} píxeles · 15 pares`; }
 
   const hash = `#${state.a}-${state.b}/${state.level}`;
   if (location.hash !== hash && state.view === "flujo") history.replaceState(null, "", hash);
@@ -828,6 +867,8 @@ function syncSegs() {
   set("segColor", state.colorBy); set("segNoise", state.noise);
   $("#selA").value = String(state.a);
   $("#selB").value = String(state.b);
+  $("#selSet").value = state.set;
+  $("#subt").textContent = `land2vec v2 · 7 zonas de evaluación · ${fmtInt(S().n)} píxeles`;
 }
 
 function seg(id, key, after) {
@@ -843,7 +884,7 @@ function seg(id, key, after) {
 }
 
 function wire() {
-  const optsA = PAY.runs.map((r, i) =>
+  const optsA = S().runs.map((r, i) =>
     `<option value="${i}">${esc(r.name)} · k=${r.k}</option>`).join("");
   $("#selA").innerHTML = optsA;
   $("#selB").innerHTML = optsA;
@@ -858,6 +899,15 @@ function wire() {
     if (v === state.a) state.a = state.b;
     state.b = v; state.focus = null; syncSegs(); render();
   });
+  $("#selSet").innerHTML = Object.keys(PAY.sets).map((k) =>
+    `<option value="${k}">${esc(PAY.set_labels[k] || k)}</option>`).join("");
+  $("#selSet").addEventListener("change", (e) => {
+    state.set = e.target.value;
+    state.focus = null;
+    // los k cambian entre sets, así que un cluster en foco puede no existir
+    syncSegs(); render();
+  });
+
   $("#swapBtn").addEventListener("click", () => {
     const t = state.a; state.a = state.b; state.b = t;
     state.focus = null; syncSegs(); render();
@@ -930,7 +980,7 @@ function showPanel() {
   p.innerHTML = `<button class="close" id="pClose">×</button>`
     + `<h3>${esc(m.label)}${m.noise ? " (−1)" : ""}</h3>`
     + `<div style="color:var(--muted)">${f.side === "A" ? "origen" : "destino"} · `
-    + `${PAY.runs[runIdx].name} · ${fmtInt(n)} px (${pct(n / PAY.n)})</div>`
+    + `${S().runs[runIdx].name} · ${fmtInt(n)} px (${pct(n / S().n)})</div>`
     + seqStrip(runIdx, f.id, level, false)
     + `<table>${rows}</table>`;
   p.hidden = false;
@@ -943,13 +993,16 @@ function readHash() {
   const m = /^#(\d)-(\d)\/(proceso|cluster)$/.exec(location.hash || "");
   if (!m) return;
   const a = +m[1], b = +m[2];
-  if (a === b || a >= PAY.runs.length || b >= PAY.runs.length) return;
+  if (a === b || a >= S().runs.length || b >= S().runs.length) return;
   state.a = a; state.b = b; state.level = m[3];
 }
 
 fetchJSON("./crossrun.json").then((d) => {
   PAY = d;
-  PAY.runs.forEach((r) => { r._byId = new Map(r.nodes.map((n) => [n.id, n])); });
+  if (!PAY.sets[state.set]) state.set = Object.keys(PAY.sets)[0];
+  for (const blk of Object.values(PAY.sets)) {
+    blk.runs.forEach((r) => { r._byId = new Map(r.nodes.map((n) => [n.id, n])); });
+  }
   readHash();
   wire();
   syncSegs();

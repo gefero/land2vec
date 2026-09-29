@@ -703,8 +703,8 @@ componen y su pureza.
 `viz/crossrun/`, agregado 2026-09-28): materializa esa comparación, que hasta
 ahora solo existía como píxeles -- `plot_alluvial` calcula los flujos, los dibuja
 y los descarta. Permite elegir cualquiera de los 30 pares ordenados (selectores de
-origen y destino, no los 5 hardcodeados), a nivel de cluster o de proceso, más la
-matriz 6×6. El builder es solo-stdlib: el ARI y el NMI se calculan a mano desde la
+origen y destino, no los 5 hardcodeados), a nivel de cluster o de proceso, sobre
+`dynamic` o `pooled_subsampled`, más la matriz 6×6. El builder es solo-stdlib: el ARI y el NMI se calculan a mano desde la
 tabla de contingencia y coinciden con los de sklearn de
 `typology_crossrun.csv` a ~1e-7 (el script contrasta los 60 valores y reporta el
 delta).
@@ -722,6 +722,22 @@ mayoritariamente trayectorias oscilantes -- justo las que la regla de
 estados sin dirección clara" -- que el modelo de mezcla sí absorbe en componentes.
 Es un argumento a favor de leer el `-1` de HDBSCAN como *categoría sustantiva*
 ("trayectoria sin forma estable") y no como falta de dato.
+
+**Anidamiento entre granularidades** (medida direccional de la matriz, agregada
+2026-09-29): la pureza ponderada de cada cluster de una partición dentro de la
+otra responde si las tres granularidades son niveles de una jerarquía o tres
+particiones distintas. En `dynamic`, la familia HDBSCAN es **jerárquica**:
+`fina → gruesa` da pureza **1,0000** sin un solo cluster repartido (0 de 84), y
+`fina → media` 0,9997 (2 de 84). La familia paramétrica **no**: `media → gruesa`
+da 0,897 con 19 de 40 clusters repartidos. Es decir, "el cluster fino 38 es parte
+del cluster grueso 3" es literalmente cierto en HDBSCAN y solo aproximado en GMM.
+
+Con dos advertencias de denominador: (a) el anidamiento se mide sobre la
+intersección no-ruido, así que ese 1,0000 vale sobre el 74 % de los píxeles --34 de
+los 118 clusters finos quedan enteros dentro del `-1` del nivel grueso--; y (b) en
+`pooled_subsampled`, donde las seis corridas tienen `-1` y la comparación queda
+emparejada, la ventaja se mantiene pero se achica (0,996 contra 0,959). HDBSCAN
+compra su jerarquía al precio de no clasificar una parte del territorio.
 
 **Disimilitud entre secuencias** (`land2vec.seqdist`): el pool dinámico tiene
 solo **1.128 trayectorias distintas** de 107.362, así que colapsado a ese

@@ -484,11 +484,14 @@ de probing, PCA). Resumen:
   24,2% de los píxeles y el paramétrico 0%, así que a dónde va esa masa es la
   pregunta central (resulta ser sobre todo `oscilante`). A nivel cluster el tooltip
   muestra la **trayectoria más frecuente** de cada grupo como tira coloreada 2000→2022,
-  con qué fracción de sus miembros la sigue exacta. El builder es solo-stdlib: calcula
-  ARI/NMI a mano desde la contingencia, sin sklearn.
+  con qué fracción de sus miembros la sigue exacta. Cubre los sets `dynamic` y
+  `pooled_subsampled`, y la matriz incluye una medida direccional de **anidamiento**
+  que responde si la escalera de granularidad es una jerarquía real: en HDBSCAN lo es
+  (fina→gruesa, 0 de 84 clusters partidos), en la familia paramétrica no. El builder es
+  solo-stdlib: calcula ARI/NMI a mano desde la contingencia, sin sklearn.
 
   ```bash
-  python scripts/build_crossrun.py             # genera viz/crossrun/crossrun.json (~72 KB)
+  python scripts/build_crossrun.py             # genera viz/crossrun/crossrun.json (~196 KB)
   python -m http.server -d viz/crossrun 8002   # -> http://localhost:8002
   ```
 - **Mapas estáticos de pérdida de cobertura** (`scripts/plot_process_maps.py`):

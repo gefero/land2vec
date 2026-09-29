@@ -66,7 +66,15 @@ OUT_PATH = ROOT / "viz" / "crossrun" / "crossrun.json"
 CROSSRUN_CSV = ROOT / "models" / "cluster_v2" / "typology_crossrun.csv"
 TYPOLOGY_JSON = ROOT / "viz" / "typology" / "typology_browser.json"
 
-SET_NAME = "dynamic"
+# Los dos sets comparables: las mismas 6 corridas sobre las mismas 7 zonas de
+# evaluación, alineados fila a fila dentro de cada set. Ojo: el -1 NO significa lo
+# mismo en los dos -- en `dynamic` es ruido del ajuste de HDBSCAN (y por eso las
+# corridas paramétricas no tienen ninguno), en `pooled_subsampled` es el corte por
+# distancia al centroide, que se aplica a las seis. Ver docs §7.2.
+SETS = {
+    "dynamic": "dinámico · sobre el que se ajustó (in-sample)",
+    "pooled_subsampled": "pool aplicado por centroide (incl. constantes al 15%)",
+}
 
 # id de proceso = índice en PROCESSES; el id siguiente es "sin tipificar" (-1),
 # que no es un proceso sino la ausencia de tipología.
@@ -170,6 +178,26 @@ def _agreement(cont: dict) -> float:
     return diag / total
 
 
+def _nesting(cont: dict, side: int) -> tuple:
+    """Anidamiento de una partición dentro de la otra, sobre la contingencia ya
+    recortada a la intersección no-ruido.
+
+    `side` 0 = A dentro de B (cada cluster de A, ¿cae entero en uno de B?), 1 = al revés.
+    Devuelve (pureza ponderada, nº de clusters de origen, nº que se reparten entre 2+).
+    Es la misma pureza que land2vec.typology.nesting_table, agregada y ponderada."""
+    g: dict = {}
+    for (a, b), v in cont.items():
+        src, dst = (a, b) if side == 0 else (b, a)
+        g.setdefault(src, {})
+        g[src][dst] = g[src].get(dst, 0) + v
+    tot = sum(sum(d.values()) for d in g.values())
+    if not tot:
+        return float("nan"), 0, 0
+    pur = sum(max(d.values()) for d in g.values())
+    multi = sum(1 for d in g.values() if len(d) > 1)
+    return pur / tot, len(g), multi
+
+
 def _flat(cont: dict) -> list:
     "{(a,b): n} -> [a, b, n, ...] ordenado por (a, b). Solo celdas > 0."
     out: list = []
@@ -209,9 +237,9 @@ def load_modal_seqs() -> tuple[dict, dict]:
     return out, doc.get("state_colors", {})
 
 
-def load_run_labels(suffix: str, data_dir: Path) -> tuple[list, list, list]:
-    "(ids, zones, clusters) de data/clusters_dynamic{suffix}.zip, en orden de archivo."
-    path = data_dir / f"clusters_{SET_NAME}{suffix}.zip"
+def load_run_labels(set_name: str, suffix: str, data_dir: Path) -> tuple[list, list, list]:
+    "(ids, zones, clusters) de data/clusters_{set}{suffix}.zip, en orden de archivo."
+    path = data_dir / f"clusters_{set_name}{suffix}.zip"
     if not path.exists():
         sys.exit(f"falta {path.relative_to(ROOT)} -- corré scripts/tune_clustering.py --select")
     ids, zones, clusters = [], [], []
@@ -312,6 +340,8 @@ def build_pair(ca: list, cb: list, pa: list, pb: list) -> dict:
 
     cont_cluster_k = _contingency(ca_k, cb_k)
     cont_proc_k = _contingency(pa_k, pb_k)
+    pur_ab, k_ab, spl_ab = _nesting(cont_cluster_k, 0)
+    pur_ba, k_ba, spl_ba = _nesting(cont_cluster_k, 1)
 
     return {
         "cluster": _flat(cont_cluster),
@@ -329,6 +359,11 @@ def build_pair(ca: list, cb: list, pa: list, pb: list) -> dict:
             # nivel proceso, "sin tipificar" como 11ª categoría (denominador = N)
             "acu_proc11": round(_agreement(cont_proc), 6),
             "ari_proc11": round(_ari_from_contingency(cont_proc), 6),
+            # anidamiento: ¿cada cluster de un lado cae entero en uno del otro?
+            # Asimétrico a propósito: fino->grueso es alto si la escalera es
+            # jerárquica, grueso->fino es bajo por construcción.
+            "pur_ab": round(pur_ab, 6), "spl_ab": spl_ab, "k_ab": k_ab,
+            "pur_ba": round(pur_ba, 6), "spl_ba": spl_ba, "k_ba": k_ba,
         },
     }
 
@@ -390,11 +425,68 @@ def check_against_sklearn(payload: dict, suffixes: list) -> None:
         print("  ¡el acuerdo calculado a mano no coincide con typology_crossrun.csv!")
 
 
+def build_set_payload(set_name: str, suffixes: list, labels: dict, modal: dict,
+                       data_dir: Path) -> dict:
+    "n + runs + pairs de un set. Aborta si las 6 corridas no están alineadas."
+    clusters_by_suffix: dict = {}
+    keys_by_suffix: dict = {}
+    for suffix in suffixes:
+        ids, zones, clusters = load_run_labels(set_name, suffix, data_dir)
+        clusters_by_suffix[suffix] = clusters
+        keys_by_suffix[suffix] = list(zip(zones, ids))
+    check_alignment(keys_by_suffix)
+
+    runs = [build_run_entry(s, clusters_by_suffix[s], labels, modal) for s in suffixes]
+    for r in runs:
+        print(f"    {r['name']:22} k={r['k']:>3}  sin tipificar {100 * r['noise']:>5.2f}%")
+
+    # proceso por fila (el -1 va a NOISE_PID)
+    pid_of = [{node["id"]: node["p"] for node in r["nodes"]} for r in runs]
+    procs_by_suffix = {
+        s: [pid_of[i][c] for c in clusters_by_suffix[s]] for i, s in enumerate(suffixes)
+    }
+
+    pairs: dict = {}
+    for i, j in combinations(range(len(suffixes)), 2):
+        si, sj = suffixes[i], suffixes[j]
+        pairs[f"{i}-{j}"] = build_pair(
+            clusters_by_suffix[si], clusters_by_suffix[sj],
+            procs_by_suffix[si], procs_by_suffix[sj])
+
+    return {"n": len(clusters_by_suffix[""]), "runs": runs, "pairs": pairs}
+
+
+def verify_set(set_name: str, block: dict) -> None:
+    n, pairs, runs = block["n"], block["pairs"], block["runs"]
+    for key, pair in pairs.items():
+        for level in ("cluster", "proceso"):
+            total = sum(pair[level][2::3])
+            if total != n:
+                sys.exit(f"[{set_name}] par {key}, nivel {level}: la contingencia suma "
+                         f"{total:,}, no {n:,} -- se perdió masa")
+    for i, r in enumerate(runs):
+        # cualquier par que involucre a la corrida i sirve para reconstruir su marginal
+        j, col = (i + 1, 0) if i + 1 < len(runs) else (0, 1)
+        flat = pairs[f"{min(i, j)}-{max(i, j)}"]["cluster"]
+        marg: dict = {}
+        for t in range(0, len(flat), 3):
+            cid = flat[t + col]
+            marg[cid] = marg.get(cid, 0) + flat[t + 2]
+        for node in r["nodes"]:
+            if marg.get(node["id"], 0) != node["n"]:
+                sys.exit(f"[{set_name}] {r['name']}: el marginal del cluster "
+                         f"{node['id']} ({marg.get(node['id'], 0):,}) no coincide con "
+                         f"su n ({node['n']:,})")
+    print(f"    conservación de masa y marginales: OK ({n:,} px, {len(pairs)} pares)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data-dir", type=Path, default=DATA_DIR)
     ap.add_argument("--out", type=Path, default=OUT_PATH)
+    ap.add_argument("--sets", nargs="+", default=list(SETS), choices=list(SETS),
+                    metavar="SET", help=f"sets a incluir (default: {list(SETS)})")
     ap.add_argument("--no-check-crossrun", action="store_true",
                     help="no contrastar contra models/cluster_v2/typology_crossrun.csv")
     ap.add_argument("--no-modal-seq", action="store_true",
@@ -412,40 +504,14 @@ def main() -> None:
 
     modal, state_colors = ({}, {}) if args.no_modal_seq else load_modal_seqs()
 
-    clusters_by_suffix: dict = {}
-    keys_by_suffix: dict = {}
-    for suffix in suffixes:
-        ids, zones, clusters = load_run_labels(suffix, args.data_dir)
-        clusters_by_suffix[suffix] = clusters
-        keys_by_suffix[suffix] = list(zip(zones, ids))
-    check_alignment(keys_by_suffix)
-
-    n = len(clusters_by_suffix[""])
-
-    runs = [build_run_entry(s, clusters_by_suffix[s], labels, modal) for s in suffixes]
-    for r in runs:
-        print(f"  {r['name']:22} k={r['k']:>3}  ruido {100 * r['noise']:>5.2f}%")
-
-    # proceso por fila, para cada corrida (el -1 va a NOISE_PID)
-    pid_of = []
-    for r in runs:
-        m = {node["id"]: node["p"] for node in r["nodes"]}
-        pid_of.append(m)
-    procs_by_suffix = {
-        s: [pid_of[i][c] for c in clusters_by_suffix[s]] for i, s in enumerate(suffixes)
-    }
-
-    pairs: dict = {}
-    for i, j in combinations(range(len(suffixes)), 2):
-        si, sj = suffixes[i], suffixes[j]
-        pairs[f"{i}-{j}"] = build_pair(
-            clusters_by_suffix[si], clusters_by_suffix[sj],
-            procs_by_suffix[si], procs_by_suffix[sj])
+    blocks: dict = {}
+    for set_name in args.sets:
+        print(f"[{set_name}]")
+        blocks[set_name] = build_set_payload(set_name, suffixes, labels, modal, args.data_dir)
+        verify_set(set_name, blocks[set_name])
 
     payload = {
         "generated_from": "scripts/build_crossrun.py",
-        "set": SET_NAME,
-        "n": n,
         "processes": [
             {"key": k, "label": PROCESSES[k]["label"], "gloss": PROCESSES[k]["gloss"],
              "color": process_color(k, None)}
@@ -455,46 +521,24 @@ def main() -> None:
         "noise_label": "sin tipificar",
         "state_colors": state_colors,   # token -> hex, para la tira de la trayectoria modal
         "year_0": 2000,
-        "runs": runs,
-        "pairs": pairs,
+        "set_labels": {s: SETS[s] for s in args.sets},
+        "sets": blocks,
     }
 
-    # --- verificación ---
-    for key, pair in pairs.items():
-        for level in ("cluster", "proceso"):
-            flat = pair[level]
-            total = sum(flat[2::3])
-            if total != n:
-                sys.exit(f"par {key}, nivel {level}: la contingencia suma {total:,}, "
-                         f"no {n:,} -- se perdió masa")
-    print(f"conservación de masa: los {len(pairs)} pares × 2 niveles suman {n:,}")
-
-    for i, r in enumerate(runs):
-        marg: dict = {}
-        pair = pairs[f"{i}-{(i + 1) % len(runs)}"] if i + 1 < len(runs) else pairs[f"{0}-{i}"]
-        flat = pair["cluster"]
-        col = 0 if i + 1 < len(runs) else 1
-        for t in range(0, len(flat), 3):
-            cid = flat[t + col]
-            marg[cid] = marg.get(cid, 0) + flat[t + 2]
-        for node in r["nodes"]:
-            if marg.get(node["id"], 0) != node["n"]:
-                sys.exit(f"{r['name']}: el marginal del cluster {node['id']} "
-                         f"({marg.get(node['id'], 0):,}) no coincide con su n ({node['n']:,})")
-    print("marginales: coinciden con los tamaños de nodo de las 6 corridas")
-
-    if not args.no_check_crossrun:
-        check_against_sklearn(payload, suffixes)
+    # el CSV de referencia se calculó sobre `dynamic`; solo ahí tiene sentido contrastar
+    if not args.no_check_crossrun and "dynamic" in blocks:
+        check_against_sklearn(blocks["dynamic"], suffixes)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
                         encoding="utf-8")
     kb = args.out.stat().st_size / 1024
-    n_cells = sum(len(p["cluster"]) // 3 + len(p["proceso"]) // 3 for p in pairs.values())
-    print(f"\n{_rel(args.out)}: {kb:.1f} KB, "
-          f"{len(pairs)} pares, {n_cells:,} celdas no nulas")
-    if kb > 250:
-        print("  aviso: el payload creció mucho más de lo esperado (~70 KB) -- ¿algo se duplicó?")
+    cells = sum(len(p[lv]) // 3 for b in blocks.values() for p in b["pairs"].values()
+                for lv in ("cluster", "proceso"))
+    print(f"\n{_rel(args.out)}: {kb:.1f} KB, {len(blocks)} set(s), "
+          f"{cells:,} celdas no nulas")
+    if kb > 400:
+        print("  aviso: el payload creció mucho más de lo esperado -- ¿algo se duplicó?")
 
 
 if __name__ == "__main__":
