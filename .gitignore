@@ -230,6 +230,12 @@ models/cluster_v2/typology*
 # la máquina, no se versionan. Ver viz/clusters/README.md.
 viz/clusters/data/
 
+# Payload del visor de concordancia (scripts/build_crossrun.py). Contingencias +
+# etiquetas + una trayectoria verbatim por cluster (la modal, 344 en total; con
+# --no-modal-seq no va ninguna). Sin coordenadas por parcela. Se regenera en
+# segundos, no se versiona. Ver viz/crossrun/README.md.
+viz/crossrun/crossrun.json
+
 # Reextracción de las 7 zonas de entrenamiento de la v2 sin el tope de constantes
 # al 15% (scripts/build_eval_zones.py --out-dir), usada solo para regenerar el
 # fondo cartográfico del visor/atlas. Se regenera del netCDF versionado, no

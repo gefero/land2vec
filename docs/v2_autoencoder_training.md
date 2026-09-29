@@ -699,6 +699,30 @@ parten los clusters al bajar la granularidad y dónde HDBSCAN y GMM cortan
 distinto; `nesting_table` da, por cluster grueso, cuántos clusters medios lo
 componen y su pureza.
 
+**Visor interactivo de concordancia** (`scripts/build_crossrun.py` +
+`viz/crossrun/`, agregado 2026-09-28): materializa esa comparación, que hasta
+ahora solo existía como píxeles -- `plot_alluvial` calcula los flujos, los dibuja
+y los descarta. Permite elegir cualquiera de los 30 pares ordenados (selectores de
+origen y destino, no los 5 hardcodeados), a nivel de cluster o de proceso, más la
+matriz 6×6. El builder es solo-stdlib: el ARI y el NMI se calculan a mano desde la
+tabla de contingencia y coinciden con los de sklearn de
+`typology_crossrun.csv` a ~1e-7 (el script contrasta los 60 valores y reporta el
+delta).
+
+Diferencia importante de lectura: **el visor no descarta el `-1`**, mientras que
+los PNG de `imgs/v2_typology_alluvial_*` lo sacan de los dos lados y normalizan
+por el resto, así que están calculados sobre entre el 69% y el 90% de los datos
+sin declararlo en el gráfico. Eso no es un detalle cosmético, porque ahí hay un
+resultado: de los **25.961 píxeles (24,2%)** que media/HDBSCAN deja sin tipificar,
+media/paramétrico clasifica el 26,7% como `oscilante`, 15,5% como
+`regeneracion_bosque`, 13,5% como `perdida_vegetacion` y 9,6% como
+`dinamica_hidrica`. El ruido de HDBSCAN no es un residuo amorfo: son
+mayoritariamente trayectorias oscilantes -- justo las que la regla de
+`classify_process` marca como "vuelve a su estado inicial o pasa por varios
+estados sin dirección clara" -- que el modelo de mezcla sí absorbe en componentes.
+Es un argumento a favor de leer el `-1` de HDBSCAN como *categoría sustantiva*
+("trayectoria sin forma estable") y no como falta de dato.
+
 **Disimilitud entre secuencias** (`land2vec.seqdist`): el pool dinámico tiene
 solo **1.128 trayectorias distintas** de 107.362, así que colapsado a ese
 conjunto con pesos (idéntico a operar sobre las 107k filas), toda la maquinaria

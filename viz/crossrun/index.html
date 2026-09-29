@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Concordancia entre clusterizaciones · land2vec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f6f7f3;
+    --surface: #ffffff;
+    --surface-2: #eef0e9;
+    --ink: #1b2016;
+    --muted: #626c58;
+    --faint: #8a9179;
+    --border: #e0e4d7;
+    --accent: #40682f;
+    --accent-ink: #ffffff;
+    --shadow: 0 1px 2px rgba(27, 32, 22, .06), 0 8px 24px rgba(27, 32, 22, .08);
+    --noise: #c9ccc2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #12140e;
+      --surface: #1b1e16;
+      --surface-2: #23271d;
+      --ink: #e9ece1;
+      --muted: #9aa489;
+      --faint: #6f7a5e;
+      --border: #333a2a;
+      --accent: #8fb96e;
+      --accent-ink: #14170f;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .38);
+      --noise: #5c6450;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #12140e;
+    --surface: #1b1e16;
+    --surface-2: #23271d;
+    --ink: #e9ece1;
+    --muted: #9aa489;
+    --faint: #6f7a5e;
+    --border: #333a2a;
+    --accent: #8fb96e;
+    --accent-ink: #14170f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .38);
+    --noise: #5c6450;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  header {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px 0;
+  }
+  .titlerow { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-family: Spectral, Georgia, serif; font-size: 18px; font-weight: 600; margin: 0; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .spacer { flex: 1 1 auto; }
+  .status { font-size: 11.5px; color: var(--faint); }
+
+  .ctrls { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; padding: 10px 0 11px; }
+  .ctl { display: flex; flex-direction: column; gap: 4px; }
+  .lab {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--faint); font-weight: 600;
+  }
+  select, button {
+    font: inherit; color: inherit;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 7px; padding: 5px 9px; cursor: pointer;
+  }
+  select { font-size: 13px; max-width: 210px; }
+  button:hover, select:hover { border-color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 11px; font-size: 12.5px; background: var(--surface); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .swap { padding: 5px 10px; font-size: 15px; line-height: 1.2; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; cursor: pointer; padding-bottom: 5px; }
+  .chk input { accent-color: var(--accent); }
+
+  main { padding: 14px 16px 40px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 0 0 10px; max-width: 78ch; line-height: 1.5; }
+  .warn { color: var(--faint); }
+
+  /* ---- Sankey ---- */
+  .colhead {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; justify-content: space-between;
+    background: var(--ground); padding: 2px 0 6px;
+    font-size: 12px; font-weight: 600;
+  }
+  .colhead span { color: var(--muted); }
+  .sankeywrap { max-height: 74vh; overflow-y: auto; overflow-x: hidden; }
+  svg.sankey { display: block; width: 100%; }
+  .band { cursor: pointer; }
+  .nodebar { }
+  .nlabel { font-size: 10.5px; fill: var(--muted); pointer-events: none; }
+  .nlabel.big { font-size: 11.5px; fill: var(--ink); }
+  .dim { opacity: .08; }
+  .hit { fill: transparent; cursor: pointer; }
+
+  /* ---- Matriz ---- */
+  .matrix { border-collapse: separate; border-spacing: 3px; }
+  .matrix th {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-align: right; padding: 2px 6px; white-space: nowrap;
+  }
+  .matrix th.col { text-align: center; writing-mode: horizontal-tb; max-width: 92px; white-space: normal; }
+  .matrix td {
+    width: 92px; height: 58px; border-radius: 7px; text-align: center;
+    background: var(--surface); border: 1px solid var(--border);
+    cursor: pointer; position: relative; padding: 0;
+  }
+  .matrix td.diag { background: var(--surface-2); cursor: default; opacity: .5; }
+  .matrix td .v { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .matrix td .c { font-size: 9.5px; opacity: .8; }
+  .covbar { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 3px; background: rgba(128,128,128,.22); border-radius: 2px; }
+  .covbar i { display: block; height: 100%; background: currentColor; border-radius: 2px; opacity: .55; }
+
+  /* ---- Leyenda / panel ---- */
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 12px 0 0; }
+  .lgi { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
+  .sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+  .lgi[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
+
+  .panel {
+    position: fixed; right: 14px; bottom: 14px; width: 310px; max-height: 44vh; overflow: auto;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 11px 13px; z-index: 20; font-size: 12.5px;
+  }
+  .panel h3 { margin: 0 0 3px; font-size: 13px; }
+  .panel .close { position: absolute; top: 7px; right: 8px; padding: 1px 7px; font-size: 13px; }
+  .panel table { width: 100%; border-collapse: collapse; margin-top: 7px; }
+  .panel td { padding: 2px 0; font-variant-numeric: tabular-nums; }
+  .panel td.r { text-align: right; color: var(--muted); }
+
+  .tooltip {
+    position: fixed; z-index: 60; pointer-events: none; display: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 7px 10px; font-size: 12px; max-width: 320px; line-height: 1.45;
+  }
+  .tooltip b { font-weight: 600; }
+  .tooltip .dim2 { color: var(--muted); }
+
+  /* tira de la trayectoria modal: un celda por año, 2000 -> 2022 */
+  .strip { display: flex; gap: 1px; margin: 6px 0 3px; }
+  .strip i { display: block; width: 8px; height: 13px; border-radius: 1px; }
+  .strip.sm i { width: 7px; height: 11px; }
+  .striplab { font-size: 10.5px; color: var(--muted); display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="titlerow">
+    <h1>Concordancia entre clusterizaciones</h1>
+    <span class="sub">land2vec v2 · pool dinámico, 7 zonas de evaluación</span>
+    <span class="spacer"></span>
+    <span class="status" id="status">cargando…</span>
+    <button id="themeBtn" title="alternar tema">tema</button>
+  </div>
+  <div class="ctrls">
+    <div class="ctl">
+      <span class="lab">Vista</span>
+      <div class="seg" id="segView">
+        <button data-v="flujo" aria-pressed="true">flujo</button>
+        <button data-v="matriz">matriz 6×6</button>
+      </div>
+    </div>
+
+    <div class="ctl" data-only="flujo">
+      <label class="lab" for="selA">Origen</label>
+      <select id="selA"></select>
+    </div>
+    <div class="ctl" data-only="flujo">
+      <span class="lab">&nbsp;</span>
+      <button class="swap" id="swapBtn" title="intercambiar origen y destino">⇄</button>
+    </div>
+    <div class="ctl" data-only="flujo">
+      <label class="lab" for="selB">Destino</label>
+      <select id="selB"></select>
+    </div>
+
+    <div class="ctl" data-only="flujo">
+      <span class="lab">Nivel</span>
+      <div class="seg" id="segLevel">
+        <button data-v="proceso" aria-pressed="true">proceso</button>
+        <button data-v="cluster">cluster</button>
+      </div>
+    </div>
+    <div class="ctl" data-only="flujo">
+      <span class="lab">Color de banda</span>
+      <div class="seg" id="segColor">
+        <button data-v="origen" aria-pressed="true">origen</button>
+        <button data-v="destino">destino</button>
+      </div>
+    </div>
+    <label class="chk" data-only="flujo"><input type="checkbox" id="diffChk"> resaltar desacuerdo</label>
+    <div class="ctl" data-only="flujo">
+      <label class="lab" for="minFlow">Flujo mínimo</label>
+      <select id="minFlow">
+        <option value="0">todos</option>
+        <option value="0.0005">0,05 % de N</option>
+        <option value="0.001">0,1 % de N</option>
+        <option value="0.0025">0,25 % de N</option>
+      </select>
+    </div>
+
+    <div class="ctl" data-only="matriz">
+      <label class="lab" for="selMetric">Medida</label>
+      <select id="selMetric">
+        <option value="proc">acuerdo de proceso</option>
+        <option value="ariproc">ARI de proceso</option>
+        <option value="aricl">ARI de cluster</option>
+      </select>
+    </div>
+    <div class="ctl" data-only="matriz">
+      <span class="lab">Tratamiento del −1</span>
+      <div class="seg" id="segNoise">
+        <button data-v="excluir" aria-pressed="true">excluir</button>
+        <button data-v="cat11">11ª categoría</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <p class="hint" id="hint"></p>
+
+  <div id="viewFlujo">
+    <div class="colhead"><span id="headA"></span><span id="headB"></span></div>
+    <div class="sankeywrap" id="sankeyWrap"><svg class="sankey" id="svg"></svg></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div id="viewMatriz" hidden>
+    <div id="matrixHost"></div>
+    <p class="hint" style="margin-top:12px" id="matrixNote"></p>
+  </div>
+</main>
+
+<div class="tooltip" id="tt"></div>
+<div class="panel" id="panel" hidden></div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ *  Estado y datos
+ * ------------------------------------------------------------------ */
+let PAY = null;
+
+const state = {
+  view: "flujo",
+  a: 2, b: 3,              // índices de corrida (origen, destino)
+  level: "proceso",
+  colorBy: "origen",
+  diff: false,
+  minFlow: 0,              // fracción de N
+  metric: "proc",
+  noise: "excluir",
+  focus: null,             // {side: "A"|"B", id}
+};
+
+const $ = (s) => document.querySelector(s);
+const fmtInt = (n) => n.toLocaleString("es-AR");
+const pct = (x, d) => (100 * x).toLocaleString("es-AR", {
+  minimumFractionDigits: d === undefined ? 1 : d,
+  maximumFractionDigits: d === undefined ? 1 : d }) + " %";
+const num3 = (x) => x.toLocaleString("es-AR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const fetchJSON = (u) => fetch(u).then((r) => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)));
+
+/** Flujos del par (i -> j) al nivel pedido, como tripletes [src, dst, n, ...].
+ *  El payload guarda solo los 15 pares no ordenados; para j < i se transpone. */
+function flows(i, j, level) {
+  if (i === j) return null;
+  const t = i < j ? PAY.pairs[i + "-" + j][level] : PAY.pairs[j + "-" + i][level];
+  if (i < j) return t;
+  const out = new Array(t.length);
+  for (let k = 0; k < t.length; k += 3) {
+    out[k] = t[k + 1]; out[k + 1] = t[k]; out[k + 2] = t[k + 2];
+  }
+  return out;
+}
+
+function metricsOf(i, j) {
+  return PAY.pairs[i < j ? i + "-" + j : j + "-" + i].m;
+}
+
+const NOISE_PID = () => PAY.noise_pid;
+
+/** Metadatos de un nodo (color, etiqueta) según el nivel. */
+function nodeMeta(runIdx, id, level) {
+  if (level === "proceso") {
+    if (id === NOISE_PID()) return { color: null, label: PAY.noise_label, noise: true };
+    const p = PAY.processes[id];
+    return { color: p.color, label: p.label, gloss: p.gloss, noise: false };
+  }
+  if (id === -1) return { color: null, label: PAY.noise_label, noise: true };
+  const n = PAY.runs[runIdx]._byId.get(id);
+  return { color: (n && n.c) || "#999", label: (n && n.lab) || ("#" + id), noise: false,
+           pid: n ? n.p : null };
+}
+
+/** El proceso al que pertenece un nodo (para agrupar y para "resaltar desacuerdo"). */
+function nodePid(runIdx, id, level) {
+  if (level === "proceso") return id;
+  if (id === -1) return NOISE_PID();
+  const n = PAY.runs[runIdx]._byId.get(id);
+  return n ? n.p : NOISE_PID();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Layout del Sankey (a mano: sin D3)
+ * ------------------------------------------------------------------ */
+const NODE_W = 12, PAD_L = 178, PAD_R = 178, PAD_T = 8, PAD_B = 8, GAP_MIN = 2;
+
+/** Marginales de un lado de la contingencia: Map(id -> n), en orden de aparición. */
+function marginals(flat, side) {
+  const off = side === "A" ? 0 : 1;
+  const m = new Map();
+  for (let k = 0; k < flat.length; k += 3) {
+    const id = flat[k + off];
+    m.set(id, (m.get(id) || 0) + flat[k + 2]);
+  }
+  return m;
+}
+
+/** Orden inicial de los nodos. A nivel proceso es fijo e idéntico en las dos
+ *  columnas (así el acuerdo son bandas horizontales); a nivel cluster se agrupa
+ *  por proceso y, dentro, por tamaño -- eso le da macroestructura de color antes
+ *  de optimizar cruces. */
+function seedOrder(ids, runIdx, level, sizes) {
+  const noise = level === "proceso" ? NOISE_PID() : -1;
+  return ids.slice().sort((x, y) => {
+    if (x === noise) return 1;
+    if (y === noise) return -1;
+    const px = nodePid(runIdx, x, level), py = nodePid(runIdx, y, level);
+    if (px !== py) return px - py;
+    if (level === "proceso") return 0;
+    return sizes.get(y) - sizes.get(x);
+  });
+}
+
+/** Posiciones verticales dada una permutación. La escala `s` es común a las dos
+ *  columnas (si no, una banda tendría distinto grosor en cada extremo); lo que
+ *  varía por columna es el hueco entre nodos. */
+function place(order, sizes, s, gap) {
+  const pos = new Map();
+  let y = PAD_T;
+  for (const id of order) {
+    const h = sizes.get(id) * s;
+    pos.set(id, { y0: y, h, cy: y + h / 2 });
+    y += h + gap;
+  }
+  return pos;
+}
+
+/** Cruces ponderados por masa: Σ f1*f2 sobre pares de bandas que se cruzan. */
+function weightedCrossings(tri, rankA, rankB) {
+  let x = 0;
+  const m = tri.length / 3;
+  for (let p = 0; p < m; p++) {
+    const a1 = rankA.get(tri[3 * p]), b1 = rankB.get(tri[3 * p + 1]), f1 = tri[3 * p + 2];
+    for (let q = p + 1; q < m; q++) {
+      const a2 = rankA.get(tri[3 * q]), b2 = rankB.get(tri[3 * q + 1]);
+      if ((a1 - a2) * (b1 - b2) < 0) x += f1 * tri[3 * q + 2];
+    }
+  }
+  return x;
+}
+
+const ranksOf = (order) => new Map(order.map((id, i) => [id, i]));
+
+function computeLayout(flat, ai, bi, level, H) {
+  const N = PAY.n;
+  const sizesA = marginals(flat, "A"), sizesB = marginals(flat, "B");
+  const idsA = [...sizesA.keys()], idsB = [...sizesB.keys()];
+  const p = idsA.length, q = idsB.length;
+
+  const Hav = H - PAD_T - PAD_B;
+  const kmax = Math.max(p, q);
+  const s = (Hav - (kmax - 1) * GAP_MIN) / N;
+  const gapA = p > 1 ? (Hav - N * s) / (p - 1) : 0;
+  const gapB = q > 1 ? (Hav - N * s) / (q - 1) : 0;
+
+  let orderA = seedOrder(idsA, ai, level, sizesA);
+  let orderB = seedOrder(idsB, bi, level, sizesB);
+
+  if (level === "cluster" && flat.length > 3) {
+    // barrido baricéntrico (Sugiyama): reordena una columna por el centro `y`
+    // ponderado de sus vecinas, alternando, y se queda con el mejor.
+    let posA = place(orderA, sizesA, s, gapA), posB = place(orderB, sizesB, s, gapB);
+    let best = { a: orderA, b: orderB, x: weightedCrossings(flat, ranksOf(orderA), ranksOf(orderB)) };
+    for (let it = 0; it < 8; it++) {
+      for (const dir of ["B", "A"]) {
+        const bary = new Map();
+        const wsum = new Map();
+        for (let k = 0; k < flat.length; k += 3) {
+          const src = flat[k], dst = flat[k + 1], f = flat[k + 2];
+          const key = dir === "B" ? dst : src;
+          const other = dir === "B" ? posA.get(src) : posB.get(dst);
+          bary.set(key, (bary.get(key) || 0) + f * other.cy);
+          wsum.set(key, (wsum.get(key) || 0) + f);
+        }
+        const target = dir === "B" ? orderB : orderA;
+        const sorted = target.slice().sort((u, v) => {
+          const bu = (bary.get(u) || 0) / (wsum.get(u) || 1);
+          const bv = (bary.get(v) || 0) / (wsum.get(v) || 1);
+          return bu - bv;   // sort estable: sin jitter en empates
+        });
+        if (dir === "B") { orderB = sorted; posB = place(orderB, sizesB, s, gapB); }
+        else { orderA = sorted; posA = place(orderA, sizesA, s, gapA); }
+        const x = weightedCrossings(flat, ranksOf(orderA), ranksOf(orderB));
+        if (x < best.x) best = { a: orderA.slice(), b: orderB.slice(), x };
+      }
+    }
+    orderA = best.a; orderB = best.b;
+  }
+
+  const posA = place(orderA, sizesA, s, gapA);
+  const posB = place(orderB, sizesB, s, gapB);
+
+  // Apilado: dentro de cada nodo, los tramos se ordenan por la `y` del nodo del
+  // otro lado. Dos bandas del mismo nodo nunca se cruzan entre sí, y el apilado
+  // llena el nodo exacto porque Σ_j f_ij * s = n_i * s = h_i.
+  const bands = [];
+  for (let k = 0; k < flat.length; k += 3) {
+    bands.push({ src: flat[k], dst: flat[k + 1], n: flat[k + 2] });
+  }
+  const outOf = new Map(), inOf = new Map();
+  const push = (map, key, bd) => {
+    let list = map.get(key);
+    if (!list) { list = []; map.set(key, list); }
+    list.push(bd);
+  };
+  for (const bd of bands) { push(outOf, bd.src, bd); push(inOf, bd.dst, bd); }
+  for (const [id, list] of outOf) {
+    list.sort((u, v) => posB.get(u.dst).cy - posB.get(v.dst).cy);
+    let off = posA.get(id).y0;
+    for (const bd of list) { bd.y0s = off; off += bd.n * s; }
+  }
+  for (const [id, list] of inOf) {
+    list.sort((u, v) => posA.get(u.src).cy - posA.get(v.src).cy);
+    let off = posB.get(id).y0;
+    for (const bd of list) { bd.y0d = off; off += bd.n * s; }
+  }
+
+  return { s, orderA, orderB, posA, posB, sizesA, sizesB, bands, outOf, inOf };
+}
+
+/** Alto del lienzo: que el nodo más chico mida al menos 3 px. Es lo que hace
+ *  legible el nivel cluster (k hasta 120) sin colapsar nada. */
+function canvasHeight(flat) {
+  const sa = marginals(flat, "A"), sb = marginals(flat, "B");
+  const nmin = Math.min(Math.min(...sa.values()), Math.min(...sb.values()));
+  const kmax = Math.max(sa.size, sb.size);
+  const ideal = PAY.n * (3 / nmin) + (kmax - 1) * GAP_MIN + PAD_T + PAD_B;
+  return Math.max(560, Math.min(1500, Math.round(ideal)));
+}
+
+/* ------------------------------------------------------------------ *
+ *  Render del Sankey
+ * ------------------------------------------------------------------ */
+const SVGNS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs) => {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+};
+
+let LAYOUT = null;
+
+function bandPath(x0, x1, y0s, y0d, t) {
+  // dos cúbicas + cierre, RELLENO (no `stroke`): así la banda toca la cara del
+  // nodo sobre el intervalo completo, sin los huecos típicos de d3-sankey.
+  const td = Math.max(t, 0.6);                 // hairline visible…
+  const dy = (td - t) / 2;                     // …centrada sobre la banda real
+  const a0 = y0s - dy, a1 = a0 + td;
+  const b0 = y0d - dy, b1 = b0 + td;
+  const cx0 = x0 + (x1 - x0) * 0.5, cx1 = x1 - (x1 - x0) * 0.5;
+  return `M ${x0},${a0} C ${cx0},${a0} ${cx1},${b0} ${x1},${b0}`
+       + ` L ${x1},${b1} C ${cx1},${b1} ${cx0},${a1} ${x0},${a1} Z`;
+}
+
+function renderSankey() {
+  const svg = $("#svg");
+  svg.textContent = "";
+  const { a, b, level } = state;
+  const flat = flows(a, b, level);
+  if (!flat) return;
+
+  const W = Math.max(640, $("#sankeyWrap").clientWidth || 900);
+  const H = canvasHeight(flat);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("height", H);
+
+  const L = computeLayout(flat, a, b, level, H);
+  LAYOUT = L;
+
+  const xA1 = PAD_L + NODE_W, xB0 = W - PAD_R - NODE_W;
+  const noiseId = level === "proceso" ? NOISE_PID() : -1;
+
+  // tramado para el -1: que se lea como "no es una categoría" aun en gris
+  const defs = el("defs");
+  const pat = el("pattern", { id: "hatch", width: 6, height: 6,
+    patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
+  pat.appendChild(el("rect", { width: 6, height: 6, fill: "var(--noise)" }));
+  pat.appendChild(el("line", { x1: 0, y1: 0, x2: 0, y2: 6,
+    stroke: "var(--surface)", "stroke-width": 2.2, opacity: .65 }));
+  defs.appendChild(pat);
+  svg.appendChild(defs);
+
+  const gBands = el("g"), gNodes = el("g"), gHits = el("g");
+  const minN = state.minFlow * PAY.n;
+  let hidden = 0;
+
+  // bandas: las gruesas primero, así las finas quedan hovereables arriba
+  const ordered = L.bands.slice().sort((u, v) => v.n - u.n);
+  for (const bd of ordered) {
+    if (bd.n < minN) { hidden += bd.n; continue; }
+    const src = bd.src, dst = bd.dst;
+    const fromNoise = src === noiseId, toNoise = dst === noiseId;
+    const mFrom = nodeMeta(a, src, level), mTo = nodeMeta(b, dst, level);
+    const useDst = state.colorBy === "destino";
+    const col = useDst ? (toNoise ? null : mTo.color) : (fromNoise ? null : mFrom.color);
+
+    const samePid = nodePid(a, src, level) === nodePid(b, dst, level);
+    const muted = state.diff && level === "proceso" && samePid;
+
+    const p = el("path", {
+      d: bandPath(xA1, xB0, bd.y0s, bd.y0d, bd.n * L.s),
+      fill: col === null ? "url(#hatch)" : col,
+      "fill-opacity": muted ? 0.1 : (col === null ? 0.5 : 0.42),
+      class: "band",
+    });
+    p._bd = bd;
+    gBands.appendChild(p);
+  }
+
+  // nodos
+  for (const side of ["A", "B"]) {
+    const order = side === "A" ? L.orderA : L.orderB;
+    const pos = side === "A" ? L.posA : L.posB;
+    const runIdx = side === "A" ? a : b;
+    const x = side === "A" ? PAD_L : xB0;
+    for (const id of order) {
+      const pp = pos.get(id);
+      const m = nodeMeta(runIdx, id, level);
+      const nid = side + ":" + id;
+      gNodes.appendChild(el("rect", {
+        x, y: pp.y0, width: NODE_W, height: Math.max(pp.h, 0.8),
+        fill: m.noise ? "url(#hatch)" : m.color, rx: 2,
+        "pointer-events": "none", class: "nodebar", "data-nid": nid,
+      }));
+      // etiqueta solo si el nodo tiene alto suficiente (a k=119 no entran todas)
+      if (pp.h >= 9) {
+        const t = el("text", {
+          x: side === "A" ? x - 6 : x + NODE_W + 6,
+          y: pp.y0 + pp.h / 2 + 3.6,
+          "text-anchor": side === "A" ? "end" : "start",
+          class: "nlabel" + (pp.h >= 16 ? " big" : ""),
+          "data-nid": nid,
+        });
+        const raw = m.noise ? PAY.noise_label + " (−1)" : m.label;
+        t.textContent = raw.length > 30 ? raw.slice(0, 29) + "…" : raw;
+        gNodes.appendChild(t);
+      }
+      // hit-target desacoplado: el dibujo queda exacto y el nodo sigue clickeable
+      const hit = el("rect", {
+        x: x - 2, y: pp.y0 + pp.h / 2 - Math.max(pp.h, 7) / 2,
+        width: NODE_W + 4, height: Math.max(pp.h, 7), class: "hit",
+      });
+      hit._node = { side, id, runIdx };
+      gHits.appendChild(hit);
+    }
+  }
+
+  svg.appendChild(gBands);
+  svg.appendChild(gNodes);
+  svg.appendChild(gHits);
+
+  applyFocus();
+
+  const total = PAY.n;
+  $("#headA").textContent = PAY.runs[a].name + "  →";
+  $("#headB").textContent = "→  " + PAY.runs[b].name;
+  const m = metricsOf(a, b);
+  let msg = `${fmtInt(total)} píxeles · ${L.bands.length} flujos · `
+          + `acuerdo de proceso ${num3(m.acu_proc11)} (con −1) / ${num3(m.acu_proc)} (sin −1)`;
+  if (hidden > 0) msg += ` · oculto: ${pct(hidden / total, 2)} de la masa`;
+  $("#status").textContent = msg;
+}
+
+/* ---- foco: a k=119 nadie lee 119 nodos a la vez, lee uno ---- */
+function applyFocus() {
+  const svg = $("#svg");
+  const f = state.focus;
+
+  svg.querySelectorAll("path.band").forEach((p) => {
+    const bd = p._bd;
+    const on = !f || (f.side === "A" ? bd.src === f.id : bd.dst === f.id);
+    p.classList.toggle("dim", !on);
+  });
+
+  if (!f) {
+    svg.querySelectorAll("[data-nid]").forEach((n) => n.classList.remove("dim"));
+    return;
+  }
+  // el nodo en foco y los que alcanza quedan encendidos; el resto se apaga
+  const reach = new Set([f.side + ":" + f.id]);
+  const otherSide = f.side === "A" ? "B" : "A";
+  for (const bd of LAYOUT.bands) {
+    if (f.side === "A" ? bd.src === f.id : bd.dst === f.id) {
+      reach.add(otherSide + ":" + (f.side === "A" ? bd.dst : bd.src));
+    }
+  }
+  svg.querySelectorAll("[data-nid]").forEach((n) => {
+    n.classList.toggle("dim", !reach.has(n.dataset.nid));
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ *  Tooltip
+ * ------------------------------------------------------------------ */
+const tt = $("#tt");
+function showTip(html, ev) {
+  tt.innerHTML = html;
+  tt.style.display = "block";
+  const r = tt.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+  tt.style.left = x + "px"; tt.style.top = y + "px";
+}
+const hideTip = () => { tt.style.display = "none"; };
+
+function bandTip(bd) {
+  const { a, b, level } = state;
+  const mA = nodeMeta(a, bd.src, level), mB = nodeMeta(b, bd.dst, level);
+  const nA = LAYOUT.sizesA.get(bd.src), nB = LAYOUT.sizesB.get(bd.dst);
+  return `<b>${esc(mA.label)}</b> → <b>${esc(mB.label)}</b><br>`
+       + `${fmtInt(bd.n)} píxeles · ${pct(bd.n / PAY.n, 2)} del total<br>`
+       + `<span class="dim2">${pct(bd.n / nA)} del origen · ${pct(bd.n / nB)} del destino</span>`;
+}
+
+/** Tira de colores de la trayectoria modal del cluster + su peso. Es lo más
+ *  concreto que se puede decir de un cluster: la secuencia de 23 años más
+ *  frecuente entre sus miembros y qué fracción de ellos la sigue exactamente. */
+function seqStrip(runIdx, id, level, small) {
+  if (level !== "cluster" || id === -1) return "";
+  const node = PAY.runs[runIdx]._byId.get(id);
+  if (!node || !node.seq) return "";
+  const cols = PAY.state_colors || {};
+  const toks = node.seq.split("-");
+  const cells = toks.map((t) =>
+    `<i style="background:${cols[t] || "var(--noise)"}" title="${esc(t)}"></i>`).join("");
+  const y0 = PAY.year_0 || 2000;
+  const peso = node.cov === undefined ? ""
+    : ` · <b>${pct(node.cov)}</b> del cluster la sigue exacta`;
+  return `<div class="strip${small ? " sm" : ""}">${cells}</div>`
+       + `<div class="striplab"><span>${y0}</span>`
+       + `<span>trayectoria más frecuente</span><span>${y0 + toks.length - 1}</span></div>`
+       + `<div class="dim2" style="font-size:11px">${esc(toks.join("·"))}${peso}</div>`;
+}
+
+function nodeTip(side, id) {
+  const { a, b, level } = state;
+  const runIdx = side === "A" ? a : b;
+  const m = nodeMeta(runIdx, id, level);
+  const sizes = side === "A" ? LAYOUT.sizesA : LAYOUT.sizesB;
+  const n = sizes.get(id);
+  const list = (side === "A" ? LAYOUT.outOf.get(id) : LAYOUT.inOf.get(id)) || [];
+  const noiseId = level === "proceso" ? NOISE_PID() : -1;
+  // pureza, excluyendo el -1 de los dos lados: reproduce TY.nesting_table
+  const clean = id === noiseId ? [] : list.filter((bd) => (side === "A" ? bd.dst : bd.src) !== noiseId);
+  const cleanN = clean.reduce((s, bd) => s + bd.n, 0);
+  let extra = "";
+  if (clean.length) {
+    const top = clean.reduce((u, v) => (v.n > u.n ? v : u));
+    const tm = nodeMeta(side === "A" ? b : a, side === "A" ? top.dst : top.src, level);
+    extra = `<br><span class="dim2">${clean.length} destino${clean.length > 1 ? "s" : ""}`
+          + ` · pureza ${num3(top.n / cleanN)} → ${esc(tm.label)}</span>`;
+  }
+  return `<b>${esc(m.label)}</b>${m.noise ? " (−1)" : ""}<br>`
+       + `${fmtInt(n)} píxeles · ${pct(n / PAY.n)} del total${extra}`
+       + seqStrip(runIdx, id, level, true);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Matriz 6×6
+ * ------------------------------------------------------------------ */
+function metricValue(i, j) {
+  const m = metricsOf(i, j);
+  const c11 = state.noise === "cat11";
+  if (state.metric === "proc") return { v: c11 ? m.acu_proc11 : m.acu_proc, cob: c11 ? 1 : m.cob };
+  if (state.metric === "ariproc") return { v: c11 ? m.ari_proc11 : m.ari_proc, cob: c11 ? 1 : m.cob };
+  return { v: c11 ? m.ari_ruido : m.ari, cob: c11 ? 1 : m.cob };
+}
+
+function renderMatrix() {
+  const R = PAY.runs.length;
+  const t = document.createElement("table");
+  t.className = "matrix";
+  const head = document.createElement("tr");
+  head.appendChild(document.createElement("th"));
+  for (let j = 0; j < R; j++) {
+    const th = document.createElement("th");
+    th.className = "col";
+    th.textContent = PAY.runs[j].name;
+    head.appendChild(th);
+  }
+  t.appendChild(head);
+
+  for (let i = 0; i < R; i++) {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.textContent = PAY.runs[i].name;
+    tr.appendChild(th);
+    for (let j = 0; j < R; j++) {
+      const td = document.createElement("td");
+      if (i === j) {
+        td.className = "diag";
+      } else {
+        const { v, cob } = metricValue(i, j);
+        // dominio [0,4 , 1,0]: con [0,1] los 15 valores quedan en el tercio superior
+        const t01 = Math.max(0, Math.min(1, (v - 0.4) / 0.6));
+        const mixPct = Math.round(12 + t01 * 78);
+        td.style.background = `color-mix(in oklab, var(--accent) ${mixPct}%, var(--surface))`;
+        td.style.color = mixPct > 55 ? "var(--accent-ink)" : "var(--ink)";
+        td.innerHTML = `<div class="v">${num3(v)}</div>`
+          + `<div class="c">cob ${num3(cob)}</div>`
+          + `<div class="covbar"><i style="width:${(100 * cob).toFixed(1)}%"></i></div>`;
+        td.title = `${PAY.runs[i].name} ↔ ${PAY.runs[j].name}`;
+        td.addEventListener("click", () => {
+          state.a = i; state.b = j; state.view = "flujo";
+          syncSegs(); render();
+        });
+      }
+      tr.appendChild(td);
+    }
+    t.appendChild(tr);
+  }
+  const host = $("#matrixHost");
+  host.textContent = "";
+  host.appendChild(t);
+
+  const c11 = state.noise === "cat11";
+  $("#matrixNote").innerHTML = c11
+    ? `Con <b>«sin tipificar» como 11ª categoría</b> el denominador es N y la cobertura es 1,000. `
+      + `Ojo: entre HDBSCAN y paramétrico el −1 <b>nunca</b> puede coincidir (el paramétrico no deja ruido), `
+      + `así que para esos pares es un piso duro; entre las dos corridas HDBSCAN sí es informativo.`
+    : `Sobre la <b>intersección no-ruido</b> (las filas que ninguna de las dos corridas dejó en −1). `
+      + `La cobertura de esa intersección va de 0,69 a 1,00 según el par, así que <b>las celdas no son `
+      + `comparables entre sí</b> sin mirarla: es la barra del borde inferior. Escala de color anclada en [0,40 · 1,00].`;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Leyenda
+ * ------------------------------------------------------------------ */
+function renderLegend() {
+  // sirve en los dos niveles: a nivel cluster el hue del color es el del proceso
+  const host = $("#legend");
+  host.textContent = "";
+  const items = PAY.processes.map((p, i) => ({ id: i, color: p.color, label: p.label, gloss: p.gloss }));
+  items.push({ id: NOISE_PID(), color: null, label: PAY.noise_label + " (−1)", gloss: "sin tipología asignada" });
+  for (const it of items) {
+    const d = document.createElement("span");
+    d.className = "lgi";
+    d.title = it.gloss || "";
+    const sw = document.createElement("span");
+    sw.className = "sw";
+    sw.style.background = it.color || "var(--noise)";
+    if (!it.color) sw.style.outline = "1px dashed var(--faint)";
+    d.appendChild(sw);
+    d.appendChild(document.createTextNode(it.label));
+    host.appendChild(d);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Render / eventos
+ * ------------------------------------------------------------------ */
+function render() {
+  document.querySelectorAll("[data-only]").forEach((n) => {
+    n.hidden = n.dataset.only !== state.view;
+  });
+  $("#viewFlujo").hidden = state.view !== "flujo";
+  $("#viewMatriz").hidden = state.view !== "matriz";
+  $("#hint").innerHTML = state.view === "flujo"
+    ? `Cada banda es un conjunto de píxeles que la corrida de <b>origen</b> pone en un grupo y la de `
+      + `<b>destino</b> en otro. El <b>−1 («sin tipificar»)</b> es un nodo más, tramado: los diagramas `
+      + `estáticos de <code>imgs/</code> lo descartan y con eso esconden entre el 10 % y el 31 % de la masa.`
+    : `Acuerdo entre las 6 particiones sobre los mismos ${fmtInt(PAY.n)} píxeles. Click en una celda para ver su flujo.`;
+
+  if (state.view === "flujo") { renderSankey(); renderLegend(); }
+  else { renderMatrix(); $("#status").textContent = `${fmtInt(PAY.n)} píxeles · 15 pares`; }
+
+  const hash = `#${state.a}-${state.b}/${state.level}`;
+  if (location.hash !== hash && state.view === "flujo") history.replaceState(null, "", hash);
+}
+
+function syncSegs() {
+  const set = (id, v) => document.querySelectorAll(`#${id} button`).forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.v === v)));
+  set("segView", state.view); set("segLevel", state.level);
+  set("segColor", state.colorBy); set("segNoise", state.noise);
+  $("#selA").value = String(state.a);
+  $("#selB").value = String(state.b);
+}
+
+function seg(id, key, after) {
+  document.querySelectorAll(`#${id} button`).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state[key] = btn.dataset.v;
+      state.focus = null;
+      syncSegs();
+      if (after) after();
+      render();
+    });
+  });
+}
+
+function wire() {
+  const optsA = PAY.runs.map((r, i) =>
+    `<option value="${i}">${esc(r.name)} · k=${r.k}</option>`).join("");
+  $("#selA").innerHTML = optsA;
+  $("#selB").innerHTML = optsA;
+
+  $("#selA").addEventListener("change", (e) => {
+    const v = +e.target.value;
+    if (v === state.b) state.b = state.a;      // evita A == B
+    state.a = v; state.focus = null; syncSegs(); render();
+  });
+  $("#selB").addEventListener("change", (e) => {
+    const v = +e.target.value;
+    if (v === state.a) state.a = state.b;
+    state.b = v; state.focus = null; syncSegs(); render();
+  });
+  $("#swapBtn").addEventListener("click", () => {
+    const t = state.a; state.a = state.b; state.b = t;
+    state.focus = null; syncSegs(); render();
+  });
+
+  seg("segView", "view");
+  seg("segLevel", "level");
+  seg("segColor", "colorBy");
+  seg("segNoise", "noise");
+
+  $("#diffChk").addEventListener("change", (e) => { state.diff = e.target.checked; render(); });
+  $("#minFlow").addEventListener("change", (e) => { state.minFlow = +e.target.value; render(); });
+  $("#selMetric").addEventListener("change", (e) => { state.metric = e.target.value; render(); });
+
+  $("#themeBtn").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+  });
+
+  const svg = $("#svg");
+  svg.addEventListener("mousemove", (ev) => {
+    const t = ev.target;
+    if (t.classList.contains("band") && !t.classList.contains("dim")) showTip(bandTip(t._bd), ev);
+    else if (t.classList.contains("hit")) showTip(nodeTip(t._node.side, t._node.id), ev);
+    else hideTip();
+  });
+  svg.addEventListener("mouseleave", hideTip);
+  svg.addEventListener("click", (ev) => {
+    const t = ev.target;
+    if (t.classList.contains("hit")) {
+      const n = t._node;
+      state.focus = (state.focus && state.focus.side === n.side && state.focus.id === n.id)
+        ? null : { side: n.side, id: n.id };
+      applyFocus();
+      showPanel();
+    } else if (!t.classList.contains("band")) {
+      state.focus = null; applyFocus(); $("#panel").hidden = true;
+    }
+  });
+
+  addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { state.focus = null; applyFocus(); $("#panel").hidden = true; hideTip(); }
+  });
+
+  let rt = 0;
+  addEventListener("resize", () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => { if (state.view === "flujo") renderSankey(); }, 160);
+  });
+}
+
+function showPanel() {
+  const p = $("#panel");
+  const f = state.focus;
+  if (!f) { p.hidden = true; return; }
+  const { a, b, level } = state;
+  const runIdx = f.side === "A" ? a : b;
+  const m = nodeMeta(runIdx, f.id, level);
+  const sizes = f.side === "A" ? LAYOUT.sizesA : LAYOUT.sizesB;
+  const n = sizes.get(f.id);
+  const list = ((f.side === "A" ? LAYOUT.outOf.get(f.id) : LAYOUT.inOf.get(f.id)) || [])
+    .slice().sort((u, v) => v.n - u.n);
+  const otherRun = f.side === "A" ? b : a;
+  const rows = list.map((bd) => {
+    const oid = f.side === "A" ? bd.dst : bd.src;
+    const om = nodeMeta(otherRun, oid, level);
+    return `<tr><td>${esc(om.label)}</td><td class="r">${fmtInt(bd.n)}</td>`
+         + `<td class="r">${pct(bd.n / n)}</td></tr>`;
+  }).join("");
+  p.innerHTML = `<button class="close" id="pClose">×</button>`
+    + `<h3>${esc(m.label)}${m.noise ? " (−1)" : ""}</h3>`
+    + `<div style="color:var(--muted)">${f.side === "A" ? "origen" : "destino"} · `
+    + `${PAY.runs[runIdx].name} · ${fmtInt(n)} px (${pct(n / PAY.n)})</div>`
+    + seqStrip(runIdx, f.id, level, false)
+    + `<table>${rows}</table>`;
+  p.hidden = false;
+  $("#pClose").addEventListener("click", () => {
+    state.focus = null; applyFocus(); p.hidden = true;
+  });
+}
+
+function readHash() {
+  const m = /^#(\d)-(\d)\/(proceso|cluster)$/.exec(location.hash || "");
+  if (!m) return;
+  const a = +m[1], b = +m[2];
+  if (a === b || a >= PAY.runs.length || b >= PAY.runs.length) return;
+  state.a = a; state.b = b; state.level = m[3];
+}
+
+fetchJSON("./crossrun.json").then((d) => {
+  PAY = d;
+  PAY.runs.forEach((r) => { r._byId = new Map(r.nodes.map((n) => [n.id, n])); });
+  readHash();
+  wire();
+  syncSegs();
+  render();
+}).catch((e) => {
+  $("#status").textContent = "no se pudo cargar crossrun.json";
+  $("#hint").innerHTML = `<b>Falta <code>crossrun.json</code></b> (${esc(e.message)}). `
+    + `Generalo con <code>python scripts/build_crossrun.py</code> y serví la carpeta con `
+    + `<code>python -m http.server -d viz/crossrun 8000</code> — abierto con <code>file://</code> `
+    + `el navegador bloquea el fetch.`;
+});
+</script>
+</body>
+</html>

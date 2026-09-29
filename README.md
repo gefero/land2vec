@@ -29,12 +29,14 @@ src/land2vec/
   cluster.py    # Pool de trayectorias por zona, submuestreo de constantes, asignación por centroide
   seqdist.py    # Distancias entre secuencias (Optimal Matching, Hamming)
   typology.py   # Firma descriptiva y etiqueta automática por cluster (STATE_COLORS, GLOSSES, auto_label)
-scripts/        # tune_clustering, describe_clusters, build_cluster_map, check_cluster_palette,
-                #   plot_process_maps, plot_zone_atlas, build_eval_zones, assign_train_clusters,
-                #   fetch_zone_imagery_gee, eval_desmonte, extract_embeddings, train_autoencoder …
+scripts/        # tune_clustering, describe_clusters, build_cluster_map, build_crossrun,
+                #   check_cluster_palette, plot_process_maps, plot_zone_atlas, build_eval_zones,
+                #   assign_train_clusters, fetch_zone_imagery_gee, eval_desmonte,
+                #   extract_embeddings, train_autoencoder …
 viz/
   typology/     # Navegador estático de tipologías (cómo es cada cluster)
   clusters/     # Visor Leaflet del mapa de clusters (dónde cae cada cluster) + factordata-logo
+  crossrun/     # Visor de concordancia entre corridas (si el cluster sobrevive al cambio de corrida)
 data/           # Secuencias de entrenamiento y de test (CSV/zip) + netCDF fuente (Git LFS)
 models/         # Checkpoints entrenados (config.json + model.pt + train_data.csv)
 notebooks/      # Notebooks de experimentación ("pruebas") en Google Colab
@@ -473,6 +475,22 @@ de probing, PCA). Resumen:
   8 de entrenamiento (in-sample para el encoder), export de la vista a PNG/JPG.
   Solo local -- ver
   [§ Visor del mapa de clusters](#visor-del-mapa-de-clusters-vizclusters) más abajo.
+- **Concordancia entre corridas** (`scripts/build_crossrun.py` + visor
+  `viz/crossrun/index.html`): si un píxel cambia de grupo al cambiar de
+  clusterización. Diagrama aluvial entre cualquier par de las 6 corridas
+  (selectores de origen y destino), a nivel de cluster o de los 10 procesos
+  conceptuales, más una matriz 6×6 de acuerdo. A diferencia de los PNG estáticos
+  de `plot_alluvial`, **no descarta el `-1`**: HDBSCAN deja sin tipificar hasta el
+  24,2% de los píxeles y el paramétrico 0%, así que a dónde va esa masa es la
+  pregunta central (resulta ser sobre todo `oscilante`). A nivel cluster el tooltip
+  muestra la **trayectoria más frecuente** de cada grupo como tira coloreada 2000→2022,
+  con qué fracción de sus miembros la sigue exacta. El builder es solo-stdlib: calcula
+  ARI/NMI a mano desde la contingencia, sin sklearn.
+
+  ```bash
+  python scripts/build_crossrun.py             # genera viz/crossrun/crossrun.json (~72 KB)
+  python -m http.server -d viz/crossrun 8002   # -> http://localhost:8002
+  ```
 - **Mapas estáticos de pérdida de cobertura** (`scripts/plot_process_maps.py`):
   6 PNG (uno por corrida) faceteados por región, con las trayectorias de
   deforestación, degradación forestal y urbanización coloreadas por proceso.
