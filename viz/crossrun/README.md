@@ -61,8 +61,9 @@ tres particiones distintas que solo difieren en *k*.
 Ojo con el denominador: el anidamiento se mide siempre sobre la intersección no-ruido,
 así que en `dynamic` ese 1,0000 vale sobre el 74 % de los píxeles (34 de los 118
 clusters finos quedan enteros dentro del `-1` del nivel grueso). En `pooled`, donde
-las seis corridas tienen `-1`, la ventaja de HDBSCAN se mantiene pero se achica
-(0,996 vs 0,959). La barra del borde inferior de cada celda es esa cobertura.
+las seis corridas tienen `-1`, la ventaja de HDBSCAN se mantiene en los tres peldaños
+pero se achica mucho en pureza (media → gruesa: 0,987 vs 0,959; fina → gruesa: 0,996 vs
+0,990); lo que sigue siendo claro es cuántos clusters se reparten (2, 4 y 6 vs 16, 13 y 20). La barra del borde inferior de cada celda es esa cobertura.
 
 ## El `-1` no se descarta
 

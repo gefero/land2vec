@@ -721,7 +721,11 @@ mayoritariamente trayectorias oscilantes -- justo las que la regla de
 `classify_process` marca como "vuelve a su estado inicial o pasa por varios
 estados sin dirección clara" -- que el modelo de mezcla sí absorbe en componentes.
 Es un argumento a favor de leer el `-1` de HDBSCAN como *categoría sustantiva*
-("trayectoria sin forma estable") y no como falta de dato.
+("trayectoria sin forma estable") y no como falta de dato. Ojo: esas cifras son de
+`dynamic`, donde el paramétrico no tiene `-1` y está obligado a absorber ese ruido. En
+`pooled_subsampled` el 23,7 % del `-1` de media/HDBSCAN sigue sin tipificar también en
+media/paramétrico y "oscilante" casi desaparece como categoría, así que ahí la lectura
+queda como hipótesis -- detalle en `docs/analisis_estabilidad.md` §3.7.
 
 **Anidamiento entre granularidades** (medida direccional de la matriz, agregada
 2026-09-29): la pureza ponderada de cada cluster de una partición dentro de la
@@ -736,7 +740,9 @@ Con dos advertencias de denominador: (a) el anidamiento se mide sobre la
 intersección no-ruido, así que ese 1,0000 vale sobre el 74 % de los píxeles --34 de
 los 118 clusters finos quedan enteros dentro del `-1` del nivel grueso--; y (b) en
 `pooled_subsampled`, donde las seis corridas tienen `-1` y la comparación queda
-emparejada, la ventaja se mantiene pero se achica (0,996 contra 0,959). HDBSCAN
+emparejada, la ventaja se mantiene en los tres peldaños pero se achica mucho en
+pureza (media → gruesa: 0,987 contra 0,959; fina → gruesa: 0,996 contra 0,990); la
+señal clara pasa a ser cuántos clusters se reparten (2, 4 y 6 contra 16, 13 y 20). HDBSCAN
 compra su jerarquía al precio de no clasificar una parte del territorio.
 
 **Disimilitud entre secuencias** (`land2vec.seqdist`): el pool dinámico tiene
