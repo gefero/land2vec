@@ -318,16 +318,16 @@ function metricsOf(i, j) {
   return S().pairs[i < j ? i + "-" + j : j + "-" + i].m;
 }
 
-const NOISE_PID = () => S().noise_pid;
+const NOISE_PID = () => PAY.noise_pid;
 
 /** Metadatos de un nodo (color, etiqueta) según el nivel. */
 function nodeMeta(runIdx, id, level) {
   if (level === "proceso") {
-    if (id === NOISE_PID()) return { color: null, label: S().noise_label, noise: true };
+    if (id === NOISE_PID()) return { color: null, label: PAY.noise_label, noise: true };
     const p = PAY.processes[id];
     return { color: p.color, label: p.label, gloss: p.gloss, noise: false };
   }
-  if (id === -1) return { color: null, label: S().noise_label, noise: true };
+  if (id === -1) return { color: null, label: PAY.noise_label, noise: true };
   const n = S().runs[runIdx]._byId.get(id);
   return { color: (n && n.c) || "#999", label: (n && n.lab) || ("#" + id), noise: false,
            pid: n ? n.p : null };
@@ -593,7 +593,7 @@ function renderSankey() {
           class: "nlabel" + (pp.h >= 16 ? " big" : ""),
           "data-nid": nid,
         });
-        const raw = m.noise ? S().noise_label + " (−1)" : m.label;
+        const raw = m.noise ? PAY.noise_label + " (−1)" : m.label;
         t.textContent = raw.length > 30 ? raw.slice(0, 29) + "…" : raw;
         gNodes.appendChild(t);
       }
@@ -819,7 +819,7 @@ function renderLegend() {
   const host = $("#legend");
   host.textContent = "";
   const items = PAY.processes.map((p, i) => ({ id: i, color: p.color, label: p.label, gloss: p.gloss }));
-  items.push({ id: NOISE_PID(), color: null, label: S().noise_label + " (−1)", gloss: "sin tipología asignada" });
+  items.push({ id: NOISE_PID(), color: null, label: PAY.noise_label + " (−1)", gloss: "sin tipología asignada" });
   for (const it of items) {
     const d = document.createElement("span");
     d.className = "lgi";
@@ -997,22 +997,45 @@ function readHash() {
   state.a = a; state.b = b; state.level = m[3];
 }
 
+function showLoadError(html) {
+  $("#hint").innerHTML = html;
+  $("#viewFlujo").hidden = true;
+  $("#viewMatriz").hidden = true;
+}
+
+// Dos fallas distintas, con mensajes distintos: que el JSON no llegue (falta el
+// archivo, o se abrió con file://) no es lo mismo que un JSON viejo o un bug de
+// render -- antes las dos decían "falta crossrun.json" y eso despistaba.
 fetchJSON("./crossrun.json").then((d) => {
+  if (!d || !d.sets) {
+    $("#status").textContent = "crossrun.json con formato viejo";
+    showLoadError(`<b>El <code>crossrun.json</code> que se cargó es de una versión anterior</b> `
+      + `(no trae <code>sets</code>). Regeneralo con <code>python scripts/build_crossrun.py</code> `
+      + `y recargá con Ctrl+Shift+R.`);
+    return;
+  }
   PAY = d;
   if (!PAY.sets[state.set]) state.set = Object.keys(PAY.sets)[0];
   for (const blk of Object.values(PAY.sets)) {
     blk.runs.forEach((r) => { r._byId = new Map(r.nodes.map((n) => [n.id, n])); });
   }
-  readHash();
-  wire();
-  syncSegs();
-  render();
-}).catch((e) => {
+  try {
+    readHash();
+    wire();
+    syncSegs();
+    render();
+  } catch (e) {
+    console.error(e);
+    $("#status").textContent = "error al dibujar";
+    showLoadError(`<b>El JSON cargó bien, pero falló el render</b>: <code>${esc(e.message)}</code>. `
+      + `Es un bug del visor, no de los datos — el detalle completo está en la consola.`);
+  }
+}, (e) => {
   $("#status").textContent = "no se pudo cargar crossrun.json";
-  $("#hint").innerHTML = `<b>Falta <code>crossrun.json</code></b> (${esc(e.message)}). `
+  showLoadError(`<b>No se pudo cargar <code>crossrun.json</code></b> (${esc(e.message)}). `
     + `Generalo con <code>python scripts/build_crossrun.py</code> y serví la carpeta con `
     + `<code>python -m http.server -d viz/crossrun 8000</code> — abierto con <code>file://</code> `
-    + `el navegador bloquea el fetch.`;
+    + `el navegador bloquea el fetch.`);
 });
 </script>
 </body>

@@ -117,6 +117,17 @@ python -m http.server -d viz/crossrun 8002          # -> http://localhost:8002
 ```
 
 Con `file://` el navegador bloquea el `fetch` del JSON; el visor lo detecta y lo dice.
+Distingue tres fallas con mensajes distintos: que el JSON no llegue, que llegue con el
+formato de una versión anterior, o que llegue bien y falle el render (eso último es un
+bug del visor; el detalle queda en la consola).
+
+Después de tocar `index.html` o el builder, correr el chequeo de regresión (Node, sin
+dependencias): ejecuta el script completo de la página contra un DOM falso y recorre
+los 2 sets × 30 pares × 2 niveles, todos los tooltips, los paneles de foco y la matriz.
+
+```bash
+node scripts/check_crossrun_viewer.js
+```
 La vista activa queda en el hash (`#2-3/proceso`), así que se puede compartir un enlace
 a un par concreto.
 
