@@ -1,9 +1,9 @@
 """Interpretación de las tipologías de trayectoria (clustering v2), al estilo del
 análisis de secuencias de TraMineR.
 
-`scripts/tune_clustering.py --select` deja seis particiones sobre las 107k
+`scripts/clustering/tune_clustering.py --select` deja seis particiones sobre las 107k
 trayectorias con transición -- la matriz de 3 granularidades (fina / media /
-gruesa) x 2 familias (HDBSCAN / no-HDBSCAN), ver `docs/v2_autoencoder_training.md`
+gruesa) x 2 familias (HDBSCAN / no-HDBSCAN), ver `docs/v2/v2_autoencoder_training.md`
 §7.2. Cada cluster viene descrito con muy poco: su trayectoria prototípica
 (centroide en `z` crudo, decodificado), su `prototype_fidelity`, y los vecinos
 reales más cercanos al centroide. Eso alcanza para *validar* la partición pero no
@@ -19,7 +19,7 @@ Todas las primitivas operan sobre `X`, una matriz `(n, T)` de ids de token
 cluster, y son O(n·T): no se construye ninguna matriz de disimilitud entre pares
 (decisión de diseño -- ver `position_diversity`, que da compacidad en espacio de
 secuencias sin salir de ese presupuesto). El productor es
-`scripts/describe_clusters.py`; el notebook `notebooks/cluster_evaluation.ipynb`
+`scripts/clustering/describe_clusters.py`; el notebook `notebooks/v2/cluster_evaluation.ipynb`
 §5 consume su salida.
 
 Equivalencias con TraMineR (funciones de su User's Guide):
@@ -680,7 +680,7 @@ def plot_crossrun(ax: "plt.Axes", matrix: pd.DataFrame, title: str, fmt: str = "
 
 
 # ---------------------------------------------------------------------------
-# Smoke test -- `python scripts/check_typology.py`
+# Smoke test -- `python scripts/clustering/check_typology.py`
 # ---------------------------------------------------------------------------
 
 

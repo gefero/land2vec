@@ -217,33 +217,33 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-data/id_seqs_text_2000_2022_chaco_santiago_frontier.csv
+data/zonas/id_seqs_text_2000_2022_chaco_santiago_frontier.csv
 
-# Salidas de la tipología (scripts/describe_clusters.py). Contienen trayectorias
+# Salidas de la tipología (scripts/clustering/describe_clusters.py). Contienen trayectorias
 # textuales + conteos, no solo agregados -- local por ahora, no se versionan ni
 # se publican. Ver viz/typology/README.md.
 viz/typology/typology_browser.json
-models/cluster_v2/typology*
+models/v2/cluster_v2/typology*
 
-# Payload del mapa de clusterizaciones (scripts/build_cluster_map.py). Son
+# Payload del mapa de clusterizaciones (scripts/viz/build_cluster_map.py). Son
 # coordenadas por parcela cruzadas con la etiqueta de cluster -- se regeneran en
 # la máquina, no se versionan. Ver viz/clusters/README.md.
 viz/clusters/data/
 
-# Payload del visor de concordancia (scripts/build_crossrun.py). Contingencias +
+# Payload del visor de concordancia (scripts/viz/build_crossrun.py). Contingencias +
 # etiquetas + una trayectoria verbatim por cluster (la modal, 344 en total; con
 # --no-modal-seq no va ninguna). Sin coordenadas por parcela. Se regenera en
 # segundos, no se versiona. Ver viz/crossrun/README.md.
 viz/crossrun/crossrun.json
 
 # Reextracción de las 7 zonas de entrenamiento de la v2 sin el tope de constantes
-# al 15% (scripts/build_eval_zones.py --out-dir), usada solo para regenerar el
+# al 15% (scripts/datos/build_eval_zones.py --out-dir), usada solo para regenerar el
 # fondo cartográfico del visor/atlas. Se regenera del netCDF versionado, no
 # sustituye a los archivos de ajuste del encoder. Ver viz/clusters/README.md,
 # "Cobertura completa del fondo".
-data/zones_full/
+data/zonas/full/
 
 # Shapefile de desmonte extraído del .rar por land2vec.geo.ensure_shapefile_extracted
 # (GDAL /vsizip/ no reconoce la extensión .rar como archivo comprimido) -- se
-# regenera solo, no se versiona. Ver docs/paper_metodologia.md §5.8.
+# regenera solo, no se versiona. Ver docs/v2/paper_metodologia.md §5.8.
 data/geo/.*_extracted/

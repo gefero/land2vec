@@ -306,7 +306,7 @@ def seq_text(tokens: np.ndarray) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Smoke test -- `python scripts/check_typology.py`
+# Smoke test -- `python scripts/clustering/check_typology.py`
 # ---------------------------------------------------------------------------
 
 

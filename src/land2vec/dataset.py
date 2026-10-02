@@ -4,6 +4,7 @@ import pandas as pd
 import tqdm
 from pathlib import Path
 
+from land2vec import paths as P
 from land2vec.tokenizer import Tokenizer
 
 
@@ -70,7 +71,7 @@ def load_data(
     window: int | None = None,
 ):
     if file_path is None:
-        file_path = Path("data") / "id_seqs_text_2000_2022_chaco_santiago_frontier.zip"
+        file_path = P.seqs_file("chaco_santiago_frontier")
     df = pd.read_csv(file_path)
     if window is not None:
         return SequenceDataset(df[data_column], window=window)
@@ -88,7 +89,7 @@ def load_autoencoder_data(
 
 
 def main():
-    dataset = load_data(file_path=Path("data") / "seqs_short.csv")
+    dataset = load_data(file_path=P.DATA / "v1" / "seqs_short.csv")
     print(len(dataset))
     i = 0
     while True:

@@ -1,7 +1,7 @@
 # Navegador de tipologías de trayectoria (local)
 
 `index.html` es un visor estático (sin build, sin dependencias) de las seis
-tipologías de trayectoria de la v2 -- ver `docs/v2_autoencoder_training.md`
+tipologías de trayectoria de la v2 -- ver `docs/v2/v2_autoencoder_training.md`
 §7.5. Elegís una corrida, ves la grilla de clusters (etiqueta automática,
 cronograma, tamaño) y hacés clic en uno para el panel completo: cronograma,
 secuencia modal vs. prototipo decodificado, índices, las trayectorias más
@@ -16,7 +16,7 @@ agregados), así que está **gitignoreado** -- se genera y se mira en la máquin
 nada más.
 
 ```bash
-python scripts/describe_clusters.py            # genera viz/typology/typology_browser.json
+python scripts/clustering/describe_clusters.py            # genera viz/typology/typology_browser.json
 python -m http.server -d viz/typology 8000     # -> http://localhost:8000
 ```
 

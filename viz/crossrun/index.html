@@ -1011,7 +1011,7 @@ fetchJSON("./crossrun.json").then((d) => {
   if (!d || !d.sets) {
     $("#status").textContent = "crossrun.json con formato viejo";
     showLoadError(`<b>El <code>crossrun.json</code> que se cargó es de una versión anterior</b> `
-      + `(no trae <code>sets</code>). Regeneralo con <code>python scripts/build_crossrun.py</code> `
+      + `(no trae <code>sets</code>). Regeneralo con <code>python scripts/viz/build_crossrun.py</code> `
       + `y recargá con Ctrl+Shift+R.`);
     return;
   }
@@ -1034,7 +1034,7 @@ fetchJSON("./crossrun.json").then((d) => {
 }, (e) => {
   $("#status").textContent = "no se pudo cargar crossrun.json";
   showLoadError(`<b>No se pudo cargar <code>crossrun.json</code></b> (${esc(e.message)}). `
-    + `Generalo con <code>python scripts/build_crossrun.py</code> y serví la carpeta con `
+    + `Generalo con <code>python scripts/viz/build_crossrun.py</code> y serví la carpeta con `
     + `<code>python -m http.server -d viz/crossrun 8000</code> — abierto con <code>file://</code> `
     + `el navegador bloquea el fetch.`);
 });

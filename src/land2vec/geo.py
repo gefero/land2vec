@@ -1,8 +1,8 @@
 """Geometría para cruzar los polígonos de desmonte de Colección 13.0 (Chaco Seco,
 monitoreodesmonte.com.ar, en `data/geo/data_validacion_chaco_Coleccion_13.0.rar`)
-contra la grilla de píxeles ESA CCI de 300 m -- ver `scripts/build_desmonte_labels.py`
-(productor) y `scripts/eval_desmonte.py` (consumidor de la validación externa),
-`docs/paper_metodologia.md` §5.8 para el detalle metodológico.
+contra la grilla de píxeles ESA CCI de 300 m -- ver `scripts/datos/build_desmonte_labels.py`
+(productor) y `scripts/validacion/eval_desmonte.py` (consumidor de la validación externa),
+`docs/v2/paper_metodologia.md` §5.8 para el detalle metodológico.
 
 El archivo `.rar` es en realidad un ZIP (firma `PK\x03\x04`). **No se lee vía
 GDAL `/vsizip/`**: ese driver decide dónde termina el path del zip y empieza
@@ -37,6 +37,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -52,7 +53,7 @@ DESM_COLS = ["FECHA_DESM", "PROVINCIA", "DEPARTAMEN", "SUPERF_ha"]
 
 # Radio autálico WGS84 (esfera de igual área que el elipsoide) -- para el área
 # geodésica del píxel en `pixel_area_ha`, calibrada contra `pyproj.Geod` en la
-# verificación de `scripts/build_desmonte_labels.py`.
+# verificación de `scripts/datos/build_desmonte_labels.py`.
 _R_EARTH_M = 6_371_007.1809
 
 
@@ -250,7 +251,7 @@ def pixel_poly_fractions(gdf: gpd.GeoDataFrame, grid: ZoneGrid, *, min_frac: flo
     Algoritmo por polígono: acota candidatos por el bbox del polígono (índices de grilla
     enteros), separa las celdas totalmente interiores (`contains_properly`, frac=1 sin calcular
     intersección) de las de borde (`intersects & ~contains_properly`, donde sí se calcula el área
-    exacta de la intersección). Ver `docs/paper_metodologia.md` §5.8."""
+    exacta de la intersección). Ver `docs/v2/paper_metodologia.md` §5.8."""
     poly_ids = gdf.index.to_numpy()
     geoms = gdf.geometry.to_numpy()
     epocas = gdf["epoca"].to_numpy()
@@ -356,7 +357,7 @@ def pixel_fractions(
 
 # ---------------------------------------------------------------------------
 # Máscara de área relevada (y proxy del límite de la ecorregión -- ver
-# docs/paper_metodologia.md §5.8: Colección 13.0 no tiene polígonos al este del
+# docs/v2/paper_metodologia.md §5.8: Colección 13.0 no tiene polígonos al este del
 # límite Chaco Seco / Chaco Húmedo dentro del bbox de chaco_santiago_frontier)
 # ---------------------------------------------------------------------------
 

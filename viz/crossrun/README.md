@@ -92,7 +92,7 @@ el acuerdo simple está bien definido, y además **es literalmente lo que muestr
 aluvial**: es la masa en la diagonal. Las dos vistas se explican mutuamente.
 
 También están `ARI de proceso` y `ARI de cluster` (este último reproduce los números
-publicados en `models/cluster_v2/typology_crossrun.csv`).
+publicados en `models/v2/cluster_v2/typology_crossrun.csv`).
 
 **Tratamiento del `-1`**, con dos lecturas explícitas:
 
@@ -112,8 +112,8 @@ no-ruido.
 ## Cómo levantarlo
 
 ```bash
-python scripts/build_crossrun.py                    # los dos sets -> viz/crossrun/crossrun.json
-python scripts/build_crossrun.py --sets dynamic     # solo uno
+python scripts/viz/build_crossrun.py                    # los dos sets -> viz/crossrun/crossrun.json
+python scripts/viz/build_crossrun.py --sets dynamic     # solo uno
 python -m http.server -d viz/crossrun 8002          # -> http://localhost:8002
 ```
 
@@ -122,22 +122,22 @@ Distingue tres fallas con mensajes distintos: que el JSON no llegue, que llegue 
 formato de una versión anterior, o que llegue bien y falle el render (eso último es un
 bug del visor; el detalle queda en la consola).
 
-**Para desarrollo, opcional**: `scripts/check_crossrun_viewer.js` es un chequeo de
+**Para desarrollo, opcional**: `scripts/viz/check_crossrun_viewer.js` es un chequeo de
 regresión para cuando se modifica `index.html`. Ejecuta el script completo de la página
 contra un DOM falso y recorre los 2 sets × 30 pares × 2 niveles, todos los tooltips, los
 paneles de foco y la matriz. **Requiere Node**, que no forma parte del entorno Python del
 proyecto: no hace falta para usar el visor, solo para cambiarlo.
 
 ```bash
-node scripts/check_crossrun_viewer.js     # si Node no está: conda install nodejs
+node scripts/viz/check_crossrun_viewer.js     # si Node no está: conda install nodejs
 ```
 La vista activa queda en el hash (`#2-3/proceso`), así que se puede compartir un enlace
 a un par concreto.
 
 `build_crossrun.py` es **solo-stdlib**: el ARI y el NMI se calculan a mano desde la tabla
 de contingencia, no con sklearn (coinciden a ~1e-7, que es el redondeo del payload; si
-está `models/cluster_v2/typology_crossrun.csv` el script contrasta los 60 valores y
-reporta el delta máximo). Importa de `scripts/build_cluster_map.py` los helpers de color
+está `models/v2/cluster_v2/typology_crossrun.csv` el script contrasta los 60 valores y
+reporta el delta máximo). Importa de `scripts/viz/build_cluster_map.py` los helpers de color
 y la clasificación en procesos, igual que `plot_process_maps.py` y `eval_desmonte.py`.
 
 ## Qué lleva el payload
@@ -155,7 +155,7 @@ estrictamente solo agregado. Coordenadas por parcela no lleva ninguna, a diferen
 Si hace falta un payload sin ninguna secuencia —por ejemplo para publicarlo—:
 
 ```bash
-python scripts/build_crossrun.py --no-modal-seq     # estrictamente agregado
+python scripts/viz/build_crossrun.py --no-modal-seq     # estrictamente agregado
 ```
 
 El visor lo detecta y simplemente no muestra la tira; todo lo demás funciona igual.

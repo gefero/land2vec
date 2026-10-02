@@ -145,7 +145,7 @@ def compute_metrics(y_true, y_pred, labels: list[int] | None = None):
     # Por defecto fija las clases del vocabulario (sin [UNK]) en vez de dejar que
     # f1_score promedie solo sobre las clases presentes en y_true/y_pred: si no,
     # el macro F1 no es comparable entre evaluaciones con distinta composición de
-    # clases (ver notebooks/test_2.ipynb, sección de la clase "B").
+    # clases (ver notebooks/v1/test_2.ipynb, sección de la clase "B").
     if labels is None:
         labels = [i for i in Tokenizer.VOCAB.values() if i != Tokenizer.VOCAB["[UNK]"]]
     return {

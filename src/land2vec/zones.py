@@ -1,9 +1,9 @@
 """Lista canónica de zonas de land2vec v2 -- **solo librería estándar**, para que
-scripts sin torch/pandas (`scripts/build_cluster_map.py`) la puedan importar
-igual que `scripts/tune_clustering.py`/`scripts/describe_clusters.py` importan
+scripts sin torch/pandas (`scripts/viz/build_cluster_map.py`) la puedan importar
+igual que `scripts/clustering/tune_clustering.py`/`scripts/clustering/describe_clusters.py` importan
 `land2vec.cluster` (con el mismo preámbulo `sys.path.insert`).
 
-Dos grupos, disjuntos por diseño (ver `scripts/build_eval_zones.py`):
+Dos grupos, disjuntos por diseño (ver `scripts/datos/build_eval_zones.py`):
 
 - **eval**: las 7 zonas out-of-domain, benchmark held-out. Nunca vistas por el
   autoencoder ni por el clustering.
@@ -12,7 +12,7 @@ Dos grupos, disjuntos por diseño (ver `scripts/build_eval_zones.py`):
   ecorregión de "eval" (`PAIRING`). El autoencoder las vio en entrenamiento
   -- son in-sample para los embeddings, aunque out-of-sample para el
   clustering en sí, que solo se ajustó sobre "eval". Ver
-  `docs/v2_autoencoder_training.md` §4.1.
+  `docs/v2/v2_autoencoder_training.md` §4.1.
 
 Antes esta lista estaba duplicada en `land2vec.cluster`, `build_cluster_map.py`,
 `build_eval_zones.py` y cuatro `EXTRA_ZONE_LABELS` en los scripts de imagery.
@@ -21,7 +21,7 @@ Antes esta lista estaba duplicada en `land2vec.cluster`, `build_cluster_map.py`,
 from __future__ import annotations
 
 # bbox = (minx, miny, maxx, maxy) en lon/lat -- mismo formato que
-# `land2vec.extract.crop_bbox` y `scripts/build_eval_zones.py`.
+# `land2vec.extract.crop_bbox` y `scripts/datos/build_eval_zones.py`.
 
 EVAL_ZONES: dict[str, tuple[float, float, float, float]] = {
     "puna_noa": (-67.0, -23.5, -65.0, -22.0),
@@ -44,7 +44,7 @@ TRAIN_ZONES: dict[str, tuple[float, float, float, float]] = {
 }
 
 # Zona original de entrenamiento del autoencoder (desde la v1), sin par de
-# evaluación propio -- bbox de scripts/build_eval_zones.py:TRAIN_BBOX.
+# evaluación propio -- bbox de scripts/datos/build_eval_zones.py:TRAIN_BBOX.
 CHACO_ZONE: dict[str, tuple[float, float, float, float]] = {
     "chaco_santiago_frontier": (
         -63.44994621163554, -28.12819902009702, -59.37401847726054, -25.431378332142593,
@@ -81,7 +81,7 @@ GROUP_OF: dict[str, str] = {
 }
 
 # zona de entrenamiento -> su par de evaluación, misma ecorregión, bbox
-# disjunto -- docs/v2_autoencoder_training.md §4.1.
+# disjunto -- docs/v2/v2_autoencoder_training.md §4.1.
 PAIRING: dict[str, str] = {
     "puna_salta_catamarca": "puna_noa",
     "patagonia_santacruz": "patagonia_estepa",

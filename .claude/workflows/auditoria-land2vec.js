@@ -1,6 +1,6 @@
 export const meta = {
   name: 'auditoria-land2vec',
-  description: 'Equipo de agentes (.claude/agents/) que audita código, estrategia de validación y resultados de land2vec y genera docs/reporte_auditoria.md',
+  description: 'Equipo de agentes (.claude/agents/) que audita código, estrategia de validación y resultados de land2vec y genera docs/v2/reporte_auditoria.md',
   whenToUse: 'Auditoría completa del proyecto: código embeddings → clusters → viz, validación interna/externa y reporte',
   phases: [
     { title: 'Auditoría', detail: 'auditor-embeddings, auditor-clustering, auditor-viz, evaluador-validacion, analista-resultados' },
@@ -149,7 +149,7 @@ const seguimientos = sup ? (await parallel(sup.seguimientos.slice(0, 2).map((s, 
     .then(r => r && { titulo: s.titulo, agente: s.agente, ...r })))).filter(Boolean) : []
 
 // Los subagentes no pueden escribir archivos de reporte: el redactor devuelve el markdown
-// y quien corre el workflow lo guarda en docs/reporte_auditoria.md (campo `markdown` del resultado).
+// y quien corre el workflow lo guarda en docs/v2/reporte_auditoria.md (campo `markdown` del resultado).
 const DRAFT = {
   type: 'object',
   properties: {
@@ -160,7 +160,7 @@ const DRAFT = {
 }
 
 phase('Reporte')
-let draft = await run('redactor-reporte', `Redactá el reporte (destino: docs/reporte_auditoria.md), fechado ${A.fecha}. NO escribas archivos: devolvelo completo en el campo markdown. Seguí las instrucciones del supervisor. Los seguimientos no pasaron por el verificador: validá lo crítico.
+let draft = await run('redactor-reporte', `Redactá el reporte (destino: docs/v2/reporte_auditoria.md), fechado ${A.fecha}. NO escribas archivos: devolvelo completo en el campo markdown. Seguí las instrucciones del supervisor. Los seguimientos no pasaron por el verificador: validá lo crítico.
 
 MATERIAL:
 ${JSON.stringify(material, null, 1)}

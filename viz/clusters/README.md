@@ -2,8 +2,8 @@
 
 `index.html` es un visor estático (Leaflet vendorizado, sin build, sin CDN) de
 las seis clusterizaciones de trayectoria de la v2 -- la matriz de 3
-granularidades × 2 familias de `scripts/tune_clustering.py --select`, ver
-`docs/v2_autoencoder_training.md` §7.2 -- **sobre el mapa real**. Un selector
+granularidades × 2 familias de `scripts/clustering/tune_clustering.py --select`, ver
+`docs/v2/v2_autoencoder_training.md` §7.2 -- **sobre el mapa real**. Un selector
 **Conjunto de zonas** arriba de todo cambia entre las **7 zonas de evaluación**
 out-of-domain (el benchmark) y las **8 zonas de entrenamiento** (in-sample
 para el encoder, out-of-sample para el clustering -- ver más abajo); nunca se
@@ -53,8 +53,8 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
   **expansión agrícola** se distinguen por el origen: la primera arranca en bosque
   (el impacto es el bosque perdido), la segunda avanza sobre pastizal/arbustal sin
   tocar bosque. Color generado en OKLCh; la clasificación (`classify_process`), las
-  glosas y la paleta viven en `scripts/build_cluster_map.py` y se validan con
-  `scripts/check_cluster_palette.py`. El modo `cluster` vuelve a la paleta
+  glosas y la paleta viven en `scripts/viz/build_cluster_map.py` y se validan con
+  `scripts/viz/check_cluster_palette.py`. El modo `cluster` vuelve a la paleta
   cualitativa por id.
 - **Click en un píxel**: popup con su trayectoria cruda de 23 años (`F-F-…-A-A`),
   la forma colapsada (`F»A`), la etiqueta del cluster y el proceso. El click
@@ -69,13 +69,13 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
   encoder stdlib con `zlib`), coloreado por su único estado con una paleta pálida
   **integrada al sistema de procesos** (bosque = verde como "regeneración de
   bosque", agua = azul como "dinámica hídrica"…, pero mucho más claro). Se genera
-  de `data/id_seqs_text_*` + `lat_long_df_*`, sin re-correr el modelo.
+  de `data/zonas/id_seqs_text_*` + `lat_long_df_*`, sin re-correr el modelo.
   Para 7 de las 8 zonas de entrenamiento ese fondo hay que generarlo desde
-  `data/zones_full/`, no desde `data/` -- ver "Cobertura completa del fondo".
+  `data/zonas/full/`, no desde `data/` -- ver "Cobertura completa del fondo".
 - **Imagen satelital de inicio/fin** — toggle `imagen satelital (inicio/fin)` con
   switch de año (`2000` / `2022`) y su opacidad, para inspeccionar visualmente
   el paisaje real detrás de una trayectoria o un cluster. Se arma con
-  `scripts/fetch_zone_imagery_gee.py` (Google Earth Engine, ver más abajo) y es
+  `scripts/imagenes/fetch_zone_imagery_gee.py` (Google Earth Engine, ver más abajo) y es
   opcional: si no se generó ninguna, el control queda oculto. Va debajo del
   fondo de trayectorias constantes y encima de los tiles base.
 - **Base**: OpenStreetMap, OSM Humanitarian o Esri World Imagery (satélite; los
@@ -96,7 +96,7 @@ Complementa a `viz/typology/`: aquel responde *cómo es* cada cluster
 
 Las **8 zonas de entrenamiento** (`chaco_santiago_frontier`, la base original,
 más las 7 nuevas de la v2 -- una por ecorregión de evaluación, ver
-`docs/v2_autoencoder_training.md` §4.1) tienen secuencias y coordenadas en
+`docs/v2/v2_autoencoder_training.md` §4.1) tienen secuencias y coordenadas en
 `data/` pero no embeddings ni cluster asignado: nunca pasaron por
 `tune_clustering.py`, que solo se ajusta sobre evaluación. Para que aparezcan
 en el conjunto `entrenamiento` del visor hacen falta dos pasos, en orden,
@@ -107,11 +107,11 @@ sin GPU/torch):
 # 1. embeddings de cada zona (ya funciona sin cambios, una por una)
 for z in chaco_santiago_frontier puna_salta_catamarca patagonia_santacruz periurbano_gba \
          corrientes_humedal delta_oeste pampa_deprimida yungas; do
-  python scripts/extract_embeddings.py --model models/autoencoder_v2 --zone $z
+  python scripts/modelo/extract_embeddings.py --model models/v2/autoencoder_v2 --zone $z
 done
 
 # 2. asignación por centroide contra los 6 chosen*.json ya elegidos
-python scripts/assign_train_clusters.py
+python scripts/clustering/assign_train_clusters.py
 ```
 
 `assign_train_clusters.py` no reajusta nada: replica el mismo paso de
@@ -121,7 +121,7 @@ persistidos en cada `chosen*.json`), sobre `land2vec.zones.ZONES_BY_GROUP
 ["train"]` en vez de las 7 de evaluación. Imprime, por corrida y por zona, el
 % de parcelas "sin tipificar" -- compararlo contra el de `pool · aplicado` es
 en sí un chequeo de cuánto generaliza el clustering fuera de donde se ajustó.
-Escribe `data/clusters_train_pooled{suffix}.zip` (mismo formato
+Escribe `data/v2/clusters_train_pooled{suffix}.zip` (mismo formato
 `ID,zone,cluster` que los demás), los seis suffixes.
 
 Con eso ya generado, `build_cluster_map.py` (más abajo) arma el set
@@ -132,21 +132,21 @@ haya embeddings, porque solo necesitan `id_seqs_text_*`/`lat_long_df_*`.
 
 `assign_train_clusters.py` acepta además `--group {train,eval,all}` y
 `--out-tag`, agregados para la validación externa contra polígonos de
-desmonte (`docs/paper_metodologia.md` §5.8): con `--out-tag`, el archivo de
-salida pasa a ser `data/clusters_train_pooled{suffix}{out_tag}.zip`, así que
+desmonte (`docs/v2/paper_metodologia.md` §5.8): con `--out-tag`, el archivo de
+salida pasa a ser `data/v2/clusters_train_pooled{suffix}{out_tag}.zip`, así que
 correr
 
 ```bash
-python scripts/assign_train_clusters.py --group all --max-constant-fraction 1.0 --out-tag _full
+python scripts/clustering/assign_train_clusters.py --group all --max-constant-fraction 1.0 --out-tag _full
 ```
 
-deja `data/clusters_train_pooled{suffix}_full.zip` (cobertura completa, sin el
+deja `data/v2/clusters_train_pooled{suffix}_full.zip` (cobertura completa, sin el
 submuestreo de constantes al 15 %, y sumando las zonas de evaluación) **sin
 tocar** los `clusters_train_pooled{suffix}.zip` que consume este visor --
 `build_cluster_map.py` busca nombres exactos y los `_full` no matchean
 ninguno, así que los ignora.
 
-### Cobertura completa del fondo (`data/zones_full/`)
+### Cobertura completa del fondo (`data/zonas/full/`)
 
 7 de las 8 zonas de entrenamiento (todas menos `chaco_santiago_frontier`)
 tienen el submuestreo de constantes al 15 % **persistido en el archivo**, no
@@ -162,22 +162,22 @@ cartográfico solamente, y se arregla **sin re-entrenar ni re-clusterizar**:
 
 ```bash
 # 1. re-extraer esas 7 zonas del netCDF SIN tope de constantes, a un dir aparte
-mkdir -p data/zones_full
-python scripts/build_eval_zones.py --zone-set train \
+mkdir -p data/zonas/full
+python scripts/datos/build_eval_zones.py --zone-set train \
     --zones puna_salta_catamarca patagonia_santacruz periurbano_gba \
             corrientes_humedal delta_oeste pampa_deprimida yungas \
-    --out-dir data/zones_full
+    --out-dir data/zonas/full
 
 # 2. chaco ya está completo en data/, pero tiene que estar en el mismo dir:
 #    _rebuild_constants_only() descarta del manifiesto las zonas del grupo
 #    pedido que no encuentre, así que sin esto su entrada se pierde
-cp data/id_seqs_text_2000_2022_chaco_santiago_frontier.zip \
-   data/lat_long_df_chaco_santiago_frontier.zip data/zones_full/
+cp data/zonas/id_seqs_text_2000_2022_chaco_santiago_frontier.zip \
+   data/zonas/lat_long_df_chaco_santiago_frontier.zip data/zonas/full/
 
 # 3. regenerar solo el fondo de las 8 zonas de train (parcha index.json
 #    in situ: conserva `runs` y las constantes de evaluación)
-python scripts/build_cluster_map.py --only-constants --constants-groups train \
-    --data-dir data/zones_full
+python scripts/viz/build_cluster_map.py --only-constants --constants-groups train \
+    --data-dir data/zonas/full
 ```
 
 Verificación (`pampa_deprimida` debe pasar de 105 a ~388.000, y
@@ -198,13 +198,13 @@ Las cuentas cierran contra la grilla real, porque las dinámicas están intactas
 `puna_salta_catamarca` 491.609 + 26.791 = 518.400. (El 138.090 de `yungas`
 confirma además, a 0,006 % de error, la ponderación por inverso de probabilidad
 `w_constante=44,91` que usó `eval_desmonte.py` para estimarlo sin tener estos
-píxeles -- `docs/paper_metodologia.md` §5.8.)
+píxeles -- `docs/v2/paper_metodologia.md` §5.8.)
 
 Dos cosas que **no** hay que hacer: correr `build_cluster_map.py` sin
-`--only-constants` contra `data/zones_full` (reconstruiría los sets de puntos
+`--only-constants` contra `data/zonas/full` (reconstruiría los sets de puntos
 desde el pool completo y pediría embeddings de ~2,45 M píxeles nuevos), ni
-apuntar `assign_train_clusters.py` ahí. Y `data/zones_full/` **no** sirve para
-entrenar: cambiaría la composición del dataset de `docs/v2_autoencoder_training.md`
+apuntar `assign_train_clusters.py` ahí. Y `data/zonas/full/` **no** sirve para
+entrenar: cambiaría la composición del dataset de `docs/v2/v2_autoencoder_training.md`
 §4.2.
 
 Después de esto conviene recargar el visor con **Ctrl+Shift+R**: los
@@ -214,14 +214,14 @@ desde caché.
 ## Cómo levantarlo
 
 ```bash
-python scripts/build_cluster_map.py                              # genera viz/clusters/data/*.{json,png}
-python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP  # opcional: imagen satelital inicio/fin
+python scripts/viz/build_cluster_map.py                              # genera viz/clusters/data/*.{json,png}
+python scripts/imagenes/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP  # opcional: imagen satelital inicio/fin
 python -m http.server -d viz/clusters 8001                       # -> http://localhost:8001
 ```
 
 `build_cluster_map.py` solo usa la librería estándar (más `land2vec.zones`,
-también solo-stdlib -- no necesita pandas/torch); lee `data/clusters_*.zip` +
-`data/lat_long_df_*.zip` + `data/id_seqs_text_*.zip` (trayectorias crudas para
+también solo-stdlib -- no necesita pandas/torch); lee `data/v2/clusters_*.zip` +
+`data/zonas/lat_long_df_*.zip` + `data/zonas/id_seqs_text_*.zip` (trayectorias crudas para
 el popup + fondo de constantes) y, si está,
 `viz/typology/typology_browser.json` (etiquetas y proceso de cada cluster). Si
 todavía no corriste `assign_train_clusters.py`, arma igual las 6 corridas de
@@ -230,7 +230,7 @@ faltan los `clusters_train_pooled*.zip` y sigue. Con `--only _medium` procesa
 una sola granularidad/familia; con `--precision 4`, archivos más livianos;
 `--no-constants` salta el raster de fondo, `--only-constants` lo regenera
 (`--constants-groups eval|train` para limitarlo a un conjunto).
-`scripts/check_cluster_palette.py` reporta la uniformidad perceptual (ΔE) de
+`scripts/viz/check_cluster_palette.py` reporta la uniformidad perceptual (ΔE) de
 las rampas de color por proceso y de la paleta del fondo.
 
 ### Imagen satelital
@@ -239,7 +239,7 @@ El manifiesto (`data/imagery/index.json`) y el toggle del visor son los mismos
 sin importar cuál de las siguientes vías haya generado cada PNG -- `index.html`
 no distingue la fuente.
 
-#### Vía recomendada: `scripts/fetch_zone_imagery_gee.py` (Google Earth Engine)
+#### Vía recomendada: `scripts/imagenes/fetch_zone_imagery_gee.py` (Google Earth Engine)
 
 Landsat 5 (`LANDSAT/LT05/C02/T1_L2`) para 2000, Sentinel-2 SR armonizado
 (`COPERNICUS/S2_SR_HARMONIZED`) para 2022, mediana de escenas libres de nubes
@@ -264,7 +264,7 @@ vincular un proyecto de Google Cloud (gratuito) en
 https://code.earthengine.google.com/register.
 
 ```bash
-python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP
+python scripts/imagenes/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP
 ```
 
 Sin `--zone`/`--year` corre las 15 zonas (7 de evaluación + 8 de
@@ -324,7 +324,7 @@ parche queda visible (30 m, tono distinto) pero acotado a la costura. Usarlo
 únicamente en esas zonas:
 
 ```bash
-python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
+python scripts/imagenes/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
   --zone patagonia_estepa --zone chaco_santiago_frontier --zone pampa_nucleo \
   --zone pampa_deprimida --zone patagonia_santacruz \
   --cloud-cover 80 --landsat-fallback --force
@@ -348,7 +348,7 @@ límite de una sola exportación) -- `--max-side` más chico lo resuelve, a
 costa de resolución en toda la imagen, no solo el parche:
 
 ```bash
-python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
+python scripts/imagenes/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
   --zone puna_salta_catamarca --cloud-cover 80 --landsat-fallback --max-side 1200 --force
 ```
 
@@ -357,7 +357,7 @@ python scripts/fetch_zone_imagery_gee.py --project TU_PROYECTO_GCP \
 Si se necesita específicamente la imagen "real" de Google Earth (no
 Landsat/Sentinel) o no se quiere dar de alta una cuenta de Earth Engine:
 
-1. `python scripts/make_zone_kml.py` genera `viz/clusters/zonas_imagenes.kml`
+1. `python scripts/imagenes/make_zone_kml.py` genera `viz/clusters/zonas_imagenes.kml`
    -- un rectángulo por zona (las 7 de evaluación + las 8 de entrenamiento)
    con vista cenital (`tilt=0`) ya calculada.
 2. En Google Earth Pro: `Archivo > Abrir` ese KML, doble click en cada zona del
@@ -371,7 +371,7 @@ Landsat/Sentinel) o no se quiere dar de alta una cuenta de Earth Engine:
    `{zona}_2000.png` / `{zona}_2022.png` (el id de zona es el mismo de
    `data/index.json`/`land2vec.zones`, p. ej. `puna_noa` o
    `puna_salta_catamarca`). Todas las capturas juntas en una misma carpeta.
-5. `python scripts/import_manual_imagery.py <carpeta>` las copia a
+5. `python scripts/imagenes/import_manual_imagery.py <carpeta>` las copia a
    `data/imagery/` y arma `data/imagery/index.json`. `--date
    puna_noa_2000=1999-08-15` (repetible) es opcional, solo para que el tooltip
    del visor muestre la fecha real de esa captura.
@@ -380,7 +380,7 @@ No hay corrección de perspectiva ni calibración de esquinas en esta opción: s
 asume que el encuadre del KML (rectángulo + vista cenital) alcanza para que la
 imagen se superponga razonablemente con los puntos de cluster.
 
-#### Intento descartado: `scripts/fetch_zone_imagery.py`
+#### Intento descartado: `scripts/imagenes/fetch_zone_imagery.py`
 
 Primera versión, vía el catálogo STAC de Microsoft Planetary Computer (sin
 cuenta propia), armando la mediana entre escenas a mano en vez de delegarla en

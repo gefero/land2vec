@@ -793,7 +793,7 @@ async function boot() {
   try {
     manifest = await fetchJSON(DATA_DIR + "index.json");
   } catch (e) {
-    statusEl.textContent = "sin datos — corré  python scripts/build_cluster_map.py";
+    statusEl.textContent = "sin datos — corré  python scripts/viz/build_cluster_map.py";
     statusEl.classList.add("err");
     if (location.protocol === "file:") {
       statusEl.textContent += "  (y serví con  python -m http.server -d viz/clusters)";
@@ -830,7 +830,7 @@ async function boot() {
   try {
     imageryMeta = await fetchJSON(DATA_DIR + "imagery/index.json");
   } catch (e) {
-    imageryMeta = {};   // opcional: scripts/fetch_zone_imagery.py no corrido aún
+    imageryMeta = {};   // opcional: scripts/imagenes/fetch_zone_imagery.py no corrido aún
   }
   if (Object.keys(imageryMeta).length) {
     $("#imgWrap").hidden = false;

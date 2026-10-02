@@ -1,11 +1,11 @@
 """Tipología de trayectorias sobre los embeddings z de land2vec v2.
 
-Carga los embeddings ya extraídos (`data/embeddings_<zona>.zip`, ver
-`scripts/extract_embeddings.py`), ofrece un despacho común a cuatro familias de
+Carga los embeddings ya extraídos (`data/v2/embeddings_<zona>.zip`, ver
+`scripts/modelo/extract_embeddings.py`), ofrece un despacho común a cuatro familias de
 clustering (KMeans, GaussianMixture, HDBSCAN, aglomerativo/jerárquico) sobre
 distintos preprocesados de `z`, y calcula el conjunto de métricas con el que
-`scripts/tune_clustering.py` elige una configuración -- ver
-`docs/v2_autoencoder_training.md` sección 7.2 para el criterio completo.
+`scripts/clustering/tune_clustering.py` elige una configuración -- ver
+`docs/v2/v2_autoencoder_training.md` sección 7.2 para el criterio completo.
 
 Todas las métricas de un `ClusterRunResult` se calculan en el mismo espacio en
 que se ajustó el clustering (`space`), salvo `prototype_fidelity`, que siempre
@@ -35,6 +35,8 @@ from __future__ import annotations
 import gc
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from . import paths as P
 from typing import Callable, Literal
 
 import numpy as np
@@ -122,22 +124,22 @@ class Pool:
 
 
 def load_zone_seqs(zone: str, data_dir: Path) -> pd.DataFrame:
-    return pd.read_csv(data_dir / f"id_seqs_text_2000_2022_{zone}.zip")
+    return pd.read_csv(P.seqs_file(zone, data_dir))
 
 
 def load_zone_coords(zone: str, data_dir: Path) -> pd.DataFrame:
-    return pd.read_csv(data_dir / f"lat_long_df_{zone}.zip", usecols=["ID", "latitude", "longitude"])
+    return pd.read_csv(P.latlon_file(zone, data_dir), usecols=["ID", "latitude", "longitude"])
 
 
 def load_zone_embeddings(zone: str, data_dir: Path) -> pd.DataFrame:
-    return pd.read_csv(data_dir / f"embeddings_{zone}.zip")
+    return pd.read_csv(P.embeddings_file(zone, data_dir))
 
 
 def load_pool(zones: list[str], data_dir: Path) -> Pool:
     """Concatena secuencias + embeddings z + coordenadas de varias zonas.
 
     Valida, por zona, que las tres fuentes tengan el mismo largo y el mismo
-    `ID` en el mismo orden -- `scripts/extract_embeddings.py` preserva el
+    `ID` en el mismo orden -- `scripts/modelo/extract_embeddings.py` preserva el
     orden posicional del CSV de secuencias al escribir los embeddings, pero
     nada impide que una fuente se regenere de forma independiente y quede
     desalineada; sin este chequeo eso pasaría silencioso.
@@ -389,7 +391,7 @@ def assign_pool(
     distancia al centroide asignado permite marcar como "sin tipificar" (`-1`)
     los puntos que caen lejos de todo cluster, para que el mapa del pool no
     sobrestime la cobertura frente al ruido honesto de HDBSCAN (ver
-    `refit_and_save` en scripts/tune_clustering.py y docs §7.2)."""
+    `refit_and_save` en scripts/clustering/tune_clustering.py y docs §7.2)."""
     if return_dist:
         return assign_by_centroid_with_dist(transform.apply(raw_z), centers)
     return assign_by_centroid(transform.apply(raw_z), centers)
@@ -472,7 +474,7 @@ def prototype_fidelity(
     comparar, posición a posición, la secuencia real de cada miembro contra la
     trayectoria prototípica de su cluster (el centroide en z crudo, decodificado
     con `model.decode()`). Ponderado por tamaño de cluster. Reusa el criterio de
-    macro F1 restringido a soporte pendiente en docs/v2_autoencoder_training.md
+    macro F1 restringido a soporte pendiente en docs/v2/v2_autoencoder_training.md
     §8 (ahí para reconstrucción por zona, acá para clustering)."""
     encoded = np.stack([Tokenizer.encode(s) for s in seqs])  # (N, 23)
     uniq = sorted(int(l) for l in set(labels.tolist()) if l != -1)

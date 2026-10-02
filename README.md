@@ -18,8 +18,17 @@ más abajo.
 
 ## Estructura del repo
 
+El repo tiene tres ejercicios: **v1** (`GPTDecoder`, predicción del próximo estado),
+**v2** (`TrajectoryAutoencoder` + tipologías, el borrador de paper actual) y
+**autoencoder_v3** (reformulación descriptiva: compresión y descripción de trayectorias,
+ver [`docs/autoencoder_v3/plan.md`](docs/autoencoder_v3/plan.md)). El código es uno
+solo (`src/` y `scripts/`); los productos de cada ejercicio viven en su subcarpeta de
+`data/`, `models/`, `notebooks/` y `docs/`. Todas las rutas están centralizadas en
+`src/land2vec/paths.py`.
+
 ```
 src/land2vec/
+  paths.py      # rutas del repo (ROOT, DATA, MODEL_V2, seqs_file(), clusters_file(), …)
   config.py     # dataclass Config con hiperparámetros del modelo/entrenamiento
   tokenizer.py  # Tokenizer estático: vocabulario fijo de estados de uso del suelo
   dataset.py    # Datasets de PyTorch (ventaneado y no ventaneado) + carga de CSV/zip
@@ -29,17 +38,38 @@ src/land2vec/
   cluster.py    # Pool de trayectorias por zona, submuestreo de constantes, asignación por centroide
   seqdist.py    # Distancias entre secuencias (Optimal Matching, Hamming)
   typology.py   # Firma descriptiva y etiqueta automática por cluster (STATE_COLORS, GLOSSES, auto_label)
-scripts/        # tune_clustering, describe_clusters, build_cluster_map, build_crossrun,
-                #   check_cluster_palette, plot_process_maps, plot_zone_atlas, build_eval_zones,
-                #   assign_train_clusters, fetch_zone_imagery_gee, eval_desmonte,
-                #   extract_embeddings, train_autoencoder …
+  zones.py, geo.py
+scripts/                  # se corren desde la raíz del repo: python scripts/<etapa>/<script>.py
+  datos/        # build_eval_zones, build_desmonte_labels
+  modelo/       # train_autoencoder, extract_embeddings
+  clustering/   # tune_clustering, assign_train_clusters, describe_clusters, check_typology, analisis_estabilidad
+  validacion/   # eval_desmonte
+  viz/          # build_cluster_map, build_crossrun, plot_*, check_cluster_palette, check_crossrun_viewer.js
+  imagenes/     # fetch_zone_imagery_gee (+ alternativas pausadas), import_manual_imagery, make_zone_kml
+  setup_venv.sh
+data/
+  landcover_timeseries_2000-2022.nc   # netCDF fuente ESA CCI (Git LFS)
+  geo/          # provincias, Sudamérica, polígonos de desmonte (crudos)
+  zonas/        # id_seqs_text_2000_2022_<zona>.zip + lat_long_df_<zona>.zip; zonas/full/ sin submuestrear (no versionado)
+  desmonte/     # etiquetas de referencia por píxel (desmonte_px*, desmonte_poly_px*)
+  v1/           # seqs_short.csv, test_sample_*.zip
+  v2/           # embeddings_<zona>.zip, clusters_<set><sufijo>.zip
+  autoencoder_v3/
+models/
+  v1/           # full_model, balanced_1, 2026-05-20, first-test.pt
+  v2/           # autoencoder_v2, sweep_dim, sweep_secondary, cluster_v2
+  autoencoder_v3/
+notebooks/
+  v1/           # prueba_*, test_*, 3_concat_extract_nc_files (Colab)
+  v2/           # eval_embeddings_v2, eval_ood_zones, cluster_evaluation, desmonte_validation
+  v3/
+docs/
+  v2/           # paper_metodologia, v2_autoencoder_training, analisis_estabilidad, reporte_auditoria
+  autoencoder_v3/  # plan
 viz/
   typology/     # Navegador estático de tipologías (cómo es cada cluster)
   clusters/     # Visor Leaflet del mapa de clusters (dónde cae cada cluster) + factordata-logo
   crossrun/     # Visor de concordancia entre corridas (si el cluster sobrevive al cambio de corrida)
-data/           # Secuencias de entrenamiento y de test (CSV/zip) + netCDF fuente (Git LFS)
-models/         # Checkpoints entrenados (config.json + model.pt + train_data.csv)
-notebooks/      # Notebooks de experimentación ("pruebas") en Google Colab
 ```
 
 ## Instalación
@@ -116,12 +146,12 @@ El vocabulario de estados (`land2vec.tokenizer.Tokenizer.VOCAB`) es:
 | `Wa`    | agua (water) |
 | `Nd`    | sin dato (no data) |
 
-Archivos en `data/`:
+Archivos de la v1 (el layout completo de `data/` está en [Estructura del repo](#estructura-del-repo)):
 
-- `id_seqs_text_2000_2022_chaco_santiago_frontier.zip` — dataset principal de entrenamiento (Chaco, Santiago del Estero, frontera).
-- `id_seqs_text_2000_2022_test_set.zip` — set de test held-out, usado en la evaluación final.
-- `test_sample_0/1/2.zip` — muestras adicionales de test.
-- `seqs_short.csv` — muestra chica (10 filas) usada para pruebas rápidas/debug.
+- `data/zonas/id_seqs_text_2000_2022_chaco_santiago_frontier.zip` — dataset principal de entrenamiento (Chaco, Santiago del Estero, frontera).
+- `data/zonas/id_seqs_text_2000_2022_test_set.zip` — set de test held-out, usado en la evaluación final.
+- `data/v1/test_sample_0/1/2.zip` — muestras adicionales de test.
+- `data/v1/seqs_short.csv` — muestra chica (10 filas) usada para pruebas rápidas/debug.
 
 ## Extracción desde el netCDF fuente (`land2vec.extract`)
 
@@ -135,7 +165,7 @@ argentino, Uruguay, buena parte de Chile y el sur de Bolivia/Paraguay/Brasil).
 El proceso original de extracción (recortar el netCDF a una región,
 aplanar píxeles a una grilla con `ID`, mapear los códigos numéricos de
 `lccs_class` a los tokens del vocabulario) está documentado en
-`src/3_concat_extract_nc_files.ipynb` y reimplementado como funciones
+`notebooks/v1/3_concat_extract_nc_files.ipynb` y reimplementado como funciones
 reutilizables en `land2vec.extract`:
 
 ```python
@@ -147,14 +177,14 @@ ds = load_landcover_dataset()  # data/landcover_timeseries_2000-2022.nc por defe
 lat_long_df, seqs_df = extract_zone(ds, bbox=(-57.6, -28.6, -57.4, -28.4))
 
 save_zone_csvs(lat_long_df, seqs_df, output_dir=Path("data"), zone_name="ibera")
-# -> data/id_seqs_text_2000_2022_ibera.zip, data/lat_long_df_ibera.zip
+# -> data/zonas/id_seqs_text_2000_2022_ibera.zip, data/zonas/lat_long_df_ibera.zip
 ```
 
 `extract_zone()` reproduce exactamente `id_seqs_text_2000_2022_chaco_santiago_frontier.zip`
 al recortar con el mismo bbox (validado píxel a píxel contra el dataset de
 entrenamiento). También incluye `drop_constant_sequences()`, para descartar
 píxeles cuya secuencia no cambia en todo el período (p. ej. agua
-permanente), como hace `src/3_concat_extract_nc_files.ipynb` para el
+permanente), como hace `notebooks/v1/3_concat_extract_nc_files.ipynb` para el
 dataset de entrenamiento.
 
 `land2vec.dataset.load_data()` carga cualquiera de estos archivos y
@@ -170,8 +200,8 @@ devuelve:
 
 ![Zonas de entrenamiento y de test](imgs/train_test_zones.png)
 
-Mapa generado con `scripts/plot_train_test_zones.py` a partir de
-`data/lat_long_df_*.zip` (coordenadas por parcela) y los límites de
+Mapa generado con `scripts/viz/plot_train_test_zones.py` a partir de
+`data/zonas/lat_long_df_*.zip` (coordenadas por parcela) y los límites de
 Argentina/provincias en `data/geo/` (Natural Earth). El área de estudio
 cae en Chaco y Santiago del Estero; el recuadro marrón en el panel derecho
 muestra dónde se superponen las parcelas de entrenamiento y de test.
@@ -197,15 +227,15 @@ guardan/cargan con `save_config`/`save_model` y `load_config`/`load_model`
 (`land2vec.utils`): una carpeta por modelo en `models/` (`config.json` +
 `model.pt` + `train_data.csv`).
 
-El modelo final, `models/full_model/` (795,520 parámetros), sale de una
+El modelo final, `models/v1/full_model/` (795,520 parámetros), sale de una
 cadena de corridas en `notebooks/` (pensadas para Google Colab):
 
 | Notebook | Qué prueba | Modelo resultante |
 |---|---|---|
 | `prueba_1.ipynb` | Exploración inicial + primer entrenamiento con dataset ventaneado (`window=block_size`) | `models/patience_6` (no incluido) |
-| `prueba_2.ipynb` | Segunda iteración, mismo esquema ventaneado | `models/2026-05-20` |
-| `prueba_3.ipynb` | Dataset **no ventaneado** (secuencia completa por parcela) y balanceado; matriz de confusión | `models/balanced_1` |
-| `test_1.ipynb` | Retoma `balanced_1`, sigue entrenando y evalúa contra el test set held-out | `models/full_model` (final) |
+| `prueba_2.ipynb` | Segunda iteración, mismo esquema ventaneado | `models/v1/2026-05-20` |
+| `prueba_3.ipynb` | Dataset **no ventaneado** (secuencia completa por parcela) y balanceado; matriz de confusión | `models/v1/balanced_1` |
+| `test_1.ipynb` | Retoma `balanced_1`, sigue entrenando y evalúa contra el test set held-out | `models/v1/full_model` (final) |
 
 No hay tests automatizados (`pytest` u otro framework): la validación es
 exploratoria en estos notebooks, mirando accuracy, F1 macro y matrices de
@@ -220,7 +250,7 @@ import torch
 from land2vec.tokenizer import Tokenizer
 from land2vec.utils import load_config, load_model
 
-target_folder = Path("models/full_model")
+target_folder = Path("models/v1/full_model")
 config = load_config(target_folder)
 model = load_model(config, target_folder)  # ya queda en eval() y en config.device
 
@@ -240,8 +270,8 @@ print(Tokenizer.decode(generated[0]))
 
 ### Resultados in-domain
 
-> ⚠️ **Preliminares** (`test_2.ipynb`, `models/full_model` sobre
-> `data/id_seqs_text_2000_2022_test_set.zip`). Sujetos a revisión con más
+> ⚠️ **Preliminares** (`test_2.ipynb`, `models/v1/full_model` sobre
+> `data/zonas/id_seqs_text_2000_2022_test_set.zip`). Sujetos a revisión con más
 > datos y validaciones adicionales.
 
 Sobre el test set held-out del área de estudio (Chaco/Santiago del
@@ -250,9 +280,9 @@ F1 macro en validación durante el entrenamiento: 0.9886).
 
 ### Evaluación out-of-domain
 
-`notebooks/eval_ood_zones.ipynb` evalúa el mismo modelo sobre 7 zonas de
+`notebooks/v2/eval_ood_zones.ipynb` evalúa el mismo modelo sobre 7 zonas de
 Argentina geográficamente disjuntas del área de estudio
-(`scripts/build_eval_zones.py`, ver `land2vec.extract`), cada una dominada
+(`scripts/datos/build_eval_zones.py`, ver `land2vec.extract`), cada una dominada
 por una modalidad de uso de suelo distinta:
 
 | Zona | Mezcla dominante | Accuracy | Macro F1 |
@@ -270,13 +300,13 @@ El accuracy no detecta la falla de generalización (se mantiene alto porque
 la clase mayoritaria en casi cualquier parcela es "sin cambio interanual");
 el macro F1 cae entre 9 y 43 puntos porcentuales respecto al 0.9005
 in-domain, más severo en `puna_noa` (única zona con peso real de la clase
-`B`, 0% en entrenamiento). Ver `notebooks/eval_ood_zones.ipynb` para
+`B`, 0% en entrenamiento). Ver `notebooks/v2/eval_ood_zones.ipynb` para
 matrices de confusión, accuracy por posición y el detalle completo.
 
 ## v2: embeddings comprimidos (`TrajectoryAutoencoder`)
 
-Modelo final entrenado (`models/autoencoder_v2/`) -- ver
-[`docs/v2_autoencoder_training.md`](docs/v2_autoencoder_training.md) para
+Modelo final entrenado (`models/v2/autoencoder_v2/`) -- ver
+[`docs/v2/v2_autoencoder_training.md`](docs/v2/v2_autoencoder_training.md) para
 el detalle completo (arquitectura, los dos barridos de tuneo con sus
 resultados, zonas de entrenamiento con mapa, y las curvas de la corrida
 final).
@@ -312,8 +342,8 @@ despacha según `config.arch`:
 ```python
 from land2vec.utils import load_config, load_model
 
-config = load_config("models/autoencoder_v2")
-model = load_model(config, "models/autoencoder_v2")  # TrajectoryAutoencoder
+config = load_config("models/v2/autoencoder_v2")
+model = load_model(config, "models/v2/autoencoder_v2")  # TrajectoryAutoencoder
 z = model.encode(tokens)  # (B, embed_dim)
 ```
 
@@ -322,7 +352,7 @@ z = model.encode(tokens)  # (B, embed_dim)
 Adrede **distintos** de las 7 zonas de evaluación out-of-domain (que quedan
 intactas como benchmark held-out): Chaco-Santiago original + 7 zonas nuevas
 en las mismas ecorregiones, construidas con
-`scripts/build_eval_zones.py --zone-set train`:
+`scripts/datos/build_eval_zones.py --zone-set train`:
 
 | Zona train | n (filas) | Mezcla dominante (post-submuestreo) | Misma ecorregión que (zona de eval) |
 |---|---:|---|---|
@@ -336,7 +366,7 @@ en las mismas ecorregiones, construidas con
 
 (Porcentajes calculados sobre las secuencias tal como quedaron después del
 submuestreo de constantes -- lo que el modelo efectivamente ve. Detalle
-completo, con mapa, en `docs/v2_autoencoder_training.md`.)
+completo, con mapa, en `docs/v2/v2_autoencoder_training.md`.)
 
 Todas verificadas geográficamente disjuntas entre sí, del área de
 entrenamiento original y de las 7 zonas de evaluación
@@ -359,15 +389,15 @@ de lo mismo".
 > Para el **entrenamiento y el clustering esto es correcto y deliberado** --
 > el clustering, además, ni siquiera las usa: se ajusta sobre el pool dinámico
 > de las 7 zonas de **evaluación**, que están completas al 100%
-> (`docs/paper_metodologia.md` §4.2). Pero para **dibujar mapas** el recorte se
+> (`docs/v2/paper_metodologia.md` §4.2). Pero para **dibujar mapas** el recorte se
 > filtraba a una etapa donde no correspondía: el fondo de trayectorias
 > constantes de esas 7 zonas salía casi vacío (`pampa_deprimida`: 105 píxeles
 > constantes de 388.201 reales).
 >
-> Por eso existe **`data/zones_full/`**: las mismas 7 zonas re-extraídas del
+> Por eso existe **`data/zonas/full/`**: las mismas 7 zonas re-extraídas del
 > netCDF **sin** el tope de constantes, en un directorio aparte para no pisar
 > los archivos con los que se entrenó el encoder (las 400.460 filas
-> documentadas en `docs/v2_autoencoder_training.md` §4.2). Se usa
+> documentadas en `docs/v2/v2_autoencoder_training.md` §4.2). Se usa
 > **exclusivamente** para regenerar el fondo cartográfico -- ver "Cobertura
 > completa del fondo" en `viz/clusters/README.md`. **No lo uses para
 > entrenar**: cambiaría la composición del dataset y rompería la
@@ -377,7 +407,7 @@ de lo mismo".
 
 ![Zonas de entrenamiento (Chaco-Santiago + 7 nuevas) y de evaluación out-of-domain (7, held-out)](imgs/v2_train_eval_zones.png)
 
-Generado con `scripts/plot_v2_zones.py` a partir de las coordenadas reales
+Generado con `scripts/viz/plot_v2_zones.py` a partir de las coordenadas reales
 por píxel. Las 7 zonas de evaluación (azul) son las mismas que ya se usan
 como benchmark de la v1 y **nunca se tocan para entrenar la v2**; las 7
 nuevas de entrenamiento (verde) están en las mismas ecorregiones, con
@@ -393,31 +423,31 @@ fija del resto:
 
 ```bash
 # 1) barrido primario: dimensión del embedding, d en {4,8,12,16,32}
-python scripts/train_autoencoder.py --sweep dim --out-dir models/sweep_dim
+python scripts/modelo/train_autoencoder.py --sweep dim --out-dir models/v2/sweep_dim
 
 # 2) barrido secundario (lr, n_layer, pooling, pesos de clase), con d=8 fijo
-python scripts/train_autoencoder.py --sweep secondary --embed-dim 8 --out-dir models/sweep_secondary
+python scripts/modelo/train_autoencoder.py --sweep secondary --embed-dim 8 --out-dir models/v2/sweep_secondary
 
 # 3) modelo final con la config ganadora
-python scripts/train_autoencoder.py --embed-dim 8 --n-layer 2 --pooling query --out models/autoencoder_v2
+python scripts/modelo/train_autoencoder.py --embed-dim 8 --n-layer 2 --pooling query --out models/v2/autoencoder_v2
 ```
 
-**Barrido primario** (`models/sweep_dim/summary.csv`): `d=8` fue el codo
+**Barrido primario** (`models/v2/sweep_dim/summary.csv`): `d=8` fue el codo
 de la curva (macro F1 de reconstrucción 0.8939, a solo 0.0044 del control
 no-compresivo `d=32`=0.8983).
 
-**Barrido secundario** (`models/sweep_secondary/summary.csv`, con `d=8`
+**Barrido secundario** (`models/v2/sweep_secondary/summary.csv`, con `d=8`
 fijo): `n_layer_2_query` (`lr=1e-3`, `n_layer=2`, `pooling=query`) empató
 en la práctica con la mejor corrida (`lr_bajo`, 0.8989 vs. 0.8985) con la
 mitad de las capas y la mitad del tiempo por época -- elegida por ese
 motivo, no por ser matemáticamente la mejor (ver
-`docs/v2_autoencoder_training.md` para la nota completa sobre por qué
+`docs/v2/v2_autoencoder_training.md` para la nota completa sobre por qué
 comparar corridas con distinto número de épocas no es del todo justo).
 
-**Modelo final** (`models/autoencoder_v2/`): macro F1 0.8971, accuracy
+**Modelo final** (`models/v2/autoencoder_v2/`): macro F1 0.8971, accuracy
 0.9993, `early stopping` en la época 22 (mejor en la 17), 798,216
 parámetros. Detalle completo, con curvas de entrenamiento, en
-[`docs/v2_autoencoder_training.md`](docs/v2_autoencoder_training.md).
+[`docs/v2/v2_autoencoder_training.md`](docs/v2/v2_autoencoder_training.md).
 
 Cada corrida guarda `config.json` + `model.pt` + `train_data.csv` (misma
 convención que los modelos de la v1).
@@ -425,7 +455,7 @@ convención que los modelos de la v1).
 ### Evaluación de embeddings (`eval_embeddings_v2.ipynb`)
 
 Ejecutado sobre las 7 zonas de evaluación out-of-domain -- ver
-[`docs/v2_autoencoder_training.md`](docs/v2_autoencoder_training.md#7-resultados-de-la-evaluación-de-embeddings-eval_embeddings_v2ipynb)
+[`docs/v2/v2_autoencoder_training.md`](docs/v2/v2_autoencoder_training.md#7-resultados-de-la-evaluación-de-embeddings-eval_embeddings_v2ipynb)
 para el detalle completo (matrices de confusión, mapa de clusters, tabla
 de probing, PCA). Resumen:
 
@@ -434,7 +464,7 @@ de probing, PCA). Resumen:
   vocabulario aparecen en cada zona (no por diferencias reales de calidad
   -- ver el detalle en el doc), así que no es directamente comparable
   entre zonas.
-- **Clustering** (`scripts/tune_clustering.py`, barrido de 276 configs sobre
+- **Clustering** (`scripts/clustering/tune_clustering.py`, barrido de 276 configs sobre
   KMeans/GMM/HDBSCAN/jerárquico x preprocesado de `z` (crudo/estandarizado/L2),
   elegidas por silhouette + estabilidad por bootstrap + fidelidad del
   prototipo decodificado + coherencia espacial + un tope de ruido para no
@@ -453,7 +483,7 @@ de probing, PCA). Resumen:
   vs. 0.9926 del one-hot) -- el costo de compresión más claro del
   análisis.
 - **Interpretación de las tipologías** (`land2vec.typology` + `land2vec.seqdist`,
-  `scripts/describe_clusters.py`, notebook §5 + navegador estático
+  `scripts/clustering/describe_clusters.py`, notebook §5 + navegador estático
   `viz/typology/index.html`): batería descriptiva estilo TraMineR sobre las
   secuencias de cada uno de los 344 clusters -- cronograma, secuencia modal,
   tasas de transición, índices de complejidad -- más un etiquetado automático
@@ -463,19 +493,19 @@ de probing, PCA). Resumen:
   Hamming), pseudo-R² de discrepancia, ASW en espacio de secuencias y secuencias
   representativas (`seqrplot`). El navegador y sus datos son **solo locales por
   ahora** (`typology_browser.json` trae trayectorias textuales, no se versiona --
-  ver `viz/typology/README.md`). Detalle: `docs/v2_autoencoder_training.md` §7.5.
+  ver `viz/typology/README.md`). Detalle: `docs/v2/v2_autoencoder_training.md` §7.5.
 
   ```bash
-  python scripts/describe_clusters.py         # genera viz/typology/typology_browser.json (local, gitignoreado)
+  python scripts/clustering/describe_clusters.py         # genera viz/typology/typology_browser.json (local, gitignoreado)
   python -m http.server -d viz/typology 8000  # -> http://localhost:8000
   ```
-- **Mapa espacial de las clusterizaciones** (`scripts/build_cluster_map.py` +
+- **Mapa espacial de las clusterizaciones** (`scripts/viz/build_cluster_map.py` +
   visor Leaflet `viz/clusters/index.html`): dónde cae cada cluster sobre el mapa
   real, con un selector para alternar entre las 7 zonas de evaluación OOD y las
   8 de entrenamiento (in-sample para el encoder), export de la vista a PNG/JPG.
   Solo local -- ver
   [§ Visor del mapa de clusters](#visor-del-mapa-de-clusters-vizclusters) más abajo.
-- **Concordancia entre corridas** (`scripts/build_crossrun.py` + visor
+- **Concordancia entre corridas** (`scripts/viz/build_crossrun.py` + visor
   `viz/crossrun/index.html`): si un píxel cambia de grupo al cambiar de
   clusterización. Diagrama aluvial entre cualquier par de las 6 corridas
   (selectores de origen y destino), a nivel de cluster o de los 10 procesos
@@ -491,15 +521,15 @@ de probing, PCA). Resumen:
   solo-stdlib: calcula ARI/NMI a mano desde la contingencia, sin sklearn.
 
   ```bash
-  python scripts/build_crossrun.py             # genera viz/crossrun/crossrun.json (~196 KB)
+  python scripts/viz/build_crossrun.py             # genera viz/crossrun/crossrun.json (~196 KB)
   python -m http.server -d viz/crossrun 8002   # -> http://localhost:8002
   ```
-- **Mapas estáticos de pérdida de cobertura** (`scripts/plot_process_maps.py`):
+- **Mapas estáticos de pérdida de cobertura** (`scripts/viz/plot_process_maps.py`):
   6 PNG (uno por corrida) faceteados por región, con las trayectorias de
   deforestación, degradación forestal y urbanización coloreadas por proceso.
-  Reusa la clasificación de `build_cluster_map.py`. `python scripts/plot_process_maps.py`
+  Reusa la clasificación de `build_cluster_map.py`. `python scripts/viz/plot_process_maps.py`
   -> `imgs/process_maps_<corrida>_<set>.png`.
-- **Atlas por zona** (`scripts/plot_zone_atlas.py`): un PNG de 3 paneles por
+- **Atlas por zona** (`scripts/viz/plot_zone_atlas.py`): un PNG de 3 paneles por
   zona (satelital 2000 · satelital 2022 · píxeles clusterizados coloreados por
   proceso sobre el fondo de trayectorias constantes) -- el mismo contenido del
   visor con "color: proceso" + fondo de constantes activados y el ruido
@@ -510,9 +540,9 @@ de probing, PCA). Resumen:
   seis corridas quedan igual de legibles aunque `fina` tenga 118 clusters.
 
   ```bash
-  python scripts/plot_zone_atlas.py                    # 15 zonas × media/HDBSCAN y media/paramétrico
-  python scripts/plot_zone_atlas.py --corrida fine coarse_parametric
-  python scripts/plot_zone_atlas.py --zonas yungas pampa_deprimida --dpi 200
+  python scripts/viz/plot_zone_atlas.py                    # 15 zonas × media/HDBSCAN y media/paramétrico
+  python scripts/viz/plot_zone_atlas.py --corrida fine coarse_parametric
+  python scripts/viz/plot_zone_atlas.py --zonas yungas pampa_deprimida --dpi 200
   ```
 
   Salida: `imgs/zone_atlas/<corrida>/<zona>.png`, un subdirectorio por corrida
@@ -520,7 +550,7 @@ de probing, PCA). Resumen:
   `coarse_parametric`), así que no se pisan entre sí. Necesita numpy +
   matplotlib (local, no corre en el contenedor).
 - **Validación externa contra polígonos de desmonte** (`src/land2vec/geo.py` +
-  `scripts/build_desmonte_labels.py` + `scripts/eval_desmonte.py`): cruza las 6
+  `scripts/datos/build_desmonte_labels.py` + `scripts/validacion/eval_desmonte.py`): cruza las 6
   tipologías contra 216.285 polígonos de desmonte del Chaco Seco (Colección
   13.0, monitoreodesmonte.com.ar, digitalización manual 1976-2024) -- la
   primera validación contra un dato de terceros, no solo interna al espacio
@@ -532,24 +562,24 @@ de probing, PCA). Resumen:
   recomendación interna de §5.5 (Media/HDBSCAN) -- discrepancia esperada entre
   selección por métricas internas y desempeño contra un fenómeno observado.
   Detalle completo:
-  [`docs/paper_metodologia.md` §5.8](docs/paper_metodologia.md#58-validación-contra-datos-independientes-de-desmonte),
-  bitácora de la corrida en `docs/v2_autoencoder_training.md` §9, tablas y
-  figuras ya ejecutadas en `notebooks/desmonte_validation.ipynb`.
+  [`docs/v2/paper_metodologia.md` §5.8](docs/v2/paper_metodologia.md#58-validación-contra-datos-independientes-de-desmonte),
+  bitácora de la corrida en `docs/v2/v2_autoencoder_training.md` §9, tablas y
+  figuras ya ejecutadas en `notebooks/v2/desmonte_validation.ipynb`.
 
   ```bash
-  python scripts/assign_train_clusters.py --group all --max-constant-fraction 1.0 --out-tag _full
-  python scripts/build_desmonte_labels.py    # cruza las 3 zonas con polígonos
-  python scripts/eval_desmonte.py --n-boot 999
-  jupyter nbconvert --to notebook --execute --output desmonte_validation.ipynb notebooks/desmonte_validation.ipynb
+  python scripts/clustering/assign_train_clusters.py --group all --max-constant-fraction 1.0 --out-tag _full
+  python scripts/datos/build_desmonte_labels.py    # cruza las 3 zonas con polígonos
+  python scripts/validacion/eval_desmonte.py --n-boot 999
+  jupyter nbconvert --to notebook --execute --output desmonte_validation.ipynb notebooks/v2/desmonte_validation.ipynb
   ```
 - **Próximo paso**: macro F1 restringido a clases con soporte por
-  subconjunto (ver `docs/v2_autoencoder_training.md` sección 8).
+  subconjunto (ver `docs/v2/v2_autoencoder_training.md` sección 8).
 
 Extraer embeddings de una zona ya construida, con el modelo final:
 
 ```bash
-python scripts/extract_embeddings.py --model models/autoencoder_v2 --zone ibera
-# -> data/embeddings_ibera.zip (columnas ID, z0..z7)
+python scripts/modelo/extract_embeddings.py --model models/v2/autoencoder_v2 --zone ibera
+# -> data/v2/embeddings_ibera.zip (columnas ID, z0..z7)
 ```
 
 ### Visor del mapa de clusters (`viz/clusters/`)
@@ -559,7 +589,7 @@ cada cluster** de las 6 clusterizaciones de la v2 sobre el mapa real. Un
 selector **Conjunto de zonas** alterna entre las **7 zonas de evaluación**
 out-of-domain (el benchmark) y las **8 zonas de entrenamiento** (in-sample
 para el encoder, out-of-sample para el clustering -- nunca se mezclan en la
-misma vista, ver el detalle y el paso extra de `scripts/assign_train_clusters.py`
+misma vista, ver el detalle y el paso extra de `scripts/clustering/assign_train_clusters.py`
 en `viz/clusters/README.md`). Complementa al navegador de tipologías
 (`viz/typology/`): aquel responde *cómo es* cada cluster (cronograma, secuencia
 modal, índices); éste, *dónde está*.
@@ -567,8 +597,8 @@ modal, índices); éste, *dónde está*.
 **Cómo activarlo**
 
 ```bash
-python scripts/describe_clusters.py          # (si falta) viz/typology/typology_browser.json — etiquetas y proceso por cluster
-python scripts/build_cluster_map.py          # genera viz/clusters/data/*.{json,png} (local, gitignoreado)
+python scripts/clustering/describe_clusters.py          # (si falta) viz/typology/typology_browser.json — etiquetas y proceso por cluster
+python scripts/viz/build_cluster_map.py          # genera viz/clusters/data/*.{json,png} (local, gitignoreado)
 python -m http.server -d viz/clusters 8001   # -> http://localhost:8001
 ```
 
@@ -577,9 +607,9 @@ satelital), hace falta antes extraer sus embeddings y asignarles cluster --
 ver "Zonas de entrenamiento" en `viz/clusters/README.md`.
 
 `build_cluster_map.py` solo usa la librería estándar (`csv`/`zipfile`/`json`/`zlib`)
--- no necesita pandas ni torch. Cruza `data/clusters_*.zip` (etiqueta de cluster
-por parcela, columnas `ID,zone,cluster`), `data/lat_long_df_*.zip` (coordenadas,
-`ID,latitude,longitude`) y `data/id_seqs_text_2000_2022_*.zip` (trayectoria cruda
+-- no necesita pandas ni torch. Cruza `data/v2/clusters_*.zip` (etiqueta de cluster
+por parcela, columnas `ID,zone,cluster`), `data/zonas/lat_long_df_*.zip` (coordenadas,
+`ID,latitude,longitude`) y `data/zonas/id_seqs_text_2000_2022_*.zip` (trayectoria cruda
 por parcela — para el popup y el fondo de constantes) por la clave `(zone, ID)`
 -- el `ID` es el índice posicional *por zona*, no es único entre zonas (ver
 `land2vec.cluster.load_zone_coords`). Salida:
@@ -592,7 +622,7 @@ por parcela — para el popup y el fondo de constantes) por la clave `(zone, ID)
 
 Flags: `--only <suffix>` procesa una sola granularidad/familia, `--precision N`
 recorta decimales de lat/lon (5 ≈ 1 m, 4 ≈ 11 m), `--no-constants` /
-`--only-constants` para el raster de fondo. `scripts/check_cluster_palette.py`
+`--only-constants` para el raster de fondo. `scripts/viz/check_cluster_palette.py`
 imprime la uniformidad perceptual (ΔE) de las paletas de proceso y de fondo.
 
 Abierto con `file://` el visor no puede hacer `fetch` de los JSON: hay que
@@ -602,7 +632,7 @@ servirlo por HTTP (el comando de arriba).
 
 - **Corrida**: granularidad (`fina` / `media` / `gruesa`) × familia
   (`HDBSCAN` / `paramétrico`) -- las 6 celdas de la matriz de
-  `tune_clustering.py --select` (ver `docs/v2_autoencoder_training.md` §7.2).
+  `tune_clustering.py --select` (ver `docs/v2/v2_autoencoder_training.md` §7.2).
 - **Set de etiquetas** -- los dos archivos que deja `--select` por celda:
   - `dinámico · ajuste` (`clusters_dynamic*.zip`): las ~107k secuencias con
     transición sobre las que se **ajustó** el clustering (in-sample).
@@ -627,7 +657,7 @@ servirlo por HTTP (el comando de arriba).
   del cambio (`anio_cambio`): cambio reciente → claro y pálido, cambio viejo →
   oscuro y saturado. Los colores se generan en **OKLCh** para que la rampa
   temporal de cada proceso tenga pasos perceptualmente parejos (se valida con
-  `scripts/check_cluster_palette.py` contra la métrica de
+  `scripts/viz/check_cluster_palette.py` contra la métrica de
   <https://color-analyzer.streamlit.app/>). La clasificación es determinista
   (`classify_process` en `build_cluster_map.py`, derivada de `modal_seq` +
   `forma` de `viz/typology/typology_browser.json`). Los 10 procesos:
@@ -676,7 +706,7 @@ servirlo por HTTP (el comando de arriba).
   procesos: cada estado comparte el hue de su proceso análogo (bosque = verde
   como "regeneración de bosque"; agua = azul como "dinámica hídrica"; urbano =
   magenta como "urbanización") pero mucho más pálido, para que el fondo retroceda
-  y los clusters resalten. Se genera directo de `data/id_seqs_text_*` +
+  y los clusters resalten. Se genera directo de `data/zonas/id_seqs_text_*` +
   `lat_long_df_*`, sin re-correr el modelo. Sirve de contexto espacial detrás de
   los clusters y hace visible por qué el `−1` del set `pool` es sobre todo
   cobertura estable.
@@ -718,15 +748,15 @@ detalle en `viz/clusters/README.md`.
 ## Modelos entrenados incluidos
 
 **v1 (`GPTDecoder`)**:
-- `models/full_model/` — modelo final, entrenado sobre el dataset completo y evaluado en el test set held-out (ver `test_1.ipynb`).
-- `models/balanced_1/` — modelo entrenado sobre un dataset balanceado, con secuencias completas sin ventaneo (ver `prueba_3.ipynb`).
-- `models/2026-05-20/` — checkpoint intermedio de una corrida anterior (ver `prueba_2.ipynb`).
-- `models/first-test.pt` — checkpoint suelto de una prueba temprana.
+- `models/v1/full_model/` — modelo final, entrenado sobre el dataset completo y evaluado en el test set held-out (ver `test_1.ipynb`).
+- `models/v1/balanced_1/` — modelo entrenado sobre un dataset balanceado, con secuencias completas sin ventaneo (ver `prueba_3.ipynb`).
+- `models/v1/2026-05-20/` — checkpoint intermedio de una corrida anterior (ver `prueba_2.ipynb`).
+- `models/v1/first-test.pt` — checkpoint suelto de una prueba temprana.
 
 **v2 (`TrajectoryAutoencoder`)**:
-- `models/autoencoder_v2/` — modelo final (`d=8, n_layer=2, pooling=query`), ver `docs/v2_autoencoder_training.md`.
-- `models/sweep_dim/d{4,8,12,16,32}/` — las 5 corridas del barrido primario (dimensión del embedding).
-- `models/sweep_secondary/<nombre>/` — las 8 corridas del barrido secundario (lr/capas/pooling/pesos), con `d=8` fijo.
+- `models/v2/autoencoder_v2/` — modelo final (`d=8, n_layer=2, pooling=query`), ver `docs/v2/v2_autoencoder_training.md`.
+- `models/v2/sweep_dim/d{4,8,12,16,32}/` — las 5 corridas del barrido primario (dimensión del embedding).
+- `models/v2/sweep_secondary/<nombre>/` — las 8 corridas del barrido secundario (lr/capas/pooling/pesos), con `d=8` fijo.
 
 Cada carpeta de modelo incluye `config.json` (hiperparámetros usados),
 `model.pt` (pesos) y `train_data.csv` (historial de loss/métricas por época).

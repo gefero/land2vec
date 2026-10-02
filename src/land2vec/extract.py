@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from . import paths as P
+
 # Mapeo de códigos numéricos del raster lccs_class a los tokens del vocabulario.
 # Debe mantenerse en sync con land2vec.tokenizer.Tokenizer.VOCAB (salvo "[UNK]").
 LCCS_CODE_TO_TOKEN: dict[int, str] = {
@@ -20,7 +22,7 @@ LCCS_CODE_TO_TOKEN: dict[int, str] = {
 }
 
 
-def load_landcover_dataset(path: Path | str = Path("data") / "landcover_timeseries_2000-2022.nc") -> xr.Dataset:
+def load_landcover_dataset(path: Path | str = P.NC_FILE) -> xr.Dataset:
     "Abre el netCDF de land cover (ESA CCI, 300m, 2000-2022)."
     return xr.open_dataset(path)
 
@@ -106,7 +108,7 @@ def subsample_constant_sequences(
     una trayectoria estable (bosque o agua que no cambia en 23 años) es un tipo de
     dinámica legítimo y debe seguir presente en el dataset, solo que sin dominarlo
     -- útil para entrenar el autoencoder, donde la inmensa mayoría de los píxeles
-    de cualquier zona es constante (ver notebooks/eval_ood_zones.ipynb) y sin
+    de cualquier zona es constante (ver notebooks/v2/eval_ood_zones.ipynb) y sin
     balancear el modelo aprende poco más que reconstruir "23 años de lo mismo".
 
     Devuelve como mucho max_fraction del dataset resultante como secuencias
