@@ -41,6 +41,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
+from land2vec.paths import rel  # noqa: E402
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -74,7 +75,7 @@ def load_clusters(suffix: str, data_dir: Path) -> pd.DataFrame:
     path = data_dir / f"clusters_train_pooled{suffix}_full.zip"
     if not path.exists():
         sys.exit(
-            f"falta {path.relative_to(ROOT)} -- corré antes:\n"
+            f"falta {rel(path)} -- corré antes:\n"
             "  python scripts/assign_train_clusters.py --group all "
             "--max-constant-fraction 1.0 --out-tag _full"
         )
@@ -84,14 +85,14 @@ def load_clusters(suffix: str, data_dir: Path) -> pd.DataFrame:
 def load_desmonte_px(zone: str, data_dir: Path) -> pd.DataFrame:
     path = data_dir / f"desmonte_px_{zone}.zip"
     if not path.exists():
-        sys.exit(f"falta {path.relative_to(ROOT)} -- corré antes:\n  python scripts/build_desmonte_labels.py --zone {zone}")
+        sys.exit(f"falta {rel(path)} -- corré antes:\n  python scripts/build_desmonte_labels.py --zone {zone}")
     return pd.read_csv(path)
 
 
 def load_desmonte_poly_px(zone: str, data_dir: Path) -> pd.DataFrame:
     path = data_dir / f"desmonte_poly_px_{zone}.zip"
     if not path.exists():
-        sys.exit(f"falta {path.relative_to(ROOT)} -- corré antes:\n  python scripts/build_desmonte_labels.py --zone {zone}")
+        sys.exit(f"falta {rel(path)} -- corré antes:\n  python scripts/build_desmonte_labels.py --zone {zone}")
     return pd.read_csv(path)
 
 
@@ -775,7 +776,7 @@ def main() -> None:
         sub = out_df[(out_df["suffix"] == suffix) | (out_df["suffix"].isna())]
         out_path = args.cluster_dir / f"desmonte_eval{suffix}.csv"
         sub.to_csv(out_path, index=False)
-        print(f"\nguardado: {out_path.relative_to(ROOT)} ({len(sub)} filas)")
+        print(f"\nguardado: {rel(out_path)} ({len(sub)} filas)")
 
     if all_lift:
         pd.concat(all_lift, ignore_index=True).to_csv(args.cluster_dir / "desmonte_lift_por_cluster.csv", index=False)
@@ -796,7 +797,7 @@ def main() -> None:
         }
     summary_path = args.cluster_dir / "desmonte_eval_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False))
-    print(f"guardado: {summary_path.relative_to(ROOT)}")
+    print(f"guardado: {rel(summary_path)}")
     print(f"\ntiempo de corrida total = {_fmt_elapsed(tiempo_total_seg)}")
 
 

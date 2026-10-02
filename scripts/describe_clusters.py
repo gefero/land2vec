@@ -44,6 +44,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+from land2vec.paths import rel  # noqa: E402
 # land2vec vive en src/; corré este script directo desde el repo, sin `pip install`
 # ni PYTHONPATH (misma convención que la celda bootstrap de los notebooks, ver
 # commit f4f4700). Si además hiciste `pip install -e .`, esto es inocuo.
@@ -359,7 +360,7 @@ def write_browser_json(run_infos: list[dict], seqdist_method: str | None) -> Non
     }
     out = VIZ_DIR / "typology_browser.json"
     out.write_text(json.dumps(browser, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"\n{out.relative_to(ROOT)}: {out.stat().st_size / 1e6:.2f} MB")
+    print(f"\n{rel(out)}: {out.stat().st_size / 1e6:.2f} MB")
 
 
 def main() -> None:

@@ -34,6 +34,10 @@ from build_cluster_map import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys  # noqa: E402
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+from land2vec.paths import rel  # noqa: E402
 DATA_DIR = ROOT / "data"
 GEO_DIR = DATA_DIR / "geo"
 OUT_DIR = ROOT / "imgs"
@@ -152,7 +156,7 @@ def main() -> None:
         out = args.out_dir / f"process_maps_{_slug(SUFFIXES[suffix])}_{args.set}.png"
         fig.savefig(out, dpi=args.dpi)
         plt.close(fig)
-        print(f"  {out.relative_to(ROOT)}  ({len(df):,} puntos)")
+        print(f"  {rel(out)}  ({len(df):,} puntos)")
 
 
 if __name__ == "__main__":

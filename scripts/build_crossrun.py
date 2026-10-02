@@ -54,6 +54,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
+from land2vec.paths import rel  # noqa: E402
 
 # build_cluster_map no tiene efectos de import (todo detrás de main()), así que se
 # puede usar como librería -- mismo patrón que plot_process_maps.py / eval_desmonte.py.
@@ -100,7 +101,7 @@ _GRAN_FAM = {
 def _rel(p: Path) -> str:
     "Ruta relativa al repo si cae adentro; si no (p. ej. --out /tmp/…), absoluta."
     try:
-        return str(p.relative_to(ROOT))
+        return str(rel(p))
     except ValueError:
         return str(p)
 
@@ -241,7 +242,7 @@ def load_run_labels(set_name: str, suffix: str, data_dir: Path) -> tuple[list, l
     "(ids, zones, clusters) de data/clusters_{set}{suffix}.zip, en orden de archivo."
     path = data_dir / f"clusters_{set_name}{suffix}.zip"
     if not path.exists():
-        sys.exit(f"falta {path.relative_to(ROOT)} -- corré scripts/tune_clustering.py --select")
+        sys.exit(f"falta {rel(path)} -- corré scripts/tune_clustering.py --select")
     ids, zones, clusters = [], [], []
     for row in read_zip_csv(path):
         ids.append(row["ID"])
@@ -375,7 +376,7 @@ def check_against_sklearn(payload: dict, suffixes: list) -> None:
     Ojo con los nombres: describe_clusters.py llama "no-HDBSCAN" a lo que
     build_cluster_map.SUFFIXES llama "paramétrico" -- son la misma corrida."""
     if not CROSSRUN_CSV.exists():
-        print(f"nota: {CROSSRUN_CSV.relative_to(ROOT)} no está; salteo el contraste con sklearn")
+        print(f"nota: {rel(CROSSRUN_CSV)} no está; salteo el contraste con sklearn")
         return
     by_pair: dict = {}
     with open(CROSSRUN_CSV, encoding="utf-8") as fh:

@@ -67,6 +67,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
+from land2vec.paths import rel  # noqa: E402
 from land2vec.zones import GROUP_OF, ZONE_LABELS, ZONES_BY_GROUP  # noqa: E402
 
 DATA_DIR = ROOT / "data"
@@ -601,7 +602,7 @@ def _rebuild_constants_only(data_dir: Path, out_dir: Path, groups: set[str]) -> 
     index["constants"] = constants
     index["constant_state_counts"] = counts
     index_path.write_text(json.dumps(index, separators=(",", ":")))
-    print(f"\nactualizado {index_path.relative_to(ROOT)} (solo fondo)")
+    print(f"\nactualizado {rel(index_path)} (solo fondo)")
 
 
 def main() -> None:
@@ -631,7 +632,7 @@ def main() -> None:
     suffixes = [args.only] if args.only else list(SUFFIXES)
     typ_labels = load_typology_labels()
     if not typ_labels:
-        print(f"nota: {TYPOLOGY_JSON.relative_to(ROOT)} no está; leyenda sin etiquetas automáticas")
+        print(f"nota: {rel(TYPOLOGY_JSON)} no está; leyenda sin etiquetas automáticas")
 
     coords_cache: dict[str, dict[str, tuple[float, float]]] = {}
     seqs_cache: dict[str, dict[str, str]] = {}
@@ -721,9 +722,9 @@ def main() -> None:
         "runs": runs,
     }
     (args.out_dir / "index.json").write_text(json.dumps(index, separators=(",", ":")))
-    print(f"\nmanifiesto: {(args.out_dir / 'index.json').relative_to(ROOT)} "
+    print(f"\nmanifiesto: {rel(args.out_dir / 'index.json')} "
           f"({len(runs)} corridas, {len(index['zones'])} zonas)")
-    print(f"levantá el visor con:  python -m http.server -d {args.out_dir.parent.relative_to(ROOT)} 8001")
+    print(f"levantá el visor con:  python -m http.server -d {rel(args.out_dir.parent)} 8001")
 
 
 if __name__ == "__main__":

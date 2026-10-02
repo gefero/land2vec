@@ -31,6 +31,10 @@ import pandas as pd
 from matplotlib.patches import Patch
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys  # noqa: E402
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+from land2vec.paths import rel  # noqa: E402
 DATA_DIR = ROOT / "models" / "cluster_v2"
 OUT_DIR = ROOT / "imgs" / "paper"
 
@@ -198,7 +202,7 @@ def save(fig: plt.Figure, path_no_ext: Path) -> None:
     fig.savefig(path_no_ext.with_suffix(".png"), dpi=300)
     fig.savefig(path_no_ext.with_suffix(".pdf"))
     plt.close(fig)
-    print(f"  {path_no_ext.relative_to(ROOT)}.{{png,pdf}}")
+    print(f"  {rel(path_no_ext)}.{{png,pdf}}")
 
 
 def run(name: str, suffix: str, per_page: int, top_n: int, summary_only: bool = False) -> None:

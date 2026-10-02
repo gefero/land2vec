@@ -42,6 +42,10 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys  # noqa: E402
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+from land2vec.paths import rel  # noqa: E402
 VIZ_DATA = ROOT / "viz" / "clusters" / "data"
 IMAGERY_INDEX = VIZ_DATA / "imagery" / "index.json"
 DEFAULT_OUT_DIR = ROOT / "imgs" / "zone_atlas"
@@ -289,7 +293,7 @@ def main() -> None:
             path = render_zone(zone_id, corrida, manifest, imagery_meta,
                                 out_dir, args.dpi, args.show_noise)
             if path is not None:
-                print(f"  {zone_id} -> {path.relative_to(ROOT)}")
+                print(f"  {zone_id} -> {rel(path)}")
 
 
 if __name__ == "__main__":

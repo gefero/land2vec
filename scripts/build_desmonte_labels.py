@@ -38,6 +38,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
+from land2vec.paths import rel  # noqa: E402
 
 import geopandas as gpd  # noqa: E402
 import numpy as np  # noqa: E402
@@ -80,7 +81,7 @@ def inspect_desmonte(rar: Path) -> None:
 def load_coords(zone: str, data_dir: Path) -> pd.DataFrame:
     path = data_dir / f"lat_long_df_{zone}.zip"
     if not path.exists():
-        sys.exit(f"falta {path.relative_to(ROOT)}")
+        sys.exit(f"falta {rel(path)}")
     return pd.read_csv(path)
 
 
@@ -284,11 +285,11 @@ def run_zone(zone: str, args: argparse.Namespace) -> None:
     epoca_out = agg.rename(columns={"epoca": "anio"})[["ID", "anio", "frac", "n_pol"]]
     epoca_path = args.data_dir / f"desmonte_px_epoca_{zone}.zip"
     epoca_out.to_csv(epoca_path, index=False, compression="zip")
-    print(f"  guardado: {epoca_path.relative_to(ROOT)} ({len(epoca_out):,} filas)")
+    print(f"  guardado: {rel(epoca_path)} ({len(epoca_out):,} filas)")
 
     summary_path = args.data_dir / f"desmonte_px_{zone}.zip"
     summary.to_csv(summary_path, index=False, compression="zip")
-    print(f"  guardado: {summary_path.relative_to(ROOT)} ({len(summary):,} filas)")
+    print(f"  guardado: {rel(summary_path)} ({len(summary):,} filas)")
 
     poly_out = poly_long.rename(columns={"epoca": "anio"})[["poly_id", "ID", "anio", "frac"]].copy()
     # SUPERF_ha por poly_id -- necesaria en scripts/eval_desmonte.py para reconvertir `frac`
@@ -297,7 +298,7 @@ def run_zone(zone: str, args: argparse.Namespace) -> None:
     poly_out["SUPERF_ha"] = poly_out["poly_id"].map(gdf["SUPERF_ha"])
     poly_path = args.data_dir / f"desmonte_poly_px_{zone}.zip"
     poly_out.to_csv(poly_path, index=False, compression="zip")
-    print(f"  guardado: {poly_path.relative_to(ROOT)} ({len(poly_out):,} filas)")
+    print(f"  guardado: {rel(poly_path)} ({len(poly_out):,} filas)")
 
     print("  verificación:")
     check_totals(zone, gdf, grid, coords_df, agg, poly_long)

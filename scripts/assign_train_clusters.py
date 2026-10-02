@@ -45,6 +45,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
+from land2vec.paths import rel  # noqa: E402
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -133,7 +134,7 @@ def main() -> None:
         out = pd.DataFrame({"ID": pool.ids, "zone": pool.zone, "cluster": labels})
         out_path = args.data_dir / f"clusters_train_pooled{suffix}{args.out_tag}.zip"
         out.to_csv(out_path, index=False, compression="zip")
-        print(f"  guardado: {out_path.relative_to(ROOT)} ({len(out):,} filas)")
+        print(f"  guardado: {rel(out_path)} ({len(out):,} filas)")
 
 
 if __name__ == "__main__":
