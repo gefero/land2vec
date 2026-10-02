@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-10-01
 **Alcance:** pipeline de embeddings, clustering y validación, visualizaciones, estrategia de validación y resultados del borrador [`docs/paper_metodologia.md`](paper_metodologia.md).
-**Proceso:** cinco auditores trabajaron en modo solo lectura y cada uno tuvo un verificador independiente. Un supervisor integró los resultados y pidió dos seguimientos: la referencia de desmonte (evaluador-validacion, REF-01..07) y la tabla canónica de validación externa (analista-resultados, VE-1..9). **Los seguimientos no pasaron por el verificador**: sus hallazgos llevan la marca *[seguimiento, no verificado]*. El redactor revalidó a mano sus cifras críticas (ver §6.3).
+**Proceso:** cinco auditores trabajaron en modo solo lectura y cada uno tuvo un verificador independiente. Un supervisor integró los resultados y pidió dos seguimientos: la referencia de desmonte (evaluador-validacion, REF-01..07) y la tabla canónica de validación externa (analista-resultados, VE-1..9). **En la primera corrida (2026-10-01) los seguimientos no pasaron por el verificador.** El 2026-10-02 seis verificadores independientes los revisaron todos (bootstrap pareado propio, máscara real con geopandas e imágenes satelitales 2000/2022); sus hallazgos llevan la marca *[seguimiento, verificado el 2026-10-02]* y los veredictos están resumidos en §1.
 
 > **Convenciones.** La severidad es la que ajustó el verificador. Si varias áreas reportaron el mismo problema, aparece una sola vez, con una severidad y todos los ID. Los hallazgos con veredicto *plausible* llevan **[no confirmado]**. Abreviaturas: "Fina/H" es Fina/HDBSCAN y "Media/G" es Media/GMM (lo mismo para el resto). "const" quiere decir que las secuencias constantes se forzaron a `sin_cambio`. Salvo aviso, el MCC cuenta el −1 como negativo, τ = 0,5 y los IC son bootstrap por bloques de 0,05° (B=999, seed 42).
 
@@ -15,24 +15,25 @@ Las cifras del paper **están bien transcriptas**. Antes de calcular nada nuevo,
 - Pseudo-R² y ASW de `typology_seqdist.csv`; `chosen*.json` contra la tabla de §5.5.
 - 400.460 = 302.034 + 98.426 filas de entrenamiento y 798.216 parámetros.
 
-La tabla canónica del seguimiento de analista-resultados (VE-1) reproduce los seis `desmonte_eval*.csv` con |Δ| ≤ 2,2·10⁻¹⁶ (B=999, seed 42, bloques de 0,05° y 0,2°). Es la fuente de todas las cifras de MCC, IC y diferencias pareadas de este reporte. El problema no son errores de copia: **tres conclusiones centrales del paper no se sostienen cuando se usan las comparaciones correctas**.
+La tabla canónica del seguimiento de analista-resultados (VE-1) reproduce los seis `desmonte_eval*.csv` (MCC, P, R, IC 0,05° y `mcc_tipificados`) con |Δ| ≤ 4·10⁻¹⁶ (B=999, seed 42) *[verificado el 2026-10-02]*. Los IC con bloques de 0,2° son extensiones: no figuran en los CSV. Es la fuente de todas las cifras de MCC, IC y diferencias pareadas de este reporte. El problema no son errores de copia: **tres conclusiones centrales del paper no se sostienen cuando se usan las comparaciones correctas**.
 
 ### Bloqueantes
 
-**(A) La línea de base R0 está mal emparejada y una regla sin modelo supera a las seis tipologías en Chaco.** *(crítica: EXT-1, C1; VE-2, VE-3, REF-07 [seguimiento, no verificado])*
+**(A) La línea de base R0 está mal emparejada y una regla sin modelo supera a las seis tipologías en Chaco.** *(crítica: EXT-1, C1; VE-2 y VE-3 [seguimiento, verificado el 2026-10-02]; REF-07 [seguimiento, verificado el 2026-10-02])*
 - **El problema.** Para los clusters, "desmonte" incluye `deforestacion` y `degradacion_forestal` ([eval_desmonte.py:60](../scripts/eval_desmonte.py#L60)). En cambio, `_r0_year` solo acepta A/G después de la **última** F ([eval_desmonte.py:157-164](../scripts/eval_desmonte.py#L157)). Además, el docstring ("Existe t con x_t=F y t'>t con x_t' en {A,G}") describe una regla distinta de la que implementa el código.
 - **Lo publicado.** En Chaco: R0 = 0,39946 [0,3871;0,4119], P 0,873, R 0,254, prevalencia 0,26038, 4.510 bloques. En yungas: R0 = 0,4616 [0,4148;0,5103], prevalencia 0,1786.
 - **Con el mismo positivo.** R0' (F→{A,G,Sh,Sp,B} después de la última F) da **0,638 [0,625;0,650]** con bloques de 0,05° y [0,611;0,664] con 0,2°. F2000∧¬F2022 da 0,637 [0,625;0,650] y "alguna transición", 0,616. La mejor tipología da 0,553.
 - **Diferencia pareada.** Fina/H − R0' = **−0,085 [−0,093;−0,077]** (0,05°) y [−0,100;−0,071] (0,2°).
-- **Gruesa/H frente a R0 publicado.** +0,015 [−0,000;0,031] con 0,05° y [−0,014;0,045] con 0,2°: **no es significativa** (VE-3).
-- **Techo** *[seguimiento, no verificado]*. Una tabla por secuencia exacta, ajustada in-sample, llega a 0,644 (REF-07). R0' queda casi en ese techo.
+- **Gruesa/H frente a R0 publicado.** +0,015 [−0,000;0,031] con 0,05° y [−0,014;0,045] con 0,2°: **no es significativa** (VE-3), aunque está en el borde: con 0,05° el límite inferior es −0,0002 (p≤0 = 0,028); con 0,2° cruza el 0 con claridad.
+- **Techo** *[seguimiento, verificado el 2026-10-02]*. Una tabla por secuencia exacta llega a 0,644 ajustada in-sample, y a 0,638-0,640 con validación cruzada de 5 folds por bloques de 0,2° (0,642 con 0,05°) (REF-07). **R0' (0,638) ya está en ese techo**: ningún clasificador que use solo la secuencia de 23 años (las tipologías incluidas) puede superarla de forma apreciable.
+- **Otras reglas triviales también ganan** (VE-6, VE-8). Aplicar `classify_process(inicio, fin, forma)` a la secuencia de cada píxel da 0,634 (P 0,839, R 0,606) [0,622;0,646], que es la cifra de EXT-1, ahora reproducida. Restringido a los 595.455 píxeles con F en 2000, R0' − Media/G (la mejor corrida ahí) = +0,025 [0,020;0,030] con bloques de 0,05° y [0,019;0,032] con 0,2°: chica pero significativa.
 - **Consecuencia.** No se sostiene "Las seis tipologías superan ampliamente ambas líneas de base triviales" ([paper_metodologia.md:809](paper_metodologia.md#L809)).
 
-**(B) Las trayectorias constantes se asignan por centroide a clusters de cambio y deciden el ranking.** *(crítica: CL-01, EXT-2, H1; REF-03, VE-4, VE-9 [seguimiento, no verificado])*
+**(B) Las trayectorias constantes se asignan por centroide a clusters de cambio y deciden el ranking.** *(crítica: CL-01, EXT-2, H1; VE-4 y VE-9 [seguimiento, verificado el 2026-10-02]; REF-03 [seguimiento, verificado el 2026-10-02])*
 - **Dónde pasa.** [tune_clustering.py:338-372](../scripts/tune_clustering.py#L338) y [assign_train_clusters.py:120-121](../scripts/assign_train_clusters.py#L120).
 - **Peso en Chaco.** En las 5 corridas que no son Fina/H, los píxeles constantes son el 75,5-85,2 % de los FP y el 19,7-31,8 % de los TP.
-- **Con constantes forzadas a `sin_cambio`.** Fina/H − Fina/G pasa de +0,019 [0,007;0,031] a **−0,064 [−0,072;−0,058]**: el ganador se invierte (VE-4).
-- **Periurbano Córdoba** (VE-9, alta). Todo el MCC positivo de las corridas sale de píxeles constantes: con constantes forzadas, el MCC es ≤ 0 en las 6 corridas (−0,038 a −0,029).
+- **Con constantes forzadas a `sin_cambio`.** Fina/H − Fina/G pasa de +0,019 [0,007;0,031] a **−0,064 [−0,072;−0,058]**: el ganador se invierte (VE-4). La ventaja de Fina/H sin forzar se explica porque esa corrida ya deja las 626.448 constantes evaluables en −1, no porque discrimine mejor las dinámicas. La regla de forzado está definida en §2.3. Es una regla **todo o nada por estado** (REF-03): en las 5 corridas que no son Fina/H, todas las Sh constantes evaluables (101.048) caen en un cluster de desmonte, y en Media/G y Gruesa/G también todas las A constantes (75.021). Su P(positivo) es 0,291 y 0,280.
+- **Periurbano Córdoba** (VE-9, alta). La referencia no contiene desmontes que ESA CCI registre como pérdida de bosque: el 75 % de los 241 positivos son constantes y ninguno de los 60 restantes tiene una transición F→A/G (R0 detecta 0). Todo el MCC positivo de las corridas sale de constantes asignadas a clusters de cambio; con constantes forzadas, las 6 quedan entre −0,038 y −0,029. La zona no sirve para evaluar la detección de ningún método basado en trayectorias.
 - **Mapas.** Hay píxeles "siempre A" pintados como deforestación. Por eso §7.5 ([paper_metodologia.md:1029](paper_metodologia.md#L1029), "donde no hay clasificación se deja ver la imagen") hoy es falso.
 
 **(C) Hay pocas trayectorias distintas: la generalización fuera de dominio es casi in-sample y las métricas internas están infladas.** *(alta: EMB-01, EMB-02, EMB-1, C2, CL-02, CLU-1, A4)*
@@ -43,9 +44,9 @@ La tabla canónica del seguimiento de analista-resultados (VE-1) reproduce los s
 
 ### Otros problemas de severidad alta
 - **Estabilidad ARI (CL-06, CLU-2, A6).** `stability_ari` usa `boot_cap = 20000` ([cluster.py:436](../src/land2vec/cluster.py#L436), aplicado en :452), es decir, el 18,6 % de las filas. En cambio, [paper_metodologia.md:497-498](paper_metodologia.md#L497) dice "pares de submuestras del 80 %". Además, `min_cluster_size` no se reescala. El ARI contra la partición completa es ≈0,42 en fina y ≈0,17-0,23 en media.
-- **Dilatación de la máscara (REF-01)** *[seguimiento, no verificado]*. Con `dilate=0`, la prevalencia es 0,313 (contra 0,260 con `dilate=1`) y gana Media/G con 0,561 frente a 0,555 de Fina/H. La elección de Fina/H en §5.8.5 no es robusta.
-- **Positivos constantes (REF-02)** *[seguimiento, no verificado]*. El 36,7 % de los positivos es constante (75.695 de 206.508; Sh 38,8 %, F 32,1 %, A 27,7 %). Un oráculo de transiciones no puede pasar de una exhaustividad de 0,633 (MCC 0,749).
-- **MCC sin −1 (A5, VE-7).** Al excluir el −1, el MCC de Chaco cae a 0,03-0,38 y el de Media/G en yungas, a 0,002. El paper no lo informa.
+- **Dilatación de la máscara (REF-01)** *[seguimiento, verificado con la máscara real el 2026-10-02]*. Con `dilate=0`, la prevalencia sube de 0,260 a 0,313 (660.005 evaluables, contra 793.112) y Media/G (0,561), Fina/G (0,555) y Fina/H (0,555) quedan **empatadas**: Media/G − Fina/H = +0,006 [−0,010;+0,021] (0,05°) y [−0,029;+0,039] (0,2°). Con `dilate=1` es −0,039 [−0,055;−0,024], y con `dilate=2`, −0,064 [−0,081;−0,049]. La ventaja de Fina/H en §5.8.5 depende de la dilatación. Lo robusto: Fina/H ≈ 0,55 con cualquier dilatación, y R0' supera a todas las tipologías en los tres casos (Fina/H − R0' ≈ −0,085, IC < 0), lo que refuerza el bloqueante (A).
+- **Positivos constantes (REF-02)** *[seguimiento, verificado el 2026-10-02 con imágenes 2000/2022]*. El 36,7 % de los positivos es constante (75.695 de 206.508; Sh 38,8 %, F 32,1 %, A 27,7 %, G 1,3 %). Un oráculo de transiciones no puede pasar de una exhaustividad de 0,633 (MCC 0,749). Contra las imágenes, las causas se reparten aproximadamente así: omisión de ESA ~30-45 %, desfase de fecha de la referencia ~20-29 %, ESA que marca A/G en 2000 sobre bosque ~10-12 %, bosque visible en las dos imágenes ~11-20 %, y hasta ~32 % sin resolver. El "~70/30" anterior queda descartado (detalle en §2.3).
+- **MCC sin −1 (A5, VE-7)** *[verificado el 2026-10-02]*. Al excluir el −1, el MCC de Chaco cae a 0,03-0,38 (Gruesa/G 0,032 [0,012;0,052]; Fina/H 0,378 [0,349;0,407]) y el de Media/G en yungas a 0,002 [−0,044;0,049]: la "mejor" tipología de yungas no discrimina entre los píxeles que tipifica. El paper no lo informa.
 - **Faltan líneas de base sin embedding (CLU-3).** Con el mismo k, k-medias sobre one-hot supera a z en pseudo-R².
 
 ### Conteo de hallazgos de la fase de auditoría (sin fusionar duplicados)
@@ -59,7 +60,7 @@ La tabla canónica del seguimiento de analista-resultados (VE-1) reproduce los s
 | Resultados | 1 | 4 | 9 | 7 | 2 | 1 | 0 |
 | **Total** | **3** | **13** | **26** | **28** | **7** | **6** | **0** |
 
-Los seguimientos suman 16 hallazgos más, ninguno verificado: REF-01..07 (alta 3, media 1, baja 1, info 2) y VE-1..9 (alta 4, media 4, info 1).
+Los seguimientos suman 16 hallazgos más, y el 2026-10-02 se verificaron todos de forma independiente: REF-01 matizado (con `dilate=0` empatan tres tipologías); REF-02 matizado (el reparto de causas cambia con las imágenes); REF-03 a REF-07 confirmados (REF-05 baja a severidad baja); VE-1 a VE-5 y VE-7 a VE-9 confirmados (VE-9 ampliado); VE-6 refutado en su parte central (el 0,634 sí se reproduce). Ninguno de los cambios debilita los bloqueantes; REF-07, VE-6 y VE-8 refuerzan el (A).
 
 ---
 
@@ -125,7 +126,7 @@ Los seguimientos suman 16 hallazgos más, ninguno verificado: REF-01..07 (alta 3
 
 ### 2.3 Clustering externo (desmonte)
 
-Fuente: tabla canónica de VE-1 *[seguimiento, no verificado; coincide con los CSV publicados]*.
+Fuente: tabla canónica de VE-1 *[seguimiento, verificado el 2026-10-02: coincide con los CSV publicados con |Δ| ≤ 4·10⁻¹⁶ y con un bootstrap independiente]*.
 
 **Chaco** (793.112 píxeles evaluables, prevalencia 0,260; 4.510 bloques de 0,05° y 308 de 0,2°)
 
@@ -147,7 +148,7 @@ Fuente: tabla canónica de VE-1 *[seguimiento, no verificado; coincide con los C
 | F2000 ∧ ¬F2022 | 0,637 | 0,836 | 0,613 | [0,625;0,650] | [0,610;0,663] | — |
 | Alguna transición | 0,616 | 0,785 | 0,633 | [0,604;0,630] | [0,587;0,645] | — |
 
-En Fina/H, forzar las constantes no cambia nada (Δ = 0 exacto): esa corrida ya no predecía ninguna constante como desmonte. Techos *[seguimiento, no verificado]*: tabla por secuencia (in-sample) 0,644 (REF-07); oráculo de transiciones con R 0,633 y MCC 0,749 (REF-02).
+En Fina/H, forzar las constantes no cambia nada (Δ = 0 exacto): esa corrida ya no predecía ninguna constante como desmonte. Techos *[seguimiento, verificado el 2026-10-02]*: tabla por secuencia 0,644 in-sample y 0,638-0,640 con validación cruzada espacial (REF-07); oráculo de transiciones con R 0,633 y MCC 0,749 (REF-02).
 
 **Diferencias pareadas en Chaco** (misma réplica de bloques)
 
@@ -160,7 +161,7 @@ En Fina/H, forzar las constantes no cambia nada (Δ = 0 exacto): esa corrida ya 
 | Fina/H const − Fina/G const | −0,064 [−0,072;−0,058] | [−0,077;−0,053] |
 | Gruesa/H − R0 publicado | +0,015 [−0,000;0,031] | [−0,014;0,045] (no significativa) |
 
-EXT-1 y su verificador calcularon además un IC pareado regla − Fina/H con bloques de 0,5°: [0,059;0,104] y [0,061;0,107], respectivamente. Ese tamaño de bloque no está en la tabla canónica, así que esas cifras se atribuyen a EXT-1 y no se presentan como canónicas. La cifra 0,634 (regla con `classify_process`) no se reproduce con ninguna variante (VE-6) y se descarta.
+EXT-1 y su verificador calcularon además un IC pareado regla − Fina/H con bloques de 0,5°: [0,059;0,104] y [0,061;0,107], respectivamente. Ese tamaño de bloque no está en la tabla canónica; la verificación de hoy lo reproduce casi exacto: regla − Fina/H = +0,081 [0,060;0,104] con 63 bloques. La cifra 0,634 sí se reproduce *[verificado el 2026-10-02]*: es `classify_process(inicio, fin, forma)` aplicada a la secuencia de cada píxel (P 0,839, R 0,606; IC 0,05° [0,622;0,646]). Queda por debajo de R0' (0,638) porque excluye las trayectorias oscilantes o múltiples (sin `forma` da 0,638). La afirmación anterior de que "no se reproduce con ninguna variante" (VE-6) era falsa.
 
 **Yungas** (con IPW; 480 bloques de 0,05°)
 - MCC por corrida: Fina/H 0,598 [0,546;0,651], Fina/G 0,605 [0,552;0,656], Media/G 0,638 [0,577;0,693], R0 0,462 y **R0' 0,670 [0,620;0,719]**.
@@ -168,29 +169,65 @@ EXT-1 y su verificador calcularon además un IC pareado regla − Fina/H con blo
 - Con constantes forzadas, Fina/G y Media/G quedan empatadas en 0,655.
 - **No hay ganador en yungas.** Por eso no se sostiene que "la selección de granularidad no generaliza entre ecorregiones" ([paper_metodologia.md:852](paper_metodologia.md#L852)).
 
-**Periurbano Córdoba** (VE-9)
-- El MCC de las corridas va de −0,033 (Fina/H) a 0,139 (Media/H). Las cinco corridas con MCC positivo tienen IC que cruzan o rozan el 0.
-- Con constantes forzadas, las 6 corridas quedan entre −0,038 y −0,029, es decir, ≤ 0.
+**Periurbano Córdoba** (VE-9) *[seguimiento, verificado el 2026-10-02]*
+- El MCC publicado se reproduce exacto: va de −0,033 (Fina/H) a 0,139 (Media/H).
+- Hay 5.659 evaluables y 241 positivos (prevalencia 4,3 %). **181 positivos (75 %) son constantes** (88 de 23×A, 76 de 23×Sh, 15 de 23×F), con año de referencia ≈2002. Los 60 restantes son A/Sh→F, A/Sh→U o A→Sh: **ninguno tiene una transición F→A/G**, y R0 detecta 0 de 241.
+- Los TP no constantes son 0 en 5 corridas y 2 en Gruesa/G. El MCC positivo sale casi entero del bloque 23×Sh (76 positivos de 485, lift ≈3,7); el bloque 23×A no aporta información (88 de 1.997, lift ≈1,0).
+- Con constantes forzadas, las 6 corridas quedan entre −0,038 y −0,029.
+- Los positivos se concentran en 13 de 64 bloques de 0,05° (solo 28 tienen evaluables), y 2 bloques suman 172 de 241. Con 0,2° solo 2 bloques tienen positivos: ese IC no es informativo. El "64 bloques" de [paper_metodologia.md:856](paper_metodologia.md#L856) induce a error.
+- **Lectura:** periurbano no permite evaluar la detección de ningún método basado en trayectorias. Ni el MCC positivo de las corridas ni el negativo de R0, R1 y Fina/H son evidencia. La causa no es "potencia baja", como dice el paper, sino que la referencia no es visible en ESA CCI. Hay que retirar la zona de la comparación o presentarla como control de validez de la referencia.
 
-**Chaco restringido (VE-8)** *[seguimiento, no verificado]*
-- Sobre los 595.455 píxeles con F en 2000, R0' da 0,780, frente a 0,755 de la mejor corrida (Media/G) y 0,669 de Fina/H.
-- Sobre los 166.664 dinámicos, R0' da 0,400, frente a 0,317 de Fina/G y 0,200 de Fina/H.
+**Chaco restringido (VE-8)** *[seguimiento, verificado el 2026-10-02]*
+- Sobre los 595.455 píxeles con F en 2000, R0' da 0,780 [0,768;0,791], frente a 0,755 de la mejor corrida (Media/G) y 0,669 de Fina/H. R0' − Media/G = +0,025 [0,020;0,030] con bloques de 0,05°, [0,019;0,032] con 0,2° y [0,018;0,033] con 0,5°: significativa en los tres casos. Este subconjunto condiciona por una variable de entrada, no de la referencia: vale como análisis de sensibilidad.
+- Sobre los 166.664 dinámicos, R0' da 0,400 [0,371;0,427], frente a 0,317 de Fina/G y 0,200 de Fina/H. R0' − Fina/G = +0,083 [0,062;0,106] con 0,2°.
 
-**Referencia de desmonte (REF)** *[seguimiento, no verificado]*
-- Composición: negativo_limpio 586.604, excluido 437.556, positivo 206.508, control_pre 184.677 y control_post 9.112.
-- Positivos constantes: 75.695 de 206.508 (36,7 %). Por estado: Sh 38,8 %, F 32,1 % y A 27,7 %. Las A se concentran en 2001-03 (desfase de fecha), las F en 2019-22 (ESA CCI todavía no registra el cambio) y las Sh en 2009-13 (ambigüedad de esa clase).
-- REF-04 (info): los desmontes anteriores a 2001 se tratan bien y nunca quedan como negativo limpio ([eval_desmonte.py:131](../scripts/eval_desmonte.py#L131)). Esto descarta la hipótesis de que los A constantes con polígono previo castiguen injustamente a los modelos.
-- REF-05 (media): lo excluido se reparte en 21,3 % fuera de la máscara y 9,4 % de bordes (porcentajes del total).
-- REF-06 (baja): el docstring de `label_reference` ([eval_desmonte.py:122-126](../scripts/eval_desmonte.py#L122)) afirma que todo píxel tocado por un polígono cae dentro de la máscara. Es falso: 849 positivos quedan afuera.
+**Referencia de desmonte (REF)** *[seguimiento, verificado el 2026-10-02]*
+- Composición (reproducida exacta): negativo_limpio 586.604, excluido 437.556, positivo 206.508, control_pre 184.677 y control_post 9.112.
+- **REF-02, positivos constantes** *[verificado el 2026-10-02 con imágenes 2000/2022; matizado]*.
+  - 75.695 de 206.508 (36,7 %). Por estado: Sh 38,8 %, F 32,1 %, A 27,7 %, G 1,3 %.
+  - Años de referencia: A con mediana 2003 (55 % en 2001-03), F con mediana 2016 (52 % en 2004-17, 37 % en 2019-22), Sh con mediana 2011 (38 % en 2009-13).
+  - Contraste con los compuestos Landsat 2000 y Sentinel-2 2022: 300 casos por estrato, clasificador bosque/desmontado calibrado con controles (AUC 0,95 con validación cruzada espacial). Reparto ponderado de causas, entre la versión corregida por confusión y la de 3 estados (que deja 32 % ambiguo):
 
-**Sensibilidad a la dilatación de la máscara (REF-01)** *[seguimiento, no verificado]*
+    | Causa | Rango |
+    |---|---|
+    | Omisión de ESA (F/Sh sobre tierra desmontada en la imagen) | ~30-45 % |
+    | Desfase de fecha de la referencia (ya desmontado en 2000) | ~20-29 % |
+    | ESA que marca A/G en 2000 sobre lo que la imagen muestra como bosque | ~10-12 % |
+    | Bosque visible en las dos imágenes (falso positivo de la referencia, desmonte parcial o rolado, o desmonte posterior al compuesto) | ~11-20 % |
+    | Sin resolver | hasta ~32 % |
 
-| | Fina/H | Fina/G | Media/H | Media/G | Gruesa/H | Gruesa/G | R0 | Prevalencia |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| dilate=1 | 0,553 | 0,534 | 0,450 | 0,514 | 0,415 | 0,466 | 0,399 | 0,260 |
-| dilate=0 | 0,555 | 0,555 | 0,470 | 0,561 | 0,433 | 0,511 | 0,401 | 0,313 |
+  - El desfase de fecha no se limita a 2001-03: afecta igual a las A con referencia ≥2004 (~44-54 %), porque los polígonos incluyen tierra que ya estaba abierta en 2000.
+  - En F es omisión persistente más que retraso: las de 2004-17 se comportan igual que las de 2018-22.
+  - En Sh es sobre todo omisión (44-65 % pasa de bosque a desmontado, contra 6 % en las Sh negativas), no ambigüedad de la clase.
+  - El "~70/30" anterior era el reparto mecánico F+Sh contra A+G y queda descartado.
+  - Límite: con dos fechas no se puede fechar el cambio ni separar omisión de retraso, en particular en los desmontes de 2001-21 con ESA en Sh.
+- **REF-03** (alta, dentro del bloqueante B) *[verificado el 2026-10-02]*: ver §1. Sin los positivos constantes, el MCC pasaría a 0,757 / 0,637 / 0,516 / 0,534 / 0,464 / 0,464 (Fina/H, Fina/G, Media/H, Media/G, Gruesa/H, Gruesa/G).
+- **REF-04** (info) *[verificado el 2026-10-02]*: los desmontes anteriores a 2001 nunca quedan como negativo limpio ([eval_desmonte.py:131-132](../scripts/eval_desmonte.py#L131)): van a control_pre (184.677, que no entra en el MCC) o a excluido (74.981). Esto descarta que los A constantes con polígono previo cuenten como falsos positivos. Los 54.045 negativos limpios con A constante no tienen ningún polígono.
+- **REF-05** (baja; antes media) *[verificado el 2026-10-02]*: lo excluido (30,7 % del total) es 21,3 % fuera de la máscara sin polígono y 9,4 % de píxeles tocados por polígonos con fracciones parciales o mezcla de épocas (ventana parcial 5,9 %, previo parcial 2,6 %, otras 0,8 %) ([eval_desmonte.py:130-139](../scripts/eval_desmonte.py#L130)). El paper ya declara las causas; falta cuantificarlas.
+- **REF-06** (baja) *[verificado el 2026-10-02]*: el docstring de `label_reference` ([eval_desmonte.py:122-126](../scripts/eval_desmonte.py#L122)) afirma que todo píxel tocado por un polígono cae dentro de la máscara. Es falso: 849 positivos (0,4 %) y 220 control_pre quedan afuera, todos a menos de 0,1° del borde de la zona. Es consistente con polígonos cuyo centroide cae fuera del bbox, que `surveyed_mask` descarta ([geo.py:388](../src/land2vec/geo.py#L388)).
 
-La fila `dilate=0` se calculó con un proxy de la máscara (que coincide al 100 % con `dilate=1`) y no tiene IC pareado.
+**Sensibilidad a la dilatación de la máscara (REF-01)** *[seguimiento, verificado el 2026-10-02]*
+
+| | Fina/H | Fina/G | Media/H | Media/G | Gruesa/H | Gruesa/G | R0 | R0' | Prevalencia | n eval. |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dilate=0 | 0,555 | 0,555 | 0,470 | 0,561 | 0,433 | 0,511 | 0,401 | 0,641 | 0,313 | 660.005 |
+| dilate=1 (publicado) | 0,553 | 0,534 | 0,450 | 0,514 | 0,415 | 0,466 | 0,399 | 0,638 | 0,260 | 793.112 |
+| dilate=2 | 0,548 | 0,524 | 0,441 | 0,484 | 0,406 | 0,437 | 0,396 | 0,633 | 0,245 | 843.300 |
+
+| Diferencia pareada | dilate=0 | dilate=1 | dilate=2 |
+|---|---|---|---|
+| Media/G − Fina/H (0,05°) | +0,006 [−0,010;+0,021] | −0,039 [−0,055;−0,024] | −0,064 [−0,081;−0,049] |
+| Fina/G − Fina/H (0,05°) | +0,000 [−0,011;+0,012] | −0,019 [−0,031;−0,007] | — |
+| Fina/H − R0' (0,05°) | −0,086 [−0,094;−0,078] | −0,085 [−0,093;−0,077] | −0,085 [−0,093;−0,077] |
+
+Calculado con `G.surveyed_mask` real; la de `dilate=1` coincide al 100 % con la columna `relevado` de `desmonte_px_chaco_santiago_frontier.zip`. IC pareados por bootstrap de bloques (B=999, seed 42; 4.510 bloques de 0,05° y 308 de 0,2°). Los positivos son siempre los mismos 206.508: la dilatación solo cambia los negativos limpios, y las GMM son las que más se mueven.
+
+**Regla "constantes → sin_cambio"** (usada en VE-4 y VE-9; verificada el 2026-10-02)
+
+> Se llama *constante* a un píxel cuya secuencia anual 2000-2022 tiene los 23 tokens idénticos (`len(set(tokens)) == 1`). La regla actúa solo sobre la predicción: a todo píxel constante se le asigna `proceso = sin_cambio` (ŷ = 0), cualquiera sea el cluster asignado por el centroide. No cambian la etiqueta de referencia, el conjunto evaluado (positivo ∪ negativo_limpio), los pesos IPW ni la etiqueta de cluster. En el MCC con −1 como negativo, todas las variantes razonables dan lo mismo.
+
+Ojo con el **MCC "tipificados"** (sin −1) con constantes forzadas: el resultado cambia de signo según cómo se traten las constantes que ya eran −1. Fina/H − Fina/G da −0,181 si siguen excluidas, −0,019 si todas pasan a sin_cambio tipificado y −0,008 (no significativa) si todas pasan a −1. El paper tiene que fijar la variante antes de citar esa cifra.
+
 
 **Interpretación.**
 1. Ninguna tipología supera a una regla trivial aplicada a la secuencia. El aporte de la tipología es la interpretabilidad, no la detección.
@@ -243,16 +280,16 @@ Citas de línea corregidas según los verificadores: [build_eval_zones.py:53-65]
 
 | Área | ID | Sev. | Hallazgo | Ubicación |
 |---|---|---|---|---|
-| Clustering | CL-01, EXT-2, H1; REF-03, VE-4 *[seg.]* | crítica | Las constantes se asignan por centroide a procesos de cambio y deciden el ranking | [tune_clustering.py:338](../scripts/tune_clustering.py#L338), [assign_train_clusters.py:120](../scripts/assign_train_clusters.py#L120), [eval_desmonte.py:369](../scripts/eval_desmonte.py#L369) |
+| Clustering | CL-01, EXT-2, H1; REF-03, VE-4 *[seg., verificado]* | crítica | Las constantes se asignan por centroide a procesos de cambio y deciden el ranking | [tune_clustering.py:338](../scripts/tune_clustering.py#L338), [assign_train_clusters.py:120](../scripts/assign_train_clusters.py#L120), [eval_desmonte.py:369](../scripts/eval_desmonte.py#L369) |
 | Clustering | EXT-1, C1; VE-2, VE-3 *[seg.]* | crítica | R0 está mal emparejado (`DEFOR_PROCESOS` frente a `_r0_year`) y su docstring no coincide con el código; R0' supera a todas las tipologías en Chaco | [eval_desmonte.py:60](../scripts/eval_desmonte.py#L60), [eval_desmonte.py:157-164](../scripts/eval_desmonte.py#L157), [paper_metodologia.md:809](paper_metodologia.md#L809) |
 | Embeddings | EMB-02, EMB-1, C2 | alta | Las zonas "OOD" comparten con el entrenamiento el 95,2 % de su masa dinámica | [zones.py](../src/land2vec/zones.py), [v2_autoencoder_training.md:442](v2_autoencoder_training.md#L442), [paper_metodologia.md:109](paper_metodologia.md#L109) |
 | Clustering | CL-02, CLU-1, A4 | alta | Las métricas internas están infladas por duplicados | [cluster.py:403](../src/land2vec/cluster.py#L403), [cluster.py:468](../src/land2vec/cluster.py#L468) |
 | Clustering | CL-06, CLU-2, A6 | alta | ARI sobre submuestras de 20.000 filas sin reescalar mcs; el paper dice "80 %" | [cluster.py:436](../src/land2vec/cluster.py#L436), [cluster.py:452](../src/land2vec/cluster.py#L452), [tune_clustering.py:485](../scripts/tune_clustering.py#L485), [paper_metodologia.md:497-498](paper_metodologia.md#L497) |
 | Clustering | CLU-3 | alta | Faltan líneas de base sin embedding | [seqdist.py](../src/land2vec/seqdist.py) |
-| Clustering | A5; VE-7 *[seg.]* | alta | El paper no muestra el MCC sin −1 | [paper_metodologia.md:754](paper_metodologia.md#L754) |
-| Validación | REF-01 *[seg., no verificado]* | alta | `dilate=1` decide la prevalencia (0,260 frente a 0,313) y el ganador | [geo.py:393-394](../src/land2vec/geo.py#L393) |
-| Validación | REF-02 *[seg., no verificado]* | alta | El 36,7 % de los positivos es constante y el techo de exhaustividad de 0,633 no se declara | [eval_desmonte.py:134](../scripts/eval_desmonte.py#L134) |
-| Resultados | VE-9 *[seg., no verificado]* | alta | En periurbano, todo el MCC positivo viene de constantes | [paper_metodologia.md:856](paper_metodologia.md#L856) |
+| Clustering | A5; VE-7 *[seg., verificado]* | alta | El paper no muestra el MCC sin −1 | [paper_metodologia.md:754](paper_metodologia.md#L754) |
+| Validación | REF-01 *[seg., verificado]* | media | `dilate` decide la prevalencia (0,260 frente a 0,313); con `dilate=0` Fina/H, Fina/G y Media/G empatan | [geo.py:393-394](../src/land2vec/geo.py#L393) |
+| Validación | REF-02 *[seg., verificado con imágenes]* | alta | El 36,7 % de los positivos es constante y el techo de exhaustividad de 0,633 no se declara; las causas son omisión de ESA, desfase de fecha y errores de la referencia, no solo retraso | [eval_desmonte.py:134](../scripts/eval_desmonte.py#L134) |
+| Resultados | VE-9 *[seg., verificado]* | alta | En periurbano, todo el MCC positivo viene de constantes y la referencia no tiene ningún desmonte F→A/G visible en ESA CCI | [paper_metodologia.md:856](paper_metodologia.md#L856) |
 | Viz | H1 | alta | Las constantes se pintan como procesos de cambio (en Media/G, 12,3 % de lo visible); por eso §7.5 es falso | [build_cluster_map.py:509](../scripts/build_cluster_map.py#L509), [plot_zone_atlas.py:130](../scripts/plot_zone_atlas.py#L130), [index.html:669](../viz/clusters/index.html#L669), [paper_metodologia.md:1029](paper_metodologia.md#L1029) |
 
 ### 4.2 Medios
@@ -265,7 +302,7 @@ Citas de línea corregidas según los verificadores: [build_eval_zones.py:53-65]
 | Embeddings | EMB-2, A2, A3 | Hay una sola semilla; la diferencia entre réplicas supera el rango del barrido; hay colapsos porque no hay clip ni scheduler (min_lr sin usar) | [train_autoencoder.py](../scripts/train_autoencoder.py), [config.py:24](../src/land2vec/config.py#L24) |
 | Embeddings | EMB-3, M7 | El probe de z queda debajo de la clase mayoritaria y §3.5 no da cifras | [paper_metodologia.md:375](paper_metodologia.md#L375) |
 | Clustering | CL-04 | La cobertura y la detección de yungas no usan IPW (66,1 % sin ponderar frente a 8,7 % ponderada) | [eval_desmonte.py:414](../scripts/eval_desmonte.py#L414) |
-| Clustering | CL-05, EXT-3, M1 **[no confirmado]**; VE-5 *[seg.]* | Los IC no son pareados y los bloques son de 0,05°; con 0,2°, los IC son ~2 veces más anchos | [eval_desmonte.py:549](../scripts/eval_desmonte.py#L549) |
+| Clustering | CL-05, EXT-3, M1 **[no confirmado]**; VE-5 *[seg., verificado]* | El paper compara IC marginales y no informa diferencias pareadas (las réplicas son comunes, así que se podrían calcular); con bloques de 0,2°, los IC de Chaco son 1,7-2,9 veces más anchos (yungas 1,3-1,7) y Fina/H − Fina/G pasa a cruzar 0 | [eval_desmonte.py:549](../scripts/eval_desmonte.py#L549) |
 | Clustering | CL-03, CL-12, M4 | El k queda en el borde de la grilla y GMM con k>20 solo se probó en l2/diag | [tune_clustering.py:248](../scripts/tune_clustering.py#L248) |
 | Resultados | M5 | La regla de selección premia el ruido (Media/H tiene 24,2 % con tope de 25 %) | models/cluster_v2/summary.csv |
 | Clustering | CL-07 | Las etiquetas del set dinámico no coinciden con las del pool (acuerdo 0,806-0,948) | [cluster.py:291](../src/land2vec/cluster.py#L291), [cluster.py:366](../src/land2vec/cluster.py#L366) |
@@ -274,9 +311,9 @@ Citas de línea corregidas según los verificadores: [build_eval_zones.py:53-65]
 | Validación | CLU-5 **[no confirmado]** | Las particiones triviales tendrían una coherencia espacial similar (no se recalculó) | [cluster.py:499](../src/land2vec/cluster.py#L499) |
 | Resultados | EXT-5, M3 | La ganancia@10 % está saturada | desmonte_eval*.csv |
 | Validación | EXT-6, VAL-1 | La validación externa es estrecha y las zonas están desbalanceadas | [paper_metodologia.md:852](paper_metodologia.md#L852) |
-| Resultados | VE-6 *[seg., no verificado]* | Las cifras canónicas son R0' 0,638 y F2000∧¬F2022 0,637; el 0,634 no se reproduce | — |
-| Resultados | VE-8 *[seg., no verificado]* | Restringido a F en 2000, R0' (0,780) supera a la mejor corrida (Media/G, 0,755) | — |
-| Validación | REF-05 *[seg., no verificado]* | Lo excluido es 21,3 % fuera de la máscara y 9,4 % de bordes | [eval_desmonte.py:130](../scripts/eval_desmonte.py#L130) |
+| Resultados | VE-6 *[seg., refutado en parte]* | R0' 0,638 y F2000∧¬F2022 0,637 se confirman; el 0,634 de EXT-1 sí se reproduce (`classify_process` por píxel) y no debía descartarse | — |
+| Resultados | VE-8 *[seg., verificado]* | Restringido a F en 2000, R0' (0,780) supera a la mejor corrida (Media/G, 0,755): +0,025 [0,020;0,030], significativa | — |
+| Validación | REF-05 *[seg., verificado; baja]* | Lo excluido es 21,3 % fuera de la máscara y 9,4 % de píxeles con fracciones parciales o mezcla de épocas | [eval_desmonte.py:130-139](../scripts/eval_desmonte.py#L130) |
 | Viz | H4 | El atlas calcula los porcentajes sobre lo que no es ruido: dice 55,3 % cuando el valor real es 49,9 % | [plot_paper_atlas.py:124](../scripts/plot_paper_atlas.py#L124), [plot_paper_atlas.py:217](../scripts/plot_paper_atlas.py#L217) |
 | Viz | H5 | La corrida por defecto rompe los fondos de train | [build_cluster_map.py:374](../scripts/build_cluster_map.py#L374), [build_cluster_map.py:577](../scripts/build_cluster_map.py#L577) |
 
@@ -300,8 +337,8 @@ Citas de línea corregidas según los verificadores: [build_eval_zones.py:53-65]
 | Resultados | M10 | baja | Yungas se presenta como generalización del encoder, pero es in-sample | [paper_metodologia.md:835](paper_metodologia.md#L835) |
 | Resultados | B1, B2, B5 | baja | Dice "mediana 0" donde es 1 y 12,5 % donde es 12,0 %; no informa la unidad mínima detectable | [paper_metodologia.md:826](paper_metodologia.md#L826), [paper_metodologia.md:885](paper_metodologia.md#L885), [paper_metodologia.md:761](paper_metodologia.md#L761) |
 | Resultados | B3 **[no confirmado]** | info | La grilla de yungas está descrita de forma ambigua | [paper_metodologia.md:1055](paper_metodologia.md#L1055) |
-| Validación | REF-06 *[seg., no verificado]* | baja | El docstring de `label_reference` es falso (849 positivos quedan fuera de la máscara) | [eval_desmonte.py:122-126](../scripts/eval_desmonte.py#L122) |
-| Validación | REF-04, REF-07 *[seg., no verificado]* | info | Los desmontes previos a 2001 están bien tratados; el techo de la tabla por secuencia es 0,644 | [eval_desmonte.py:131](../scripts/eval_desmonte.py#L131) |
+| Validación | REF-06 *[seg., verificado]* | baja | El docstring de `label_reference` es falso (849 positivos quedan fuera de la máscara, todos en el borde de la zona) | [eval_desmonte.py:122-126](../scripts/eval_desmonte.py#L122) |
+| Validación | REF-04, REF-07 *[seg., verificado]* | info | Los desmontes previos a 2001 están bien tratados; el techo de la tabla por secuencia es 0,644 in-sample y 0,638-0,640 con validación cruzada espacial | [eval_desmonte.py:131](../scripts/eval_desmonte.py#L131) |
 | Viz | H2 | baja | El "15 %" no es un submuestreo del visor: es un tope de constantes sobre el pool (≈0,59 % de las constantes reales) | [index.html:310-314](../viz/clusters/index.html#L310), [cluster.py:173](../src/land2vec/cluster.py#L173) |
 | Viz | H3 | baja | El fondo y la imagen se estiran sobre Mercator (hasta 2,3 km) | [fetch_zone_imagery_gee.py:327](../scripts/fetch_zone_imagery_gee.py#L327) |
 | Viz | H6 | baja | Aparecen 8 paneles vacíos | [plot_process_maps.py:103](../scripts/plot_process_maps.py#L103) |
@@ -323,7 +360,7 @@ Citas de línea corregidas según los verificadores: [build_eval_zones.py:53-65]
 | 3 | Declarar las secuencias distintas y medir sobre las 458 no vistas | EMB-01/02, C2 | §1.3, §1.5, §3.2, §3.5 |
 | 4 | Recalcular las métricas internas sobre secuencias distintas, con controles y líneas de base | CL-02, CLU-1/3, A4 | §5.5 (0,913) y §5.7 |
 | 5 | Rehacer la estabilidad y corregir "80 %" | CL-06, CLU-2, A6 | Columna ARI de §5.5 y elegibilidad de las HDBSCAN |
-| 6 | Sensibilidad a dilate, τ y bloque; declarar el techo de 0,633 | REF-01/02, CL-08, EXT-3, VE-5 | Prevalencia de 26 %, ranking, IC |
+| 6 | Sensibilidad a dilate, τ y bloque; declarar el techo de 0,633 | REF-01/02, CL-08, EXT-3, EXT-7 (τ); VE-5 (bloque) | Prevalencia de 26 %, ranking, IC |
 | 7 | Agregar la columna de MCC sin −1 con IC | A5, VE-7 | §5.8.5 |
 | 8 | Declarar el techo de 0,9 y usar varias semillas o elegir por costo; agregar clip y scheduler | EMB-03, A1-A3, EMB-2 | §3.2-3.4 (0,8971 equivale a 0,997) |
 | 9 | Corregir la ASW (W_k−1) y reportar la cobertura por filas | EMB-05, M9 | §5.7: ASW +0,11 a +0,20; cobertura de 0,19-0,37 a 0,76-0,90 |
@@ -340,15 +377,15 @@ Citas de línea corregidas según los verificadores: [build_eval_zones.py:53-65]
 - Los conteos de entrenamiento (400.460 = 302.034 + 98.426), los 798.216 parámetros y la mejor época coinciden con los documentos (I1).
 - `chosen*.json`, `typology_seqdist.csv`, `desmonte_eval*.csv`, los deciles y `crossrun.json` coinciden con el paper.
 - No hay lat/lon invertidas ni faltan filas en los joins, y `check_crossrun_viewer.js` da OK.
-- Los desmontes previos a 2001 se tratan bien (REF-04, *seguimiento, no verificado*).
+- Los desmontes previos a 2001 se tratan bien (REF-04, *seguimiento, verificado el 2026-10-02*).
 
 ### 6.2 Limitaciones
 - **Sin torch ni xarray.** No se midió la reconstrucción sobre las 458 secuencias no vistas, ni la fidelidad de los controles triviales, y no se abrió el netCDF.
 - **CLU-5 sin recálculo.** La coherencia espacial de las particiones triviales queda como no confirmada. Tampoco se recalcularon PAM ni la AUC del probe.
-- **Máscara de relevamiento por proxy** en REF-01, porque no hay geopandas.
-- **Los seguimientos no pasaron por el verificador** (REF-01..07, VE-1..9). La tabla canónica (VE-1) coincide con los CSV publicados, lo que respalda sus cifras de bootstrap, pero sus hallazgos siguen sin un veredicto independiente.
+- REF-01 se calculó primero con un proxy de la máscara; el 2026-10-02 se rehízo con la máscara real (geopandas) y las cifras coincidieron.
+- **Los seguimientos no pasaron por el verificador en la primera corrida** (REF-01..07, VE-1..9). El 2026-10-02 se verificaron todos con implementaciones independientes (bootstrap pareado propio, máscara real con geopandas e imágenes satelitales 2000/2022); los veredictos están en §1.
 - **Incidente de auditor-clustering, ya resuelto.** Un script escribió por error `master_chaco_santiago_frontier.pkl` en la raíz del repo. El auditor lo movió al scratchpad y `git status` quedó limpio.
-- **Cifras descartadas.** No se citan los conteos de EXT-2 que no se reprodujeron, ni los ratios de picos de EMB-04 (son max/min de toda la corrida, no picos), ni el 0,634 de la regla con `classify_process` (VE-6).
+- **Cifras descartadas.** No se citan los conteos de EXT-2 que no se reprodujeron, ni los ratios de picos de EMB-04 (son max/min de toda la corrida, no picos), ni los conteos que no se pudieron reproducir. El 0,634 de la regla con `classify_process`, que antes figuraba acá, se reprodujo el 2026-10-02 y se restituyó (VE-6).
 
 ### 6.3 Validación propia de los seguimientos
 Script: `scratchpad/redactor/val.py`. Recalculado en Chaco desde los zips:
@@ -360,7 +397,10 @@ Script: `scratchpad/redactor/val.py`. Recalculado en Chaco desde los zips:
   - cluster.py:436: `boot_cap = 20000`.
   - paper_metodologia.md: "80 %" en :497-498, y las frases de :809 y :897-898.
   - `desmonte_eval.csv`: R0, Fina/H, prevalencia y bloques de Chaco y yungas.
-- Sin revalidar: el bootstrap, yungas y periurbano más allá de los CSV.
+- Revalidado el 2026-10-02 con un bootstrap pareado independiente: R0', las diferencias pareadas de (A) y (B), yungas y periurbano. No hubo discrepancias de más de 0,005.
 
 ### 6.4 Meta-hallazgo (corregido)
 La premisa "El visor submuestrea los puntos al 15%" era falsa (H2). El visor no submuestrea: el 15 % es un tope de constantes sobre el pool de cada zona (≈0,59 % de las constantes reales). La premisa estaba en las definiciones de los 8 agentes (`.claude/agents/`) y en la memoria del proyecto. Se corrigió en esos lugares el 2026-10-01, después de la auditoría.
+
+### 6.5 Hallazgo lateral de la verificación (2026-10-02)
+Los PNG de `viz/clusters/data/imagery/` no son lineales en lat/lon con los bounds de `index.json`. En Chaco, el desfase vertical crece de forma lineal hasta ~7 px de imagen (~1,4 km) en el borde sur; en x es constante (~0,3 px). Como `L.imageOverlay` ([viz/clusters/index.html:591](../viz/clusters/index.html#L591)) estira la imagen con esos bounds, la superposición del visor probablemente quede corrida ~0,8 km cerca del borde sur. Se infirió del ajuste, no se comprobó en el visor. Además, los bounds son centros de píxel ESA y no bordes ([fetch_zone_imagery_gee.py:99-111](../scripts/fetch_zone_imagery_gee.py#L99)), una diferencia menor (~150 m).
