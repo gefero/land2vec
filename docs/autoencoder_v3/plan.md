@@ -125,5 +125,6 @@ Todos son publicables:
 
 ## 9. Insumos disponibles
 
-- Censo del universo: scripts `count_traj.py`, `analyze.py` y `growth.py`, y el archivo `universo_argentina.csv` (columnas `traj_id`, `seqs`, `n_px`, `n_cambios`, `constante` y `visto_en_train`). Hoy están en el scratchpad de la sesión; conviene moverlos a `scripts/` y `data/` antes de empezar.
-- El modelo actual (`models/v2/autoencoder_v2`) carga en CPU con `cfg.device = "cpu"`.
+- **Censo del universo:** `python scripts/datos/censo_trayectorias.py [--crecimiento]`. Escribe `data/autoencoder_v3/universo_argentina.csv` y `universo_rectangulo.csv`, con las columnas `traj_id`, `seqs`, `n_px`, `n_cambios`, `constante` y `visto_en_train`. También imprime el resumen de §2 y los cambios por año, que muestran la costura 2014-2016. Con `--crecimiento` agrega la tabla de §7.
+- **Modelo actual:** `models/v2/autoencoder_v2`. Carga en CPU con `cfg.device = "cpu"`.
+- **Rutas:** todo en `src/land2vec/paths.py`. Los productos de v3 van en `data/autoencoder_v3/`, `models/autoencoder_v3/`, `notebooks/v3/` y `docs/autoencoder_v3/`.
