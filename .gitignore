@@ -254,4 +254,3 @@ data/geo/.*_extracted/
 # por Git LFS (ver .gitattributes).
 data/ESA_data/
 data/autoencoder_v3/anual/
-data/autoencoder_v3/p1/om_trate.npy
