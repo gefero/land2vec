@@ -153,6 +153,31 @@ Archivos de la v1 (el layout completo de `data/` está en [Estructura del repo](
 - `data/v1/test_sample_0/1/2.zip` — muestras adicionales de test.
 - `data/v1/seqs_short.csv` — muestra chica (10 filas) usada para pruebas rápidas/debug.
 
+## Preprocesamiento desde los mapas crudos (`land2vec.preprocess`)
+
+Para rehacer la serie desde los mapas anuales del Climate Data Store (un `.nc` global por año,
+en `data/ESA_data/raw_unzipped/`, no versionado), con otra agrupación de clases u otro vector:
+
+```python
+from land2vec import preprocess as pp
+
+# por archivo: leer -> agrupar -> recortar -> guardar (~8 MB por año, contra ~2,3 GB del crudo)
+f = pp.process_year("data/ESA_data/raw_unzipped/2015_...nc",
+                    vector="data/geo/ar_provinces.geojson",     # o (minx, miny, maxx, maxy)
+                    out_dir="data/autoencoder_v3/anual",
+                    mapping={0: "Nd", 10: "Agr", 50: "Fo", ...})   # código LCCS -> token
+
+# sobre la serie: .nc 3D de códigos enteros y tabla ID, latitude, longitude, seqs ("Fo-Fo-...-Agr")
+pp.stack_years(sorted(Path("data/autoencoder_v3/anual").glob("lccs_*.nc")), "serie.nc")
+pp.write_sequences(xr.open_dataset("serie.nc"), "secuencias.parquet")   # o .zip (CSV)
+```
+
+Los pasos también se usan por separado (`read_raw`, `clip_to_vector`, `group_codes`, `save_year`).
+Fuera del vector queda el relleno 255, que no entra en la tabla de secuencias. Por defecto la
+agrupación es `preprocess.LCCS_IPCC`, que reproduce `data/landcover_timeseries_2000-2022.nc`.
+Desde la línea de comandos: `python scripts/datos/build_landcover_nc.py [--vector ...] [--mapping ...]`
+y `--compare <nc>` para contrastar con otro netCDF. Tests: `pytest tests`.
+
 ## Extracción desde el netCDF fuente (`land2vec.extract`)
 
 Los `id_seqs_text_*.zip` / `lat_long_df_*.zip` de `data/` se derivan de

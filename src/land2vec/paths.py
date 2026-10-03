@@ -8,7 +8,8 @@ Layout de `data/`:
     data/desmonte/                           desmonte_px_<zona>.zip, desmonte_px_epoca_<zona>.zip, desmonte_poly_px_<zona>.zip
     data/v1/                                 seqs_short.csv, test_sample_*.zip (modelo autorregresivo original)
     data/v2/                                 embeddings_<zona>.zip, clusters_<set><sufijo>.zip
-    data/autoencoder_v3/                     productos del ejercicio v3
+    data/autoencoder_v3/                     productos del ejercicio v3; landcover_timeseries_2000-2022_rebuild.nc es la serie de v3
+    data/ESA_data/raw_unzipped/              mapas anuales crudos del CDS (no versionado)
 
 Las funciones de archivo aceptan `data`, la raíz de datos (default `DATA`), para que
 los `--data-dir` de los scripts sigan funcionando con otra raíz.
@@ -19,9 +20,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 DATA = ROOT / "data"
-NC_FILE = DATA / "landcover_timeseries_2000-2022.nc"
+NC_FILE = DATA / "landcover_timeseries_2000-2022.nc"                               # v1/v2: original (LFS)
+NC_V3 = DATA / "autoencoder_v3" / "landcover_timeseries_2000-2022_rebuild.nc"       # v3: reconstruido desde los crudos (versionado por LFS)
 GEO = DATA / "geo"
 DESMONTE_RAR = GEO / "data_validacion_chaco_Coleccion_13.0.rar"
+ESA_RAW = DATA / "ESA_data" / "raw_unzipped"             # mapas anuales globales del CDS (no versionado)
+ANUAL = DATA / "autoencoder_v3" / "anual"                # lccs_<año>.nc agrupados y recortados (no versionado)
 
 MODELS = ROOT / "models"
 MODELS_V1 = MODELS / "v1"

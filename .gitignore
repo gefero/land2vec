@@ -247,3 +247,10 @@ data/zonas/full/
 # (GDAL /vsizip/ no reconoce la extensión .rar como archivo comprimido) -- se
 # regenera solo, no se versiona. Ver docs/v2/paper_metodologia.md §5.8.
 data/geo/.*_extracted/
+
+# Mapas anuales crudos de ESA CCI / C3S (recortados o globales) y los anuales procesados
+# a partir de ellos (scripts/datos/build_landcover_nc.py). Se bajan del Climate Data Store
+# y se regeneran, no se versionan. La serie de v3 (data/autoencoder_v3/*.nc) sí se versiona,
+# por Git LFS (ver .gitattributes).
+data/ESA_data/
+data/autoencoder_v3/anual/

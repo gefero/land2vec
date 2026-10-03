@@ -15,6 +15,9 @@ filelock==3.25.2
 fonttools==4.62.1
 fsspec==2026.3.0
 geopandas==1.1.4
+h5netcdf==1.8.1
+h5py==3.16.0
+iniconfig==2.3.0
 ipykernel==7.2.0
 ipython==9.12.0
 ipython-pygments-lexers==1.1.1
@@ -39,16 +42,20 @@ parso==0.8.6
 pillow==12.1.1
 planetary-computer==1.0.0
 platformdirs==4.9.4
+pluggy==1.6.0
 prompt-toolkit==3.0.52
 psutil==7.2.2
 pure-eval==0.2.3
+pyarrow==25.0.1
 pygments==2.20.0
 pyparsing==3.3.2
 pyproj==3.7.2
 pystac-client==0.9.0
+pytest==9.1.1
 python-dateutil==2.9.0.post0
 pyzmq==27.1.0
-# rasterio/pystac-client/planetary-computer: usadas por scripts/fetch_zone_imagery.py,
+# rasterio: la usa land2vec.preprocess (máscara del vector) -- necesaria para el pipeline.
+# pystac-client/planetary-computer: usadas por scripts/imagenes/fetch_zone_imagery.py,
 # el intento previo de imagen satelital -- PAUSADO (ver su docstring), se
 # dejan instaladas por si se retoma. requests: usada directo por
 # fetch_zone_imagery_gee.py para bajar los PNG de getThumbURL.

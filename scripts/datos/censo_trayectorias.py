@@ -24,15 +24,13 @@ _SRC = str(Path(__file__).resolve().parents[2] / "src")
 if _SRC not in _sys.path:
     _sys.path.insert(0, _SRC)
 from land2vec import paths as P  # noqa: E402
+from land2vec import preprocess as pp  # noqa: E402
 from land2vec.extract import LCCS_CODE_TO_TOKEN  # noqa: E402
 from land2vec.zones import CHACO_ZONE, TRAIN_ZONES  # noqa: E402
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import xarray as xr  # noqa: E402
-import geopandas as gpd  # noqa: E402
-from rasterio.features import rasterize  # noqa: E402
-from rasterio.transform import from_origin  # noqa: E402
 
 BAND = 2100  # alineado con los chunks del netCDF (3, 2100, 1320)
 FILL = 15    # código 255 (_FillValue) -> 15 en la codificación de 4 bits
@@ -40,11 +38,7 @@ OUT_DIR = P.DATA / "autoencoder_v3"
 
 
 def argentina_mask(lat, lon):
-    dx, dy = lon[1] - lon[0], lat[0] - lat[1]
-    ar = gpd.read_file(P.GEO / "ar_provinces.geojson").to_crs(4326)
-    return rasterize(((g, 1) for g in ar.geometry), out_shape=(len(lat), len(lon)),
-                     transform=from_origin(lon[0] - dx / 2, lat[0] + dy / 2, dx, dy),
-                     fill=0, dtype="uint8").astype(bool)
+    return pp.vector_mask(lat, lon, P.GEO / "ar_provinces.geojson")
 
 
 def encode(a):
@@ -120,7 +114,7 @@ def summary(u, name):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--nc-path", type=Path, default=P.NC_FILE)
+    ap.add_argument("--nc-path", type=Path, default=P.NC_V3)
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     ap.add_argument("--crecimiento", action="store_true",
                     help="además, n.º de trayectorias en Argentina según el largo de la serie")
