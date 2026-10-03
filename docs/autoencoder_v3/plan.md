@@ -54,10 +54,10 @@ Se calculó sobre `data/landcover_timeseries_2000-2022.nc`, recortado con `data/
   - 655 tipos (14 %) y 100.613 px (6,0 % de los px dinámicos) cambian en 2015→16.
   - 184 tipos y 60.231 px (3,6 %) son ganancias de F en ese año.
   - 49 tipos y 87.653 px (5,2 %) tienen ese como único cambio.
-- **Descarga nueva de 2015 y 2016 (2026-10-03).** Se bajaron de nuevo del CDS y se compararon byte por byte (`cmp`) con las copias de `raw_unzipped/`: ambas son idénticas (2.311.288.712 y 2.316.204.819 bytes). Los metadatos internos son coherentes (`time` = 2015-01-01 y 2016-01-01, `time_coverage_start` y versión correctos). Se descarta un archivo dañado o mal etiquetado: el 2015 casi congelado es lo que distribuye el CDS. El patrón es global, no sólo de Argentina: sobre el mapa mundial completo, los píxeles que cambian de código LCCS son 3,33 M en 2013→14, 0,49 M en 2014→15, 5,38 M en 2015→16 y 3,03 M en 2016→17.
+- **Descarga nueva de 2014, 2015 y 2016 (2026-10-03).** Se bajaron de nuevo del CDS y se compararon byte por byte (`cmp`) con las copias de `raw_unzipped/`: las tres son idénticas (2.311.123.764, 2.311.288.712 y 2.316.204.819 bytes). Los metadatos internos son coherentes (`time` = 2015-01-01 y 2016-01-01, `time_coverage_start` y versión correctos). Se descarta un archivo dañado o mal etiquetado: el 2015 casi congelado es lo que distribuye el CDS. El patrón es global, no sólo de Argentina: sobre el mapa mundial completo, los píxeles que cambian de código LCCS son 3,33 M en 2013→14, 0,49 M en 2014→15, 5,38 M en 2015→16 y 3,03 M en 2016→17.
 - **No es un error de construcción del `.nc`** (verificado el 2026-10-02 con los mapas crudos de `data/ESA_data/`). `scripts/datos/build_landcover_nc.py` reconstruye el archivo desde los crudos y da los años 2000-2020 idénticos píxel a píxel, sin años corridos ni duplicados. En los crudos, 2014 y 2015 ya difieren en apenas 1.647 px de la ventana: el congelamiento de 2015 es del producto. Con los 23 globales de `raw_unzipped/`, la reconstrucción 2000-2022 completa también es idéntica, y los recortes `*_clipped_arg.nc` coinciden con los globales.
 - **Cómo se arma 2016 en los crudos.** `observation_count`, `processed_flag` y `current_pixel_state` son idénticos en 2014, 2015 y 2016: es la misma base. `change_count` suma 1 en 2016 justo en los px que cambian de clase (220.627 de 220.675). Entonces C3S 2016 no es un mapa nuevo: es el mapa de 2015 más los cambios que detectó PROBA-V en su primer año. Los pares más frecuentes en la ventana son 120→60 (32 mil), 61→120, 50→100 y 30→50. Hipótesis sin verificar: v2.0.7 confirma cada cambio con años posteriores, así que en el último año de la serie (2015) casi no puede registrar cambios.
-- **Tratamiento:** pendiente de decisión (§7).
+- **Tratamiento:** decidido el 2026-10-03, opción A (§7).
 
 ### 4.1 P1: compresión
 - **Datos de ajuste:** las 4.554 trayectorias deduplicadas, ponderadas por superficie (o con un tope de repeticiones). Así el entrenamiento corre en CPU.
@@ -124,13 +124,18 @@ Todos son publicables:
 ## 7. Decisiones tomadas
 
 - **Encuadre descriptivo, no predictivo** (2026-10-02).
-- **v3 trabaja con el `.nc` reconstruido** (2026-10-03): `data/autoencoder_v3/landcover_timeseries_2000-2022_rebuild.nc`, armado desde los mapas crudos con `scripts/datos/build_landcover_nc.py`. Es idéntico píxel a píxel al original (`data/landcover_timeseries_2000-2022.nc`) en los 23 años y la misma grilla, pero trae la procedencia de cada año (archivo y versión), el dict de agrupación y los tokens en los atributos. El original queda para v1/v2, que siguen ejecutables. El código de v3 lo toma por defecto: `paths.NC_V3` es el default de `censo_trayectorias.py` y de la salida de `build_landcover_nc.py`; `paths.NC_FILE` (el original) queda para v1/v2. Con el censo leyendo la serie reconstruida, `universo_argentina.csv` y `universo_rectangulo.csv` salen idénticos byte a byte. Pendiente: regenerarlo si la descarga de 2014 difiere de las copias actuales.
+- **v3 trabaja con el `.nc` reconstruido** (2026-10-03): `data/autoencoder_v3/landcover_timeseries_2000-2022_rebuild.nc`, armado desde los mapas crudos con `scripts/datos/build_landcover_nc.py`. Es idéntico píxel a píxel al original (`data/landcover_timeseries_2000-2022.nc`) en los 23 años y la misma grilla, pero trae la procedencia de cada año (archivo y versión), el dict de agrupación y los tokens en los atributos. El original queda para v1/v2, que siguen ejecutables. El código de v3 lo toma por defecto: `paths.NC_V3` es el default de `censo_trayectorias.py` y de la salida de `build_landcover_nc.py`; `paths.NC_FILE` (el original) queda para v1/v2. Con el censo leyendo la serie reconstruida, `universo_argentina.csv` y `universo_rectangulo.csv` salen idénticos byte a byte. La descarga nueva de 2014 coincide con las copias actuales, así que no hace falta regenerarlo.
+- **Costura 2015/2016: opción A** (2026-10-03). La serie se deja tal como la distribuye el producto, sin tocar los datos, y la costura se hace visible:
+  1. **Marca.** El censo agrega a `universo_argentina.csv` una columna que identifica las trayectorias con un cambio en 2015→16 (655 tipos, 6,0 % de los px dinámicos), y otra con las que sólo tienen ese cambio (49 tipos, 5,2 %). Se descartan las alternativas de sacar el año 2015 (B), limitarse a 2000-2015 (C) y deshacer las ganancias de bosque de 2016 (D).
+  2. **Con y sin.** Los resultados de P1 y P2 se reportan sobre el universo completo y sobre el universo sin las trayectorias marcadas.
+  3. **Control.** En P2 se verifica que ninguna tipología arme un grupo definido sólo por la costura.
+  4. **Texto.** El paper describe la costura y su causa (cambio de producto, ESA CCI v2.0.7 hasta 2015 y C3S v2.1.1 desde 2016), con las pruebas de §4.0.
 - **No extender la serie a 1992 por ahora.** No reduce el solapamiento: ~95 % en ventanas de 12 a 23 años sobre las zonas actuales. Además requiere descarga desde Copernicus, los años 1992-1999 se apoyan en cambios detectados con AVHRR (~1 km) y la referencia de desmonte empieza en 2001. Queda como posible extensión para otra pregunta.
 
 ## 8. Orden de trabajo
 
-1. ~~Verificar la costura 2015/2016.~~ Hecho el 2026-10-02 (§4.0); falta decidir el tratamiento.
-2. P1 completo. Es barato y define la d.
+1. ~~Verificar la costura 2015/2016.~~ Hecho el 2026-10-02 (§4.0). Tratamiento decidido el 2026-10-03 (§7, opción A): marcar y reportar con/sin; sin tocar los datos.
+2. ~~P1 completo.~~ Hecho el 2026-10-03 ([`p1_resultados.md`](p1_resultados.md)); propone d = 8, a confirmar. Pendiente: autoencoder lineal entrenado como comparación.
 3. Corregir los bugs de la auditoría (§5).
 4. P2.
 5. Escribir la metodología de v3 (en `docs/autoencoder_v3/`) con el nuevo encuadre, partiendo de `docs/v2/paper_metodologia.md`.

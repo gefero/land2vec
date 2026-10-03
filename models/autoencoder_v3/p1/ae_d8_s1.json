@@ -1,0 +1,15 @@
+{
+ "cmd": "train",
+ "tope": 100,
+ "d": 8,
+ "seed": 1,
+ "epochs": 300,
+ "batch": 256,
+ "lr": 0.001,
+ "n_embd": 64,
+ "n_layer": 2,
+ "pooling": "query",
+ "threads": 2,
+ "fn": "<function cmd_train at 0x7695c0502a20>",
+ "final_loss": 0.0034398271362340183
+}

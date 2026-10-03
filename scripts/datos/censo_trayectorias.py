@@ -5,12 +5,13 @@ en 92 bits (4 bits/año) y cuenta píxeles por trayectoria distinta, dentro de A
 (data/geo/ar_provinces.geojson) y en el rectángulo completo del archivo.
 
 Escribe:
-    data/autoencoder_v3/universo_argentina.csv   traj_id, seqs, n_px, n_cambios, constante, visto_en_train
+    data/autoencoder_v3/universo_argentina.csv   traj_id, seqs, n_px, n_cambios, constante, visto_en_train, costura, solo_costura
     data/autoencoder_v3/universo_rectangulo.csv  idem para el rectángulo completo del netCDF
 Imprime: resumen del universo, concentración, cambios por año (para detectar costuras
 como la de 2014-2016) y, con --crecimiento, cómo crece el n.º de trayectorias con el
 largo de la serie.
 
+`costura` / `solo_costura` = cambio en 2015->16 / ése es el único cambio (plan §7, opción A).
 `visto_en_train` = la trayectoria aparece en alguna zona de entrenamiento de v2
 (chaco_santiago_frontier + TRAIN_ZONES, archivos data/zonas/ completos).
 
@@ -89,9 +90,20 @@ def universe_table(df, seen):
     out["n_cambios"] = [sum(a != b for a, b in zip(t, t[1:])) for t in codes]
     out["constante"] = out.n_cambios == 0
     out["visto_en_train"] = out.seqs.isin(seen)
+    add_costura(out)
     out = out.sort_values("n_px", ascending=False).reset_index(drop=True)
     out.insert(0, "traj_id", range(len(out)))
     return out
+
+
+def add_costura(u, year=2016):
+    """Marca la costura ESA CCI v2.0.7 / C3S v2.1.1 (plan §4.0, opción A):
+    `costura` = hay cambio en year-1 -> year; `solo_costura` = ese es el único cambio."""
+    i = year - 2000
+    st = u.seqs.str.split("-")
+    u["costura"] = [t[i - 1] != t[i] for t in st]
+    u["solo_costura"] = u.costura & (u.n_cambios == 1)
+    return u
 
 
 def summary(u, name):
@@ -104,6 +116,9 @@ def summary(u, name):
     print("tipos por n.º de cambios:", dyn.n_cambios.value_counts().sort_index().to_dict())
     print(f"tipos para cubrir 50/90/99 % de px dinámicos: "
           f"{[int(np.searchsorted(cs.values, q) + 1) for q in (0.5, 0.9, 0.99)]}; singletons: {(dyn.n_px == 1).sum():,}")
+    if "costura" in u:
+        print(f"costura 2015->16: {dyn.costura.sum():,} tipos ({dyn.n_px[dyn.costura].sum() / dyn.n_px.sum():.1%} de los px dinámicos); "
+              f"sólo costura: {dyn.solo_costura.sum():,} tipos ({dyn.n_px[dyn.solo_costura].sum() / dyn.n_px.sum():.1%})")
     print(f"dinámicas vistas en train: {dyn.visto_en_train.sum():,} tipos "
           f"({dyn.n_px[dyn.visto_en_train].sum() / dyn.n_px.sum():.1%} de los px dinámicos)")
     yrs = u.seqs.str.split("-")
