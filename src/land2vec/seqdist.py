@@ -220,12 +220,17 @@ def pseudo_r2(D: np.ndarray, labels: np.ndarray, weights: np.ndarray) -> dict:
     return {"pseudo_r2": float(r2), "pseudo_f": float(f), "coverage": float(m.mean()), "k": int(k)}
 
 
-def asw(D: np.ndarray, labels: np.ndarray, weights: np.ndarray) -> dict:
+def asw(D: np.ndarray, labels: np.ndarray, weights: np.ndarray, correct: bool = False) -> dict:
     """Average Silhouette Width en el espacio de secuencias, ponderada por conteo.
 
     Para cada secuencia distinta: `a` = distancia media (ponderada) a su propio
     cluster, `b` = mínima distancia media a otro cluster, `s = (b-a)/max(a,b)`.
     Devuelve la ASW global y el promedio por cluster.
+
+    `correct=True` usa el denominador W_k − 1 (EMB-05 de la auditoría): con pesos = conteos de
+    filas idénticas, la secuencia `i` tiene w_i − 1 copias propias a distancia 0 en su cluster,
+    que cuentan en `a`. Con `correct=False` (v1/v2) se divide por W_k − w_i, lo que ignora esas
+    copias y infla `a`; se deja el comportamiento original para reproducir v2.
     """
     m = labels != -1
     if m.sum() < 2:
@@ -243,7 +248,7 @@ def asw(D: np.ndarray, labels: np.ndarray, weights: np.ndarray) -> dict:
     s = np.zeros(len(lab))
     for idx in range(len(lab)):
         gi = lab[idx]
-        denom_a = grp_w[gi] - w[idx]
+        denom_a = grp_w[gi] - (1.0 if correct else w[idx])
         a = mean_to[gi][idx] / denom_a if denom_a > 0 else 0.0
         b = min(mean_to[g][idx] / grp_w[g] for g in groups if g != gi)
         s[idx] = (b - a) / max(a, b) if max(a, b) > 0 else 0.0

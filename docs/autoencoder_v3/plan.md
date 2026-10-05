@@ -74,7 +74,7 @@ Se calculó sobre `data/landcover_timeseries_2000-2022.nc`, recortado con `data/
 
 ### 4.2 P2: descripción
 - **Tipologías en tres espacios**, con la misma granularidad (3 niveles de k):
-  - z, con la d elegida en P1;
+  - z, con varias d (3, 8 y 16; decisión del 2026-10-05: P1 no define una d única);
   - OM, con clustering ponderado sobre las 4.554 trayectorias;
   - one-hot o su PCA.
 - **Comparación:**
@@ -135,9 +135,9 @@ Todos son publicables:
 ## 8. Orden de trabajo
 
 1. ~~Verificar la costura 2015/2016.~~ Hecho el 2026-10-02 (§4.0). Tratamiento decidido el 2026-10-03 (§7, opción A): marcar y reportar con/sin; sin tocar los datos.
-2. ~~P1 completo.~~ Hecho el 2026-10-03 ([`p1_resultados.md`](p1_resultados.md)); propone d = 8, a confirmar. Pendiente: autoencoder lineal entrenado como comparación.
+2. ~~P1 completo.~~ Hecho el 2026-10-03 ([`p1_resultados.md`](p1_resultados.md)); no elige una d: P2 se corre con varias (decisión del 2026-10-05). Autoencoder lineal entrenado agregado el 2026-10-05.
 3. Corregir los bugs de la auditoría (§5).
-4. P2.
+4. P2: primer pase hecho el 2026-10-05 ([`p2_resultados.md`](p2_resultados.md)); faltan el control con desmonte, los mapas y la interpretación de los tipos.
 5. Escribir la metodología de v3 (en `docs/autoencoder_v3/`) con el nuevo encuadre, partiendo de `docs/v2/paper_metodologia.md`.
 
 ## 9. Insumos disponibles

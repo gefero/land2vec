@@ -10,6 +10,7 @@ Subcomandos (desde la raíz del repo):
     python scripts/modelo/p1_compresion.py om                       # distancia OM, cacheada en data/autoencoder_v3/p1/
     python scripts/modelo/p1_compresion.py linear                   # PCA y MCA para todas las d
     python scripts/modelo/p1_compresion.py train --d 8 --seed 0     # una corrida del autoencoder
+    python scripts/modelo/p1_compresion.py linae                    # autoencoder lineal (misma pérdida que el AE)
     python scripts/modelo/p1_compresion.py eval                     # métricas de todo lo que haya -> p1_metricas.csv, p1_entropia.csv
 """
 import argparse
@@ -152,6 +153,40 @@ def train_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, epochs: int, batch
     return model, z.numpy(), rec, hist
 
 
+def train_linear_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, steps: int, lr: float):
+    """Autoencoder lineal sobre el one-hot, con la misma pérdida (entropía cruzada por año, mismos
+    pesos) que el AE no lineal: z = W_e x + b_e, logits = W_d z + b_d. Es la comparación justa
+    contra PCA/MCA, que reconstruyen con argmax sin optimizar una pérdida categórica."""
+    import torch
+    from torch.nn import functional as F
+    torch.manual_seed(seed)
+    n, T = X.shape
+    Z = torch.tensor(onehot(X), dtype=torch.float32)
+    Xt = torch.tensor(X)
+    wt = torch.tensor(w / w.sum(), dtype=torch.float32)
+    enc, dec = torch.nn.Linear(T * V, d), torch.nn.Linear(d, T * V)
+    opt = torch.optim.Adam(list(enc.parameters()) + list(dec.parameters()), lr=lr)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps, eta_min=lr * 0.01)
+    hist = []
+    for st in range(steps):
+        logits = dec(enc(Z)).view(n, T, V)
+        ce = F.cross_entropy(logits.reshape(-1, V), Xt.reshape(-1), reduction="none").view(n, T).mean(1)
+        loss = (ce * wt).sum()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        sched.step()
+        hist.append(loss.item())
+        if st % 500 == 0 or st == steps - 1:
+            print(f"  lin d={d} s={seed} step {st} loss={hist[-1]:.5f}", flush=True)
+    with torch.no_grad():
+        z = enc(Z)
+        logits = dec(z).view(n, T, V)
+        logits[:, :, 0] = -float("inf")
+        rec = logits.argmax(-1).numpy()
+    return z.numpy(), rec, hist
+
+
 # ---------------------------------------------------------------------------
 # Métricas de fidelidad
 # ---------------------------------------------------------------------------
@@ -284,9 +319,24 @@ def cmd_train(args):
     print(f"{tag}: loss final {hist[-1]:.5f}, acc año {(R == X).mean():.4f}")
 
 
+def cmd_linae(args):
+    import torch
+    torch.set_num_threads(args.threads)
+    u, X = load_universe()
+    w = train_weights(u, args.tope)
+    OUT_MODELS.mkdir(parents=True, exist_ok=True)
+    for seed in SEEDS:
+        for d in DIMS:
+            z, R, hist = train_linear_ae(X, w, d, seed, args.steps, args.lr)
+            np.savez_compressed(OUT_MODELS / f"lin_d{d}_s{seed}.npz", z=z.astype(np.float32),
+                                recon=R.astype(np.uint8), loss=np.array(hist))
+            print(f"lin_d{d}_s{seed}: acc año {(R == X).mean():.4f}", flush=True)
+
+
 def cmd_eval(args):
     u, X = load_universe()
-    D = np.load(OUT_DATA / "om_trate.npy") if (OUT_DATA / "om_trate.npy").exists() else None
+    om_path = args.om or OUT_DATA / "om_trate.npy"
+    D = np.load(om_path) if om_path.exists() and om_path.stat().st_size > 1000 else None  # un puntero LFS pesa ~130 B
     if D is None:
         print("(sin OM cacheada: se omite la preservación de estructura; correr `om` primero)")
     rows = []
@@ -311,10 +361,16 @@ def cmd_eval(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("om", cmd_om), ("linear", cmd_linear), ("train", cmd_train), ("eval", cmd_eval)):
+    for name, fn in (("om", cmd_om), ("linear", cmd_linear), ("train", cmd_train), ("linae", cmd_linae), ("eval", cmd_eval)):
         sp = sub.add_parser(name)
         sp.set_defaults(fn=fn)
         sp.add_argument("--tope", type=int, default=TOPE, help="peso de ajuste = min(n_px, tope)")
+        if name == "eval":
+            sp.add_argument("--om", type=Path, default=None, help="distancia OM (default: data/autoencoder_v3/p1/om_trate.npy)")
+        if name == "linae":
+            sp.add_argument("--steps", type=int, default=3000)
+            sp.add_argument("--lr", type=float, default=1e-2)
+            sp.add_argument("--threads", type=int, default=4)
         if name == "train":
             sp.add_argument("--d", type=int, required=True)
             sp.add_argument("--seed", type=int, default=0)
