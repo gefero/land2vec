@@ -1,6 +1,6 @@
 # P2: descripción de las dinámicas (primer pase)
 
-**Fecha:** 2026-10-05. Ejecuta plan §4.2, sin la validación externa con desmonte ni los mapas (pendientes). Código: `scripts/clustering/p2_tipologias.py`. Salidas: `data/autoencoder_v3/p2/` (`p2_metricas.csv`, `p2_acuerdo.csv`, `p2_labels.csv`).
+**Fecha:** 2026-10-05 (primer pase) y 2026-10-06 (control externo con desmonte, sección final). Ejecuta plan §4.2; los mapas siguen pendientes. Código: `scripts/clustering/p2_tipologias.py`. Salidas: `data/autoencoder_v3/p2/` (`p2_metricas.csv`, `p2_acuerdo.csv`, `p2_labels.csv`).
 
 ## Montaje
 - **Qué se tipifica:** las 4.545 trayectorias dinámicas (1,68 M px). Las 9 constantes (95 % de la superficie) quedan fuera, como clases estables.
@@ -34,8 +34,36 @@ ARI entre espacios (k = 12, superficie): om–pca8 0,64; om–onehot 0,73; om–
 6. **Peso.** Pesar por superficie o por tipo cambia mucho la tipología (ARI 0,47–0,66 en z y one-hot): con superficie, unas pocas trayectorias dominan cada cluster. Hay que reportar las dos.
 
 ## Pendiente y límites
-- Control externo con la referencia de desmonte (R0' y reglas triviales, techo ~0,64) y mapas del país: no hecho.
+- Mapas del país: no hecho.
 - Representativas e interpretación de los tipos como procesos (`describe`): no hecho; las NMI son un resumen grueso.
 - Un solo algoritmo (k-medoides ponderado, 10 reinicios); la tipología de la v2 era HDBSCAN. Sin barrido de k más allá de 6/12/24.
 - Los z son de la semilla 0 de P1; no se reentrenó sin las trayectorias de la costura.
 - Calidad medida sólo con OM (ver lectura 2); falta una vara neutral (p. ej. la distancia de Hamming).
+
+## Control externo con la referencia de desmonte (2026-10-06)
+
+Código: `scripts/validacion/p2_desmonte.py`; salidas `data/autoencoder_v3/p2/p2_desmonte.csv` y `p2_desmonte_bases.csv`. Es una prueba de validez, no una competencia de detección: se mide cuánta información sobre desmonte conserva cada tipología respecto de la secuencia exacta.
+
+**Diseño.** Cada píxel de la referencia (Colección 13.0; positivo / negativo_limpio, τ 0,5, dilate 1, pesos IPW) toma el tipo de su trayectoria. **Las constantes van a 9 clases estables propias** (`const_<estado>`) y nunca a un cluster de cambio (bloqueante B de la auditoría). Métricas: (1) `u_ratio` = U(D|tipo)/U(D|secuencia exacta), ambos ajustados por permutación; (2) MCC de la tabla por tipo con CV espacial (5 folds, bloques de 0,2°, umbral elegido en train), comparado con el techo de la tabla por secuencia exacta; (3) MCC de una regla semántica que no usa la referencia: el cluster es desmonte si su medoide cumple R0'.
+
+**Las líneas de base reproducen la auditoría** (Chaco, 793.112 evaluables, prevalencia 0,2604): R0 0,399, **R0' 0,638 [0,625;0,650]**, F2000∧¬F2022 0,637, alguna transición 0,616, techo (tabla por secuencia, CV) **0,640**. En yungas R0' = 0,670 y techo 0,649.
+
+**Chaco, universo completo, peso por superficie:**
+
+| espacio | u_ratio k=6 / 12 / 24 | MCC_cv / techo k=12 | MCC semántico k=12 | − R0' (IC 95 %) |
+|---|---|---|---|---|
+| om | 0,91 / 0,94 / 0,96 | 0,980 | 0,622 | −0,016 [−0,019;−0,012] |
+| onehot | 0,94 / 0,96 / 0,98 | 0,988 | 0,617 | −0,021 [−0,025;−0,018] |
+| pca8 | 0,91 / 0,96 / 0,97 | 0,983 | 0,617 | −0,021 [−0,025;−0,018] |
+| ae_d3 | 0,91 / 0,96 / 0,98 | 0,971 | 0,595 | −0,043 [−0,048;−0,038] |
+| ae_d8 | 0,93 / 0,95 / 0,97 | 0,985 | 0,627 | −0,011 [−0,014;−0,008] |
+| ae_d16 | 0,94 / 0,96 / 0,98 | 0,990 | 0,633 | −0,005 [−0,007;−0,002] |
+
+**Lectura**
+1. **La compresión en tipos casi no pierde información sobre desmonte.** Con 12 clusters dinámicos (más las 9 constantes) se conserva el 94–96 % de la información de la secuencia exacta y 97–99 % del techo de MCC (0,64). Con 6 clusters, 91–94 % y 97–98 %. En esto no hay diferencias claras entre espacios: las diferencias (≤ 0,03) son del orden del ruido de la CV, que no se cuantificó para `mcc_cv`.
+2. **La regla semántica (medoide cumple R0') queda 0,005–0,02 por debajo de R0', con IC que no cruzan 0** en todos los espacios salvo la diferencia mínima de ae_d16; ninguna tipología supera la regla trivial, coherente con el techo. Los tipos son legibles como "desmonte / no desmonte" casi tan bien como la regla explícita. La excepción es `ae_d3` (−0,043): con d = 3 los clusters mezclan procesos.
+3. **El peso importa para la lectura semántica.** Con tipologías ajustadas con peso por tipo (no por superficie), el MCC semántico de k = 12 cae a 0,22–0,44 en ae_d16, om y pca8 (−0,02 en pca8), porque el medoide de un cluster dominado por trayectorias raras no representa la superficie. `mcc_cv` (que no depende del medoide) no cambia: 0,63.
+4. **Costura.** Excluir las trayectorias de la costura cambia poco (`u_ratio` ± 0,01–0,02; MCC de las líneas de base ± 0,003): la costura no está dirigiendo estos resultados.
+5. **Yungas** (11.777 evaluables, prevalencia 0,179, muy pocos píxeles con desmonte) da lo mismo: R0' 0,670 y MCC semántico 0,63–0,68. Los cocientes salen levemente > 1 (hasta 1,03) porque el ajuste por permutación penaliza más la partición fina (muchas clases con pocos píxeles); no hay que leerlos como que el tipo supera a la secuencia.
+
+**Qué no dice.** Que las tipologías conserven la información de la secuencia no demuestra que describan bien la dinámica: la secuencia ya está limitada por el techo de ESA CCI (0,64), y la compresión hasta 12 tipos casi no cuesta nada porque R0' ya captura casi todo. Es una prueba de que no se pierde la señal de desmonte, no una ventaja de un espacio sobre otro. Periurbano Córdoba no se evaluó (la referencia no es visible en ESA CCI, VE-9). Falta cuantificar el ruido de la CV (`mcc_cv`) para poder afirmar diferencias entre espacios.

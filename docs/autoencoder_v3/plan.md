@@ -137,7 +137,7 @@ Todos son publicables:
 1. ~~Verificar la costura 2015/2016.~~ Hecho el 2026-10-02 (§4.0). Tratamiento decidido el 2026-10-03 (§7, opción A): marcar y reportar con/sin; sin tocar los datos.
 2. ~~P1 completo.~~ Hecho el 2026-10-03 ([`p1_resultados.md`](p1_resultados.md)); no elige una d: P2 se corre con varias (decisión del 2026-10-05). Autoencoder lineal entrenado agregado el 2026-10-05.
 3. Corregir los bugs de la auditoría (§5).
-4. P2: primer pase hecho el 2026-10-05 ([`p2_resultados.md`](p2_resultados.md)); faltan el control con desmonte, los mapas y la interpretación de los tipos.
+4. P2: primer pase hecho el 2026-10-05 ([`p2_resultados.md`](p2_resultados.md)); control con desmonte hecho el 2026-10-06 (misma nota); faltan los mapas y la interpretación de los tipos.
 5. Escribir la metodología de v3 (en `docs/autoencoder_v3/`) con el nuevo encuadre, partiendo de `docs/v2/paper_metodologia.md`.
 
 ## 9. Insumos disponibles

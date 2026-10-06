@@ -17,7 +17,7 @@ Salidas (data/autoencoder_v3/p2/):
                       píxeles), qué agrupa cada tipología (NMI con la secuencia de estados y con el año del
                       primer cambio) y control de costura
     p2_acuerdo.csv    ARI ponderado entre espacios, entre semillas de z y entre universos
-    p2_labels.csv     etiqueta de cada trayectoria dinámica por espacio, k y universo
+    p2_labels.csv     etiqueta y medoide de cada trayectoria dinámica por espacio, k, universo y peso
 
 Uso, desde la raíz del repo:
     python scripts/clustering/p2_tipologias.py --om <distancia OM .npy> [--reps 20]
@@ -207,8 +207,9 @@ def main():
                         metr.append(base | {"metrica": kk, "valor": v})
                     sizes = np.bincount(lab[mk], weights=w[mk], minlength=k) / w[mk].sum()
                     metr.append(base | {"metrica": "cluster_mayor_share", "valor": float(sizes.max())})
-                    if uni == "completo" and pw == "px":
-                        labels_out.append(pd.DataFrame({"traj_id": ud.traj_id, "espacio": sp, "k": k, "etiqueta": lab}))
+                    # etiqueta de todas las trayectorias dinámicas (también las excluidas del ajuste) y medoide de cada cluster
+                    labels_out.append(pd.DataFrame({"traj_id": ud.traj_id, "espacio": sp, "universo": uni, "peso": pw, "k": k,
+                                                    "etiqueta": lab, "medoide": ud.traj_id.values[med][lab]}))
         # estabilidad con submuestras reales del 80 % (universo completo, peso px)
         for k in KS:
             m, s = stability(D, pesos["px"], k, args.reps, rng)
