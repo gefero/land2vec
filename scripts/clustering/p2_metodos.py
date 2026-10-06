@@ -174,6 +174,8 @@ def main():
     ap.add_argument("--spaces", nargs="+", default=SPACES)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tag", default="_metodos", help="sufijo de los CSV de salida")
+    ap.add_argument("--ks", nargs="+", type=int, default=KS, help="n.º de clusters (para el barrido de k)")
+    ap.add_argument("--solo-completo", action="store_true", help="sólo el universo completo (sin la variante sin costura)")
     args = ap.parse_args()
     rng = np.random.default_rng(args.seed)
     warnings.filterwarnings("ignore")
@@ -183,6 +185,8 @@ def main():
     Dom = np.load(args.om).astype(np.float64)[np.ix_(dyn, dyn)]
     wpx = ud.n_px.values.astype(float)
     universos = {"completo": np.ones(len(ud), bool), "sin_costura": ~ud.costura.values}
+    if args.solo_completo:
+        universos.pop("sin_costura")
 
     metr, labels_out, acuerdo, labs = [], [], [], {}
     for sp in args.spaces:
@@ -195,7 +199,7 @@ def main():
             t0 = time.time()
             for uni, mu in universos.items():
                 idx = np.flatnonzero(mu)
-                fits = fit_method(method, D, coords, wpx, idx, KS, rng, state)
+                fits = fit_method(method, D, coords, wpx, idx, args.ks, rng, state)
                 for k, lab_i in fits.items():
                     lab = np.full(len(ud), -2)
                     lab[idx] = lab_i
@@ -222,20 +226,20 @@ def main():
                                                     "k": k, "etiqueta": lab, "medoide": np.where(med >= 0, ud.traj_id.values[np.maximum(med, 0)], -1)}))
             # estabilidad: submuestras del 80 % de los píxeles, ARI sobre las trayectorias presentes en la submuestra
             reps = args.gmm_reps if method == "gmm" else args.reps
-            aris = {k: [] for k in KS}
+            aris = {k: [] for k in args.ks}
             for _ in range(reps):
                 w2 = rng.binomial(wpx.astype(np.int64), 0.8).astype(float)
                 idx = np.flatnonzero(w2 > 0)
-                fits = fit_method(method, D, coords, w2, idx, KS, rng, state)
+                fits = fit_method(method, D, coords, w2, idx, args.ks, rng, state)
                 for k, lab_i in fits.items():
                     aris[k].append(P2T.ari_w(labs[(method, sp, "completo", k)][idx], lab_i, wpx[idx]))
-            for k in KS:
+            for k in args.ks:
                 base = {"metodo": method, "espacio": sp, "universo": "completo", "peso": "px", "k": k}
                 metr.append(base | {"metrica": "estabilidad_ari_80", "valor": float(np.mean(aris[k]))})
                 metr.append(base | {"metrica": "estabilidad_ari_80_sd", "valor": float(np.std(aris[k]))})
             print(f"{sp}/{method}: {time.time() - t0:.0f}s", flush=True)
 
-    for k in KS:
+    for k in args.ks:
         for sp in args.spaces:
             ms = [m for m in args.methods if (m, sp, "completo", k) in labs]
             for a_, b_ in itertools.combinations(ms, 2):

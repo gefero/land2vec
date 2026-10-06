@@ -249,6 +249,7 @@ def main():
     ap.add_argument("--ks", nargs="+", type=int, default=None)
     ap.add_argument("--n-boot", type=int, default=1000)
     ap.add_argument("--labels", type=Path, default=OUT / "p2_labels.csv", help="etiquetas a evaluar (p2_labels.csv o p2_labels_metodos.csv, con columna `metodo`)")
+    ap.add_argument("--solo-completo", action="store_true", help="sólo el universo completo")
     ap.add_argument("--tag", default="", help="sufijo de los CSV de salida (p. ej. _metodos)")
     ap.add_argument("--cv-seeds", type=int, default=0, help="si > 0: sólo mide el ruido de la CV con N semillas de folds (p2_desmonte_cv.csv)")
     args = ap.parse_args()
@@ -274,7 +275,7 @@ def main():
         t0 = time.time()
         dfz = load_zone(zone, uni)
         print(f"{zone}: {len(dfz):,} px evaluables, prevalencia {dfz.weight[dfz.referencia == 'positivo'].sum() / dfz.weight.sum():.4f}", flush=True)
-        for uni_name in ("completo", "sin_costura"):
+        for uni_name in (("completo",) if args.solo_completo else ("completo", "sin_costura")):
             df = dfz if uni_name == "completo" else dfz[~dfz.costura.astype(bool)]
             lab = labels[labels.universo == uni_name]
             b, t = evaluate(zone, uni_name, df.reset_index(drop=True), lab, uni, args.n_boot)
