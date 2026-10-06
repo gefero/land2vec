@@ -197,7 +197,9 @@ def evaluate(zone: str, uni_name: str, df: pd.DataFrame, labels: pd.DataFrame, u
     out_b.append(r | {"u_adj": u_seq, "n_eval": len(df), "prevalencia": float(w[y].sum() / w.sum())})
 
     const_state = df.seqs.str.split("-").str[0]
-    for (esp, pw, k), lab in labels.groupby(["espacio", "peso", "k"]):
+    gcols = (["metodo"] if "metodo" in labels else []) + ["espacio", "peso", "k"]
+    for key, lab in labels.groupby(gcols):
+        met, (esp, pw, k) = (key[0], key[1:]) if "metodo" in labels else ("kmedoides", key)
         lm = lab.set_index("traj_id")
         et = df.traj_id.map(lm.etiqueta)
         part = np.where(df.constante.to_numpy(), "const_" + const_state.to_numpy(), "c" + et.fillna(-1).astype(int).astype(str).to_numpy())
@@ -211,7 +213,7 @@ def evaluate(zone: str, uni_name: str, df: pd.DataFrame, labels: pd.DataFrame, u
         c_sem = block_conf(y, yhat, w, b05, nb)
         lo, hi = boot_ci(c_sem, n_boot=n_boot)
         dlo, dhi = boot_ci(c_sem, confs["r0p"], n_boot=n_boot)
-        out_t.append({"zona": zone, "universo": uni_name, "espacio": esp, "peso": pw, "k": k, "n_clases": len(np.unique(codes)),
+        out_t.append({"zona": zone, "universo": uni_name, "metodo": met, "espacio": esp, "peso": pw, "k": k, "n_clases": len(np.unique(codes)),
                       "u_adj": u_t, "u_ratio": u_t / u_seq if u_seq else np.nan,
                       "mcc_cv": mcc_t, "mcc_cv_ratio_techo": mcc_t / mcc_seq,
                       "mcc_sem": float(mcc_from_conf(c_sem.sum(0))), "mcc_sem_lo": lo, "mcc_sem_hi": hi,
@@ -246,11 +248,13 @@ def main():
     ap.add_argument("--spaces", nargs="+", default=None)
     ap.add_argument("--ks", nargs="+", type=int, default=None)
     ap.add_argument("--n-boot", type=int, default=1000)
+    ap.add_argument("--labels", type=Path, default=OUT / "p2_labels.csv", help="etiquetas a evaluar (p2_labels.csv o p2_labels_metodos.csv, con columna `metodo`)")
+    ap.add_argument("--tag", default="", help="sufijo de los CSV de salida (p. ej. _metodos)")
     ap.add_argument("--cv-seeds", type=int, default=0, help="si > 0: sólo mide el ruido de la CV con N semillas de folds (p2_desmonte_cv.csv)")
     args = ap.parse_args()
 
     uni = pd.read_csv(P.DATA / "autoencoder_v3" / "universo_argentina.csv")
-    labels = pd.read_csv(OUT / "p2_labels.csv")
+    labels = pd.read_csv(args.labels)
     if args.spaces:
         labels = labels[labels.espacio.isin(args.spaces)]
     if args.ks:
@@ -278,8 +282,8 @@ def main():
             rows_t += t
             print(f"  {uni_name}: {time.time() - t0:.0f}s", flush=True)
     OUT.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(rows_b).to_csv(OUT / "p2_desmonte_bases.csv", index=False)
-    pd.DataFrame(rows_t).to_csv(OUT / "p2_desmonte.csv", index=False)
+    pd.DataFrame(rows_b).to_csv(OUT / f"p2_desmonte_bases{args.tag}.csv", index=False)
+    pd.DataFrame(rows_t).to_csv(OUT / f"p2_desmonte{args.tag}.csv", index=False)
     print("->", P.rel(OUT))
 
 
