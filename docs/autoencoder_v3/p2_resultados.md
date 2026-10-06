@@ -1,6 +1,6 @@
 # P2: descripción de las dinámicas (primer pase)
 
-**Fecha:** 2026-10-05 (primer pase) y 2026-10-06 (control externo con desmonte, sección final). Ejecuta plan §4.2; los mapas siguen pendientes. Código: `scripts/clustering/p2_tipologias.py`. Salidas: `data/autoencoder_v3/p2/` (`p2_metricas.csv`, `p2_acuerdo.csv`, `p2_labels.csv`).
+**Fecha:** 2026-10-05 (primer pase) y 2026-10-06 (control externo con desmonte, sección final). Ejecuta plan §4.2; mapas, interpretación de los tipos y ruido de la CV, 2026-10-06 (secciones finales). Código: `scripts/clustering/p2_tipologias.py`. Salidas: `data/autoencoder_v3/p2/` (`p2_metricas.csv`, `p2_acuerdo.csv`, `p2_labels.csv`).
 
 ## Montaje
 - **Qué se tipifica:** las 4.545 trayectorias dinámicas (1,68 M px). Las 9 constantes (95 % de la superficie) quedan fuera, como clases estables.
@@ -34,7 +34,7 @@ ARI entre espacios (k = 12, superficie): om–pca8 0,64; om–onehot 0,73; om–
 6. **Peso.** Pesar por superficie o por tipo cambia mucho la tipología (ARI 0,47–0,66 en z y one-hot): con superficie, unas pocas trayectorias dominan cada cluster. Hay que reportar las dos.
 
 ## Pendiente y límites
-- Mapas del país: no hecho.
+- Actualizar el visor (`viz/`) y el atlas con la tipología de v3: no hecho (sólo hay mapas estáticos).
 - Representativas e interpretación de los tipos como procesos (`describe`): no hecho; las NMI son un resumen grueso.
 - Un solo algoritmo (k-medoides ponderado, 10 reinicios); la tipología de la v2 era HDBSCAN. Sin barrido de k más allá de 6/12/24.
 - Los z son de la semilla 0 de P1; no se reentrenó sin las trayectorias de la costura.
@@ -60,10 +60,35 @@ Código: `scripts/validacion/p2_desmonte.py`; salidas `data/autoencoder_v3/p2/p2
 | ae_d16 | 0,94 / 0,96 / 0,98 | 0,990 | 0,633 | −0,005 [−0,007;−0,002] |
 
 **Lectura**
-1. **La compresión en tipos casi no pierde información sobre desmonte.** Con 12 clusters dinámicos (más las 9 constantes) se conserva el 94–96 % de la información de la secuencia exacta y 97–99 % del techo de MCC (0,64). Con 6 clusters, 91–94 % y 97–98 %. En esto no hay diferencias claras entre espacios: las diferencias (≤ 0,03) son del orden del ruido de la CV, que no se cuantificó para `mcc_cv`.
+1. **La compresión en tipos casi no pierde información sobre desmonte.** Con 12 clusters dinámicos (más las 9 constantes) se conserva el 94–96 % de la información de la secuencia exacta y 97–99 % del techo de MCC (0,64). Con 6 clusters, 91–94 % y 97–98 %. Las diferencias entre espacios son chicas (≤ 0,01 de MCC en Chaco) pero consistentes entre particiones de la CV (ver la subsección "Ruido de la CV").
 2. **La regla semántica (medoide cumple R0') queda 0,005–0,02 por debajo de R0', con IC que no cruzan 0** en todos los espacios (la menor diferencia es la de ae_d16, −0,005); ninguna tipología supera la regla trivial, coherente con el techo. Los tipos son legibles como "desmonte / no desmonte" casi tan bien como la regla explícita. La excepción es `ae_d3` (−0,043): con d = 3 los clusters mezclan procesos.
 3. **El peso importa para la lectura semántica.** Con tipologías ajustadas con peso por tipo (no por superficie), el MCC semántico de k = 12 cae a 0,22 (ae_d16), 0,41 (ae_d3), 0,44 (om) y −0,02 (pca8), mientras que one-hot y ae_d8 se mantienen en 0,62, porque el medoide de un cluster dominado por trayectorias raras no representa la superficie. `mcc_cv` (que no depende del medoide) no cambia: 0,63.
 4. **Costura.** Excluir las trayectorias de la costura cambia poco (`u_ratio` ± 0,01–0,02; MCC de las líneas de base ± 0,003): la costura no está dirigiendo estos resultados.
 5. **Yungas** (11.777 evaluables, prevalencia 0,179, muy pocos píxeles con desmonte) da lo mismo: R0' 0,670 y MCC semántico 0,63–0,68. Los cocientes salen levemente > 1 (hasta 1,03) porque el ajuste por permutación penaliza más la partición fina (muchas clases con pocos píxeles); no hay que leerlos como que el tipo supera a la secuencia.
 
-**Qué no dice.** Que las tipologías conserven la información de la secuencia no demuestra que describan bien la dinámica: la secuencia ya está limitada por el techo de ESA CCI (0,64), y la compresión hasta 12 tipos casi no cuesta nada porque R0' ya captura casi todo. Es una prueba de que no se pierde la señal de desmonte, no una ventaja de un espacio sobre otro. Periurbano Córdoba no se evaluó (la referencia no es visible en ESA CCI, VE-9). Falta cuantificar el ruido de la CV (`mcc_cv`) para poder afirmar diferencias entre espacios.
+**Qué no dice.** Que las tipologías conserven la información de la secuencia no demuestra que describan bien la dinámica: la secuencia ya está limitada por el techo de ESA CCI (0,64), y la compresión hasta 12 tipos casi no cuesta nada porque R0' ya captura casi todo. Es una prueba de que no se pierde la señal de desmonte, no una ventaja de un espacio sobre otro. Periurbano Córdoba no se evaluó (la referencia no es visible en ESA CCI, VE-9).
+
+### Ruido de la CV (2026-10-06)
+`p2_desmonte.py --cv-seeds 20` repite la CV espacial con 20 asignaciones distintas de bloques a folds (los mismos folds para la secuencia exacta y para todas las tipologías en cada semilla, así que las diferencias son pareadas). Salida: `p2_desmonte_cv.csv`.
+
+- **Chaco:** el techo da 0,6403 con desvío 0,0006 entre semillas, y el MCC de las tipologías tiene desvío 0,0005–0,0016. La asignación de folds casi no mueve nada. Con k = 12 el orden por MCC es ae_d16 (0,634) > onehot (0,632) > ae_d8 (0,630) > pca8 (0,629) > om (0,627) > ae_d3 (0,624), y **cada diferencia pareada tiene el mismo signo en las 20 semillas** (p. ej. ae_d16 − om = +0,0068, desvío 0,0006). El cociente con el techo va de 0,975 (ae_d3) a 0,990 (ae_d16).
+- **Alcance de esa conclusión:** el rango entero entre espacios es de ~0,01 de MCC (1,5 % del techo), menor que el IC del MCC por bloques espaciales (±0,013), y esta CV no incluye el ruido del propio clustering (reinicios del k-medoides y semillas del autoencoder, no medido). Las diferencias son sistemáticas respecto de cómo se reparten los folds, pero no demuestran que un espacio sea mejor: sólo ae_d3 queda claramente por debajo, también en la regla semántica.
+- **Yungas:** el desvío de la CV es 0,013 (pocos píxeles con desmonte) y todos los cocientes con el techo dan 1,02–1,04: la tabla por secuencia exacta sobreajusta con tan pocos píxeles y el techo no es una referencia confiable ahí.
+
+## Interpretación de los tipos (2026-10-06)
+Código: `scripts/clustering/p2_interpretacion.py`. Tablas por cluster en `data/autoencoder_v3/p2/p2_clusters_<espacio>_k12.csv` (superficie, etiqueta automática, secuencia dominante y su fracción, año del primer cambio, % de costura, tres trayectorias principales, medoide) y cruces en `p2_cruce_om_ae_d8_k12.csv`. Se interpretan om y ae_d8 con k = 12, peso por superficie.
+
+**Los dos espacios encuentran los mismos procesos grandes** (porcentajes de la superficie dinámica):
+- deforestación F»A temprana (~2001–2003: 17 %) y más tardía (~2005–2008: 7–8 %);
+- degradación F»Sh en dos olas (~2004: 12–16 %; ~2008–2009: 12–14 %);
+- anegamiento F»Wt (7 %), recuperación Sh»F ~2016 (8–9 %), revegetación B»Sp ~2019 (7–8 %, la Puna) y G»Sp (5–6 %).
+El cruce om → ae_d8 es nítido: 7 de los 12 clusters de OM mandan ≥ 76 % de su superficie a un solo cluster de z (rango 0,36–0,94).
+
+**Dónde difieren.** z separa más por año: el F»Sh de ~2019 tiene cluster propio (8 %), la recuperación Sh»F se parte en ~2004 y ~2017, y aparece un cluster A»F de abandono agrícola (~2010, 6 %). OM agrupa en cambio un cluster "F estable" (13 % de la superficie dinámica), formado por trayectorias con cambios tardíos desde F (primer cambio mediano 2016), y un cluster "G estable" (3 %); tiene además los dos clusters chicos A»U (urbanización, 1,4 %) y Wa (1,1 %), que z no separa. Es coherente con la NMI del primer pase: z es más sensible al año y OM al proceso.
+
+**Dos advertencias.**
+1. **Las etiquetas automáticas engañan en los clusters de mezcla.** `auto_label` usa la secuencia modal: si el cluster mezcla cambios en años distintos, la moda queda constante y la etiqueta dice "estable" (OM 8: la secuencia más frecuente sólo cubre el 33 % de su superficie). Para esos clusters hay que leer las trayectorias principales y no la etiqueta.
+2. **La costura sigue visible.** En los dos espacios el cluster Sh»F ~2016 tiene 27–30 % de su superficie en trayectorias de la costura (y el A»F de z, 17 %; el Wa de OM, 17 %). Es una recuperación forestal real mezclada con la reclasificación del producto, y no se puede separar con estos datos.
+
+## Mapas (2026-10-06)
+Código: `scripts/viz/p2_mapa_pais.py`. Cada píxel de Argentina (36.084.989) toma el tipo de su trayectoria; todas las trayectorias están en el universo (comprobado), las constantes quedan como clase aparte. Salidas: `docs/autoencoder_v3/mapas/{om,ae_d8}_k12_{pais,chaco}.png` y los rásters de etiquetas en `data/autoencoder_v3/p2/mapas/` (uint8, grilla completa, 11 MB en total). El mapa nacional agrega por bloques de 6 × 6 píxeles (gana el cluster dinámico más frecuente), el del Chaco está a resolución completa. Lo que se ve: la Puna dominada por B»Sp, los lotes de deforestación y degradación del Chaco (F»Sh, F»A), el mosaico F»A de la pampa y el litoral, las áreas anegadas del Paraná y G»Sp en Patagonia. Falta incorporar esta tipología al visor.

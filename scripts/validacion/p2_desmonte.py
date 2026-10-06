@@ -22,6 +22,7 @@ F2000∧¬F2022, "alguna transición" y la tabla por secuencia exacta con CV esp
 
 Uso, desde la raíz del repo:
     python scripts/validacion/p2_desmonte.py [--zone chaco_santiago_frontier] [--spaces om ae_d8] [--ks 12] [--n-boot 1000]
+    python scripts/validacion/p2_desmonte.py --cv-seeds 20      # ruido de la CV espacial
 """
 import argparse
 import importlib.util
@@ -219,12 +220,33 @@ def evaluate(zone: str, uni_name: str, df: pd.DataFrame, labels: pd.DataFrame, u
     return out_b, out_t
 
 
+def cv_noise(zone: str, df: pd.DataFrame, labels: pd.DataFrame, n_seeds: int) -> list[dict]:
+    """Ruido de la CV espacial: repite `cv_table_mcc` con n_seeds particiones distintas de bloques en folds
+    (mismos folds para la secuencia exacta y para todas las tipologías en cada semilla, así que la razón
+    mcc_T / mcc_seq y las diferencias entre espacios son pareadas). Sólo universo completo y peso `px`."""
+    y, w = (df.referencia == "positivo").to_numpy(), df.weight.to_numpy()
+    codes_seq = factorize(df.seqs)
+    const_state = df.seqs.str.split("-").str[0].to_numpy()
+    parts = {}
+    for (esp, k), lab in labels[(labels.universo == "completo") & (labels.peso == "px")].groupby(["espacio", "k"]):
+        et = df.traj_id.map(lab.set_index("traj_id").etiqueta)
+        parts[(esp, k)] = factorize(np.where(df.constante.to_numpy(), "const_" + const_state, "c" + et.fillna(-1).astype(int).astype(str).to_numpy()))
+    rows = []
+    for sd in range(n_seeds):
+        m_seq, _ = cv_table_mcc(codes_seq, y, w, df.block20.to_numpy(), seed=sd)
+        for (esp, k), codes in parts.items():
+            m_t, _ = cv_table_mcc(codes, y, w, df.block20.to_numpy(), seed=sd)
+            rows.append({"zona": zone, "semilla": sd, "espacio": esp, "k": k, "mcc_seq": m_seq, "mcc_cv": m_t, "ratio": m_t / m_seq})
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--zone", action="append", default=None, help="repetible; default: chaco_santiago_frontier y yungas")
     ap.add_argument("--spaces", nargs="+", default=None)
     ap.add_argument("--ks", nargs="+", type=int, default=None)
     ap.add_argument("--n-boot", type=int, default=1000)
+    ap.add_argument("--cv-seeds", type=int, default=0, help="si > 0: sólo mide el ruido de la CV con N semillas de folds (p2_desmonte_cv.csv)")
     args = ap.parse_args()
 
     uni = pd.read_csv(P.DATA / "autoencoder_v3" / "universo_argentina.csv")
@@ -233,6 +255,15 @@ def main():
         labels = labels[labels.espacio.isin(args.spaces)]
     if args.ks:
         labels = labels[labels.k.isin(args.ks)]
+
+    if args.cv_seeds:
+        rows = []
+        for zone in args.zone or ZONES[:2]:
+            rows += cv_noise(zone, load_zone(zone, uni), labels, args.cv_seeds)
+            print(zone, "listo", flush=True)
+        pd.DataFrame(rows).to_csv(OUT / "p2_desmonte_cv.csv", index=False)
+        print("->", P.rel(OUT / "p2_desmonte_cv.csv"))
+        return
 
     rows_b, rows_t = [], []
     for zone in args.zone or ZONES[:2]:
