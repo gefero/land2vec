@@ -28,7 +28,7 @@ import pandas as pd  # noqa: E402
 
 from land2vec.tokenizer import Tokenizer  # noqa: E402
 
-DIMS = [1, 2, 3, 4, 6, 8, 12, 16]
+DIMS = list(range(1, 32, 3))   # 1, 4, 7, ..., 31 (con 31 años de serie puede hacer falta un d mayor que en 2000-2022)
 SEEDS = [0, 1, 2]
 V = len(Tokenizer.VOCAB)  # 11 (incluye [UNK]=0)
 UNIVERSO = P.DATA / "autoencoder_v3" / "universo_argentina.csv"
@@ -109,16 +109,16 @@ def mca_embed_recon(m, d: int):
 # Autoencoder
 # ---------------------------------------------------------------------------
 def train_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, epochs: int, batch: int, lr: float,
-             n_embd: int, n_layer: int, pooling: str, verbose: bool = True):
+             n_embd: int, n_layer: int, pooling: str, verbose: bool = True, device: str = "cpu"):
     import torch
     from torch.nn import functional as F
     from land2vec.model import TrajectoryAutoencoder
 
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
-    Xt = torch.tensor(X)
-    wt = torch.tensor(w / w.mean(), dtype=torch.float32)
-    model = TrajectoryAutoencoder(V, X.shape[1], d, n_embd=n_embd, n_layer=n_layer, dropout=0.0, pooling=pooling)
+    Xt = torch.tensor(X).to(device)
+    wt = torch.tensor(w / w.mean(), dtype=torch.float32).to(device)
+    model = TrajectoryAutoencoder(V, X.shape[1], d, n_embd=n_embd, n_layer=n_layer, dropout=0.0, pooling=pooling).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
     steps_ep = int(np.ceil(len(X) / batch))
     total, warm = epochs * steps_ep, 20 * steps_ep
@@ -129,9 +129,9 @@ def train_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, epochs: int, batch
     for ep in range(epochs):
         model.train()
         perm = rng.permutation(len(X))
-        tot = 0.0
+        tot = torch.zeros((), device=device)   # se acumula en el dispositivo: sin sincronizar en cada paso
         for i in range(0, len(X), batch):
-            idx = torch.tensor(perm[i:i + batch])
+            idx = torch.tensor(perm[i:i + batch], device=device)
             logits = model(Xt[idx])
             ce = F.cross_entropy(logits.reshape(-1, V), Xt[idx].reshape(-1), reduction="none").view(len(idx), -1).mean(1)
             loss = (ce * wt[idx]).sum() / wt[idx].sum()
@@ -140,8 +140,8 @@ def train_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, epochs: int, batch
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             sched.step()
-            tot += loss.item() * len(idx)
-        hist.append(tot / len(X))
+            tot += loss.detach() * len(idx)
+        hist.append(tot.item() / len(X))
         if verbose and (ep % 25 == 0 or ep == epochs - 1):
             print(f"  d={d} s={seed} ep {ep:>3d} loss={hist[-1]:.5f} ({time.time() - t0:.0f}s)", flush=True)
     model.eval()
@@ -149,8 +149,8 @@ def train_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, epochs: int, batch
         z = model.encode(Xt)
         logits = model.decode(z)
         logits[:, :, 0] = -float("inf")
-        rec = logits.argmax(-1).numpy()
-    return model, z.numpy(), rec, hist
+        rec = logits.argmax(-1).cpu().numpy()
+    return model, z.cpu().numpy(), rec, hist
 
 
 def train_linear_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, steps: int, lr: float):
@@ -310,11 +310,13 @@ def cmd_train(args):
     u, X = load_universe()
     w = train_weights(u, args.tope)
     OUT_MODELS.mkdir(parents=True, exist_ok=True)
+    device = "cuda" if args.device == "auto" and torch.cuda.is_available() else ("cpu" if args.device == "auto" else args.device)
+    print(f"dispositivo: {device}", flush=True)
     model, z, R, hist = train_ae(X, w, args.d, args.seed, args.epochs, args.batch, args.lr,
-                                 args.n_embd, args.n_layer, args.pooling)
+                                 args.n_embd, args.n_layer, args.pooling, device=device)
     tag = f"ae_d{args.d}_s{args.seed}"
     np.savez_compressed(OUT_MODELS / f"{tag}.npz", z=z.astype(np.float32), recon=R.astype(np.uint8), loss=np.array(hist))
-    torch.save(model.state_dict(), OUT_MODELS / f"{tag}.pt")
+    torch.save({k: v.cpu() for k, v in model.state_dict().items()}, OUT_MODELS / f"{tag}.pt")
     (OUT_MODELS / f"{tag}.json").write_text(json.dumps(vars(args) | {"final_loss": hist[-1]}, indent=1, default=str))
     print(f"{tag}: loss final {hist[-1]:.5f}, acc año {(R == X).mean():.4f}")
 
@@ -381,6 +383,7 @@ def main():
             sp.add_argument("--n-layer", type=int, default=2)
             sp.add_argument("--pooling", choices=["mean", "query"], default="query")
             sp.add_argument("--threads", type=int, default=2)
+            sp.add_argument("--device", default="auto", help="auto (cuda si hay), cpu, cuda, cuda:1, ...")
     args = ap.parse_args()
     args.fn(args)
 
