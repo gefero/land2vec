@@ -145,12 +145,15 @@ def train_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, epochs: int, batch
         if verbose and (ep % 25 == 0 or ep == epochs - 1):
             print(f"  d={d} s={seed} ep {ep:>3d} loss={hist[-1]:.5f} ({time.time() - t0:.0f}s)", flush=True)
     model.eval()
+    zs, recs = [], []
     with torch.no_grad():
-        z = model.encode(Xt)
-        logits = model.decode(z)
-        logits[:, :, 0] = -float("inf")
-        rec = logits.argmax(-1).cpu().numpy()
-    return model, z.cpu().numpy(), rec, hist
+        for i in range(0, len(Xt), 512):   # por bloques: codificar todo de una vez pedía cientos de MB extra y daba OOM con varios procesos en la GPU
+            zi = model.encode(Xt[i:i + 512])
+            logits = model.decode(zi)
+            logits[:, :, 0] = -float("inf")
+            zs.append(zi.cpu())
+            recs.append(logits.argmax(-1).cpu())
+    return model, torch.cat(zs).numpy(), torch.cat(recs).numpy(), hist
 
 
 def train_linear_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, steps: int, lr: float):
