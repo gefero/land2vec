@@ -43,7 +43,7 @@ TOPE = 100
 def load_universe() -> tuple[pd.DataFrame, np.ndarray]:
     u = pd.read_csv(UNIVERSO)
     X = np.array([Tokenizer.encode(s) for s in u.seqs], dtype=np.int64)
-    assert X.shape[1] == 23 and (X > 0).all(), "tokens desconocidos o largo != 23"
+    assert (X > 0).all(), "tokens desconocidos"
     return u, X
 
 
@@ -61,7 +61,7 @@ def onehot(X: np.ndarray) -> np.ndarray:
     return Z.reshape(n, T * V)
 
 
-def _argmax_by_year(S: np.ndarray, T: int = 23) -> np.ndarray:
+def _argmax_by_year(S: np.ndarray, T: int) -> np.ndarray:
     "S: (n, T*V) puntajes -> (n, T) tokens; el [UNK] (0) nunca se elige."
     S = S.reshape(len(S), T, V).copy()
     S[:, :, 0] = -np.inf
@@ -79,7 +79,7 @@ def pca_fit(X: np.ndarray, w: np.ndarray, dmax: int):
 def pca_embed_recon(m, d: int):
     Vd = m["Vt"][:d]
     z = (m["Z"] - m["mu"]) @ Vd.T
-    return z, _argmax_by_year(m["mu"] + z @ Vd)
+    return z, _argmax_by_year(m["mu"] + z @ Vd, m["Z"].shape[1] // V)
 
 
 def mca_fit(X: np.ndarray, w: np.ndarray, dmax: int):
@@ -102,7 +102,7 @@ def mca_embed_recon(m, d: int):
     Ph = np.outer(r, c) + np.sqrt(r)[:, None] * ((U * s) @ Vt) * np.sqrt(c)[None, :]
     full = np.full((m["n"], len(keep)), -np.inf)
     full[:, keep] = Ph
-    return z, _argmax_by_year(full)
+    return z, _argmax_by_year(full, len(keep) // V)
 
 
 # ---------------------------------------------------------------------------

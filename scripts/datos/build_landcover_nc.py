@@ -1,4 +1,4 @@
-"""Reconstruye la serie 2000-2022 a partir de los mapas anuales crudos (CLI sobre land2vec.preprocess).
+"""Reconstruye la serie de v3 (default 1992-2022) a partir de los mapas anuales crudos (CLI sobre land2vec.preprocess).
 
 Insumo: los mapas anuales globales de ESA CCI / C3S Land Cover tal como los entrega el
 Climate Data Store (un archivo por año, `lccs_class` con la leyenda LCCS completa):
@@ -18,7 +18,8 @@ guardar `lccs_<año>.nc` en --anual-dir) y al final `preprocess.stack_years`.
     --mapping  JSON {"código LCCS": "token"}. Default: preprocess.LCCS_IPCC, que reproduce
                el netCDF original.
 
-El default de --out es la serie de v3 (P.NC_V3), data/autoencoder_v3/landcover_timeseries_2000-2022_rebuild.nc.
+El default de --out es la serie de v3 (P.NC_V3), data/autoencoder_v3/landcover_timeseries_1992-2022_rebuild.nc.
+Con --years 2000-2022 --out <otro> se rehace la serie vieja (la regresión del censo de v3).
 No toca el original de v1/v2, data/landcover_timeseries_2000-2022.nc.
 
 Con --compare <nc> contrasta la salida con otro netCDF (el original): grilla, coincidencia
@@ -195,7 +196,7 @@ def main():
     ap.add_argument("--raw-dir", type=Path, default=P.ESA_RAW)
     ap.add_argument("--out", type=Path, default=OUT_FILE)
     ap.add_argument("--anual-dir", type=Path, default=P.ANUAL, help="dónde dejar los lccs_<año>.nc")
-    ap.add_argument("--years", default="2000-2022", help="rango, p. ej. 2000-2022 o 2015")
+    ap.add_argument("--years", default=f"{P.V3_YEARS[0]}-{P.V3_YEARS[1]}", help="rango, p. ej. 1992-2022 (default, P.V3_YEARS), 2000-2022 o 2015")
     ap.add_argument("--vector", type=parse_vector, default=DEFAULT_BBOX,
                     help="ruta o minx,miny,maxx,maxy; si empieza con '-', escribir --vector=-75,-55,-53,-20")
     ap.add_argument("--mapping", type=Path, help="JSON {código LCCS: token}; default preprocess.LCCS_IPCC")

@@ -16,8 +16,9 @@ Modos (desde la raíz del repo):
     python scripts/datos/censo_mundial.py --bloques 16 --workers 1     # medición de tiempos con 16 bloques al azar
     python scripts/datos/censo_mundial.py --completo --workers 6       # censo completo (con checkpoints; se puede retomar)
 
-El modo --completo escribe data/autoencoder_v3/mundo/universo_mundo.csv.gz con las columnas
-hi, lo (uint64 de la codificación), n_px, area_km2, n_cambios, y el checkpoint en data/autoencoder_v3/mundo/ckpt.pkl.
+El modo --completo escribe en --out-dir (default data/autoencoder_v3/mundo/) universo_mundo.csv.gz con las columnas
+hi, lo (uint64 de la codificación), n_px, area_km2, n_cambios, descartado.json y el checkpoint ckpt_<años>.pkl.
+Período: --years (default 1992-2022 = P.V3_YEARS); el nombre de cada archivo de raw_unzipped debe empezar con el año.
 """
 import argparse
 import glob
@@ -45,11 +46,12 @@ from shapely.geometry import box  # noqa: E402
 
 TILE = 2025
 NY, NX = 64800, 129600
-T = 23
+Y0, Y1 = P.V3_YEARS          # período de la serie (default 1992-2022); se cambia con --years antes de crear el Pool
+T = Y1 - Y0 + 1
 MULT = np.uint64(0x9E3779B97F4A7C15)
 MAX_TASKS = 64              # bloques por proceso worker antes de reciclarlo (por si queda alguna fuga lenta)
 CHUNK_ROWS = 256            # filas que se codifican juntas (acota la memoria: 256 x 2025 px)
-OUT_DIR = P.DATA / "autoencoder_v3" / "mundo"
+OUT_DIR = P.DATA / "autoencoder_v3" / "mundo"   # --out-dir lo cambia
 DEG = 1.0 / 360.0
 MASK = {"path": None, "buffer_px": 16, "geoms": None, "sindex": None}
 
@@ -60,10 +62,23 @@ for _c in range(255):
     if _t is not None:
         _LUT[_c] = _tokens.index(_t)
 
+def set_years(y0: int, y1: int):
+    global Y0, Y1, T
+    Y0, Y1, T = y0, y1, y1 - y0 + 1
+
+
 def _files():
-    files = sorted(P.ESA_RAW.glob("*.nc"), key=lambda p: int(p.name[:4]))
-    assert len(files) == T, f"se esperaban {T} archivos, hay {len(files)}"
+    "Un archivo por año de Y0..Y1 (el año está en los 4 primeros caracteres del nombre)."
+    files = sorted((f for f in P.ESA_RAW.glob("*.nc") if Y0 <= int(f.name[:4]) <= Y1), key=lambda p: int(p.name[:4]))
+    assert [int(f.name[:4]) for f in files] == list(range(Y0, Y1 + 1)), \
+        f"faltan o sobran años en {P.rel(P.ESA_RAW)}: se esperaba {Y0}-{Y1}, hay {[int(f.name[:4]) for f in files]}"
     return files
+
+
+def split_years() -> int:
+    "Años que van en `hi` (el resto en `lo`): 12 hasta T = 23 (compatible con el censo 2000-2022) y 16 hasta T = 31."
+    assert T <= 31, "4 bits por año: más de 31 años no caben en dos uint64"
+    return min(T, 12 if T <= 23 else 16)
 
 
 def _mask_geoms():
@@ -92,20 +107,22 @@ def land_mask(y0, x0, h, w):
 
 
 def encode(a: np.ndarray):
-    "a: (n, 23) uint8 con tokens 0..9 -> (hi, lo) uint64; misma codificación que censo_trayectorias.encode."
+    "a: (n, T) uint8 con tokens 0..9 -> (hi, lo) uint64; misma codificación que censo_trayectorias.encode."
+    k = split_years()
     hi = np.zeros(len(a), np.uint64)
     lo = np.zeros(len(a), np.uint64)
-    for t in range(12):
+    for t in range(k):
         hi = (hi << np.uint64(4)) | a[:, t].astype(np.uint64)
-    for t in range(12, T):
+    for t in range(k, T):
         lo = (lo << np.uint64(4)) | a[:, t].astype(np.uint64)
     return hi, lo
 
 
 def n_changes(hi, lo):
     "n.º de cambios de cada trayectoria a partir de (hi, lo)."
-    cols = [((hi >> np.uint64(4 * (11 - i))) & np.uint64(15)) for i in range(12)] + \
-           [((lo >> np.uint64(4 * (10 - i))) & np.uint64(15)) for i in range(11)]
+    k = split_years()
+    cols = [((hi >> np.uint64(4 * (k - 1 - i))) & np.uint64(15)) for i in range(k)] + \
+           [((lo >> np.uint64(4 * (T - k - 1 - i))) & np.uint64(15)) for i in range(T - k)]
     return sum((cols[i] != cols[i + 1]).astype(np.int64) for i in range(T - 1))
 
 
@@ -159,7 +176,11 @@ def process_block(bid: int):
 
 
 def merge(parts):
-    out = pd.concat([p for p in parts if len(p)]).groupby(["hi", "lo"], as_index=False).sum()
+    parts = [p for p in parts if len(p)]
+    if not parts:                                                                      # todos los bloques eran océano
+        return pd.DataFrame({"hi": np.array([], np.uint64), "lo": np.array([], np.uint64),
+                             "n_px": np.array([], np.int64), "area_km2": np.array([], float)})
+    out = pd.concat(parts).groupby(["hi", "lo"], as_index=False).sum()
     return out.astype({"hi": np.uint64, "lo": np.uint64, "n_px": np.int64})            # una tabla vacía deja las columnas como float/object
 
 
@@ -188,9 +209,9 @@ def benchmark(n_blocks: int, workers: int, seed: int):
     print("trayectorias por n.º de cambios:", tot.n_cambios.value_counts().sort_index().to_dict())
 
 
-def full(workers: int):
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    ckpt = OUT_DIR / "ckpt.pkl"
+def full(workers: int, out_dir: Path):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ckpt = out_dir / f"ckpt_{Y0}-{Y1}.pkl"
     nb = (NY // TILE) * (NX // TILE)
     done, acc, disc = set(), pd.DataFrame({"hi": np.array([], np.uint64), "lo": np.array([], np.uint64),
                                            "n_px": np.array([], np.int64), "area_km2": np.array([], float)}), [0, 0.0]
@@ -215,10 +236,10 @@ def full(workers: int):
                 print(f"  {k}/{len(todo)} bloques ({(time.time() - t0) / 3600:.2f} h); {len(acc):,} trayectorias", flush=True)
     assert int(acc.n_px.sum()) + disc[0] == nb * TILE * TILE, "los píxeles dentro y fuera de la máscara no suman el planeta"
     acc["n_cambios"] = n_changes(acc.hi.values, acc.lo.values)
-    out = OUT_DIR / "universo_mundo.csv.gz"
+    out = out_dir / "universo_mundo.csv.gz"
     acc.sort_values("area_km2", ascending=False).to_csv(out, index=False)
     json.dump({"px": int(disc[0]), "km2": disc[1], "mascara": str(MASK["path"]), "buffer_px": MASK["buffer_px"],
-               "dentro_px": int(acc.n_px.sum()), "dentro_km2": float(acc.area_km2.sum())}, open(OUT_DIR / "descartado.json", "w"), indent=1)
+               "dentro_px": int(acc.n_px.sum()), "dentro_km2": float(acc.area_km2.sum())}, open(out_dir / "descartado.json", "w"), indent=1)
     print(f"{len(acc):,} trayectorias, {acc.area_km2.sum():,.0f} km² dentro de la máscara; descartado {disc[1]:,.0f} km² -> {P.rel(out)}")
 
 
@@ -228,11 +249,14 @@ if __name__ == "__main__":
     ap.add_argument("--completo", action="store_true")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--years", default=f"{P.V3_YEARS[0]}-{P.V3_YEARS[1]}", help="período (default 1992-2022); la regresión con la serie vieja es --years 2000-2022")
+    ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     ap.add_argument("--mascara", type=Path, default=None, help="polígono de tierra (default: data/geo/World_Continents_*.geojson)")
     ap.add_argument("--buffer-px", type=int, default=16, help="dilatación del polígono, en píxeles de 300 m")
     a = ap.parse_args()
     MASK["path"], MASK["buffer_px"] = a.mascara, a.buffer_px
+    set_years(*(int(x) for x in a.years.split("-")))
     if a.completo:
-        full(a.workers)
+        full(a.workers, a.out_dir)
     else:
         benchmark(a.bloques or 16, a.workers, a.seed)

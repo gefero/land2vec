@@ -4,6 +4,9 @@ Recorre el netCDF completo por franjas de latitud, codifica cada trayectoria de 
 en 92 bits (4 bits/año) y cuenta píxeles por trayectoria distinta, dentro de Argentina
 (data/geo/ar_provinces.geojson) y en el rectángulo completo del archivo.
 
+Período: --years (default P.V3_YEARS = 1992-2022); la regresión con la serie vieja es
+`--nc-path data/autoencoder_v3/landcover_timeseries_2000-2022_rebuild.nc --years 2000-2022`.
+
 Escribe:
     data/autoencoder_v3/universo_argentina.csv   traj_id, seqs, n_px, n_cambios, constante, visto_en_train, costura, solo_costura
     data/autoencoder_v3/universo_rectangulo.csv  idem para el rectángulo completo del netCDF
@@ -42,22 +45,28 @@ def argentina_mask(lat, lon):
     return pp.vector_mask(lat, lon, P.GEO / "ar_provinces.geojson")
 
 
+def split_years(T):
+    "Años que van en `hi` (el resto en `lo`): 12 hasta T = 23 (como en v3 2000-2022) y 16 para series más largas (T <= 31)."
+    assert T <= 31, "4 bits por año: más de 31 años no caben en dos uint64"
+    return min(T, 12 if T <= 23 else 16)
+
+
 def encode(a):
-    "a: (n_px, T) uint8 -> (hi, lo) uint64 con 4 bits por año (T <= 23)."
+    "a: (n_px, T) uint8 -> (hi, lo) uint64 con 4 bits por año (T <= 31)."
     a = np.where(a == 255, FILL, a).astype(np.uint64)
     T = a.shape[1]
-    k = min(T, 12)
+    k = split_years(T)
     hi = (a[:, :k] << (np.arange(k)[::-1].astype(np.uint64) * np.uint64(4))).sum(1, dtype=np.uint64)
     lo = np.zeros(len(a), np.uint64)
-    if T > 12:
-        lo = (a[:, 12:] << (np.arange(T - 12)[::-1].astype(np.uint64) * np.uint64(4))).sum(1, dtype=np.uint64)
+    if T > k:
+        lo = (a[:, k:] << (np.arange(T - k)[::-1].astype(np.uint64) * np.uint64(4))).sum(1, dtype=np.uint64)
     return hi, lo
 
 
 def decode(hi, lo, T=23):
-    k = min(T, 12)
+    k = split_years(T)
     return [(int(hi) >> (4 * (k - 1 - i))) & 15 for i in range(k)] + \
-           [(int(lo) >> (4 * (T - 13 - i))) & 15 for i in range(T - 12)]
+           [(int(lo) >> (4 * (T - k - 1 - i))) & 15 for i in range(T - k)]
 
 
 def count(var, mask, windows=None):
@@ -83,30 +92,31 @@ def seen_in_train():
     return seen
 
 
-def universe_table(df, seen):
+def universe_table(df, seen, T=23, y0=2000):
     tok = {**LCCS_CODE_TO_TOKEN, FILL: "FILL"}
-    codes = [decode(h, l) for h, l in zip(df.hi, df.lo)]
+    codes = [decode(h, l, T) for h, l in zip(df.hi, df.lo)]
     out = pd.DataFrame({"seqs": ["-".join(tok[c] for c in t) for t in codes], "n_px": df.n.values})
     out["n_cambios"] = [sum(a != b for a, b in zip(t, t[1:])) for t in codes]
     out["constante"] = out.n_cambios == 0
-    out["visto_en_train"] = out.seqs.isin(seen)
-    add_costura(out)
+    out["visto_en_train"] = out.seqs.isin(seen) if seen is not None else False
+    add_costura(out, y0=y0)
     out = out.sort_values("n_px", ascending=False).reset_index(drop=True)
     out.insert(0, "traj_id", range(len(out)))
     return out
 
 
-def add_costura(u, year=2016):
+def add_costura(u, year=2016, y0=2000):
     """Marca la costura ESA CCI v2.0.7 / C3S v2.1.1 (plan §4.0, opción A):
-    `costura` = hay cambio en year-1 -> year; `solo_costura` = ese es el único cambio."""
-    i = year - 2000
+    `costura` = hay cambio en year-1 -> year; `solo_costura` = ese es el único cambio.
+    `y0` = primer año de la serie (las secuencias empiezan en y0)."""
+    i = year - y0
     st = u.seqs.str.split("-")
     u["costura"] = [t[i - 1] != t[i] for t in st]
     u["solo_costura"] = u.costura & (u.n_cambios == 1)
     return u
 
 
-def summary(u, name):
+def summary(u, name, y0=2000):
     dyn = u[~u.constante]
     cs = dyn.n_px.cumsum() / dyn.n_px.sum()
     print(f"\n=== {name} ===")
@@ -124,12 +134,14 @@ def summary(u, name):
     yrs = u.seqs.str.split("-")
     ch = np.array([[a != b for a, b in zip(t, t[1:])] for t in yrs])
     px = (ch * u.n_px.values[:, None]).sum(0)
-    print("px que cambian por año:", {f"{2000 + i}->{2001 + i}": int(v) for i, v in enumerate(px)})
+    print("px que cambian por año:", {f"{y0 + i}->{y0 + 1 + i}": int(v) for i, v in enumerate(px)})
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--nc-path", type=Path, default=P.NC_V3)
+    ap.add_argument("--years", default=f"{P.V3_YEARS[0]}-{P.V3_YEARS[1]}",
+                    help="período de la serie del --nc-path (para rotular; se verifica contra el n.º de años del archivo)")
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     ap.add_argument("--crecimiento", action="store_true",
                     help="además, n.º de trayectorias en Argentina según el largo de la serie")
@@ -137,28 +149,30 @@ def main():
 
     ds = xr.open_dataset(args.nc_path, mask_and_scale=False)
     var = ds["lccs_class"]
+    y0, y1 = (int(x) for x in args.years.split("-"))
+    T = var.shape[0]
+    assert T == y1 - y0 + 1, f"--years {args.years} ({y1 - y0 + 1} años) no coincide con el archivo ({T} años)"
     lat, lon = ds["lat"].values.astype(float), ds["lon"].values.astype(float)
     mask = argentina_mask(lat, lon)
     print(f"grilla {var.shape[1]}x{var.shape[2]}; dentro de Argentina: {mask.sum():,} px", flush=True)
 
-    seen = seen_in_train()
+    seen = seen_in_train() if (T, y0) == (23, 2000) else None   # las zonas de entrenamiento de v2 son de 2000-2022
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for name, m in (("argentina", mask), ("rectangulo", None)):
-        u = universe_table(count(var, m)[(0, var.shape[0])], seen)
+        u = universe_table(count(var, m)[(0, T)], seen, T, y0)
         path = args.out_dir / f"universo_{name}.csv"
         u.to_csv(path, index=False)
-        summary(u, name)
+        summary(u, name, y0)
         print(f"guardado: {P.rel(path)}")
 
     if args.crecimiento:
-        T = var.shape[0]
-        wins = [(0, L) for L in (4, 6, 8, 10, 12, 14, 16, 18, 20, 22, T)]
+        wins = sorted({(0, L) for L in (4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, T) if L <= T})
         res = count(var, mask, wins)
         rows = []
         for (s, L), df in res.items():
             codes = np.array([decode(h, l, L) for h, l in zip(df.hi, df.lo)])
             nch = (codes[:, 1:] != codes[:, :-1]).sum(1)
-            rows.append({"periodo": f"{2000 + s}-{2000 + s + L - 1}", "años": L, "distintas": len(df),
+            rows.append({"periodo": f"{y0 + s}-{y0 + s + L - 1}", "años": L, "distintas": len(df),
                          "dinamicas": int((nch > 0).sum()),
                          "px_dinamicos_%": round(100 * df.n[nch > 0].sum() / df.n.sum(), 2),
                          "max_cambios": int(nch.max())})
