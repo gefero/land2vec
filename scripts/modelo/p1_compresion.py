@@ -82,6 +82,13 @@ def pca_embed_recon(m, d: int):
     return z, _argmax_by_year(m["mu"] + z @ Vd, m["Z"].shape[1] // V)
 
 
+def pca_apply(m, X: np.ndarray, d: int):
+    "Codifica y reconstruye trayectorias nuevas X (n, T) con un PCA ajustado (m: mu, Vt)."
+    Vd = m["Vt"][:d]
+    z = (onehot(X) - m["mu"]) @ Vd.T
+    return z, _argmax_by_year(m["mu"] + z @ Vd, X.shape[1])
+
+
 def mca_fit(X: np.ndarray, w: np.ndarray, dmax: int):
     Z = onehot(X)
     T = X.shape[1]
@@ -103,6 +110,18 @@ def mca_embed_recon(m, d: int):
     full = np.full((m["n"], len(keep)), -np.inf)
     full[:, keep] = Ph
     return z, _argmax_by_year(full, len(keep) // V)
+
+
+def mca_apply(m, X: np.ndarray, d: int):
+    """Codifica y reconstruye trayectorias nuevas X (n, T) como filas suplementarias de un MCA ajustado
+    (m: c, Vt, keep). Para una fila activa da lo mismo que mca_embed_recon: z = ((x/T - c)/sqrt(c)) Vt'.
+    Las combinaciones año-estado que no aparecieron en el ajuste (columnas fuera de keep) no se representan."""
+    c, Vt, keep = m["c"], m["Vt"][:d], m["keep"].astype(bool)
+    T = X.shape[1]
+    z = ((onehot(X)[:, keep] / T - c) / np.sqrt(c)) @ Vt.T
+    full = np.full((len(X), len(keep)), -np.inf)
+    full[:, keep] = c + (z @ Vt) * np.sqrt(c)   # proporcional a la fila reconstruida; el argmax por año no depende de la masa de la fila
+    return z, _argmax_by_year(full, T)
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +175,44 @@ def train_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, epochs: int, batch
     return model, torch.cat(zs).numpy(), torch.cat(recs).numpy(), hist
 
 
+def ae_apply(tag: str, X: np.ndarray, device: str = "cpu", batch: int = 512):
+    """Codifica y reconstruye trayectorias X (n, T) con un autoencoder guardado por `train`
+    (tag = "ae_d<d>_s<s>", lee <tag>.pt y <tag>.json de OUT_MODELS). Mismo procedimiento que el final de train_ae."""
+    import torch
+    from land2vec.model import TrajectoryAutoencoder
+    cfg = json.loads((OUT_MODELS / f"{tag}.json").read_text())
+    model = TrajectoryAutoencoder(V, X.shape[1], int(cfg["d"]), n_embd=int(cfg["n_embd"]), n_layer=int(cfg["n_layer"]),
+                                  dropout=0.0, pooling=cfg["pooling"])
+    model.load_state_dict(torch.load(OUT_MODELS / f"{tag}.pt", map_location="cpu", weights_only=True))
+    model.to(device).eval()
+    Xt = torch.tensor(np.asarray(X, dtype=np.int64)).to(device)
+    zs, recs = [], []
+    with torch.no_grad():
+        for i in range(0, len(Xt), batch):
+            zi = model.encode(Xt[i:i + batch])
+            logits = model.decode(zi)
+            logits[:, :, 0] = -float("inf")
+            zs.append(zi.cpu())
+            recs.append(logits.argmax(-1).cpu())
+    return torch.cat(zs).numpy(), torch.cat(recs).numpy()
+
+
+def n_parametros(metodo: str, d: int, tag: str | None = None) -> int:
+    "Número de parámetros del modelo ajustado (informativo, protocolo §2)."
+    TV = 31 * V
+    if metodo == "ae":
+        from land2vec.model import TrajectoryAutoencoder
+        cfg = json.loads((OUT_MODELS / f"{tag}.json").read_text())
+        model = TrajectoryAutoencoder(V, 31, int(cfg["d"]), n_embd=int(cfg["n_embd"]), n_layer=int(cfg["n_layer"]), pooling=cfg["pooling"])
+        return int(sum(p.numel() for p in model.parameters()))   # parameters() cuenta una vez los pesos compartidos (salida = embedding)
+    if metodo == "lin":
+        return TV * d + d + d * TV + TV
+    if metodo == "pca":
+        return TV * d + TV
+    keep = int(np.load(OUT_MODELS / "lineales" / "mca.npz")["keep"].sum())
+    return keep * d + keep
+
+
 def train_linear_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, steps: int, lr: float):
     """Autoencoder lineal sobre el one-hot, con la misma pérdida (entropía cruzada por año, mismos
     pesos) que el AE no lineal: z = W_e x + b_e, logits = W_d z + b_d. Es la comparación justa
@@ -187,7 +244,17 @@ def train_linear_ae(X: np.ndarray, w: np.ndarray, d: int, seed: int, steps: int,
         logits = dec(z).view(n, T, V)
         logits[:, :, 0] = -float("inf")
         rec = logits.argmax(-1).numpy()
-    return z.numpy(), rec, hist
+    pesos = {"We": enc.weight.detach().numpy(), "be": enc.bias.detach().numpy(),
+             "Wd": dec.weight.detach().numpy(), "bd": dec.bias.detach().numpy()}
+    return z.numpy(), rec, hist, pesos
+
+
+def lin_apply(m, X: np.ndarray):
+    "Codifica y reconstruye trayectorias nuevas X (n, T) con un AE lineal guardado (m: We, be, Wd, bd)."
+    z = onehot(X) @ m["We"].T + m["be"]
+    logits = (z @ m["Wd"].T + m["bd"]).reshape(len(X), X.shape[1], V)
+    logits[:, :, 0] = -np.inf
+    return z, logits.argmax(-1)
 
 
 # ---------------------------------------------------------------------------
@@ -299,8 +366,12 @@ def cmd_linear(args):
     u, X = load_universe()
     w = train_weights(u, args.tope)
     OUT_MODELS.mkdir(parents=True, exist_ok=True)
+    (OUT_MODELS / "lineales").mkdir(parents=True, exist_ok=True)
     for name, fit, emb in (("pca", pca_fit, pca_embed_recon), ("mca", mca_fit, mca_embed_recon)):
         m = fit(X, w, max(DIMS))
+        # el ajuste, para aplicarlo a trayectorias nuevas (pca_apply / mca_apply); en una subcarpeta para que `eval` no lo lea
+        keys = ("mu", "Vt") if name == "pca" else ("c", "Vt", "keep", "s")
+        np.savez_compressed(OUT_MODELS / "lineales" / f"{name}.npz", **{k: m[k] for k in keys})
         for d in DIMS:
             z, R = emb(m, d)
             np.savez_compressed(OUT_MODELS / f"{name}_d{d}.npz", z=z.astype(np.float32), recon=R.astype(np.uint8))
@@ -332,9 +403,9 @@ def cmd_linae(args):
     OUT_MODELS.mkdir(parents=True, exist_ok=True)
     for seed in SEEDS:
         for d in DIMS:
-            z, R, hist = train_linear_ae(X, w, d, seed, args.steps, args.lr)
+            z, R, hist, pesos = train_linear_ae(X, w, d, seed, args.steps, args.lr)
             np.savez_compressed(OUT_MODELS / f"lin_d{d}_s{seed}.npz", z=z.astype(np.float32),
-                                recon=R.astype(np.uint8), loss=np.array(hist))
+                                recon=R.astype(np.uint8), loss=np.array(hist), **pesos)   # pesos: para lin_apply
             print(f"lin_d{d}_s{seed}: acc año {(R == X).mean():.4f}", flush=True)
 
 
