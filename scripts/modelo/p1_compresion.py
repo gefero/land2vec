@@ -28,7 +28,7 @@ import pandas as pd  # noqa: E402
 
 from land2vec.tokenizer import Tokenizer  # noqa: E402
 
-DIMS = list(range(1, 32, 3))   # 1, 4, 7, ..., 31 (con 31 años de serie puede hacer falta un d mayor que en 2000-2022)
+DIMS = [1, 2, 3] + list(range(4, 32, 3))   # 1, 2, 3, 4, 7, ..., 31: d = 2 y 3 se agregaron porque las diferencias entre métodos están en d bajo
 SEEDS = [0, 1, 2]
 V = len(Tokenizer.VOCAB)  # 11 (incluye [UNK]=0)
 UNIVERSO = P.DATA / "autoencoder_v3" / "universo_argentina.csv"
