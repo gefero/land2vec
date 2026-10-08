@@ -1,685 +1,655 @@
-# P1: compresión de las trayectorias de cobertura, Argentina 1992-2022 (resultados)
+# Pregunta 1: capacidad de compresión de los métodos (resultados)
 
-**Fecha:** 2026-10-08. Ejecuta la pregunta P1 de [`plan.md`](plan.md) §3 sobre el período de 31 años. Reemplaza al informe de P1 de 2000-2022, archivado en el tag `v3-2000-2022`.
+**Fecha:** 2026-10-08. Ejecuta el [protocolo de evaluación](protocolo_evaluacion.md) (Pregunta 1.1, §2–§7; Pregunta 1.2, §9), fijado antes de correr. Reemplaza al informe anterior de P1 (compresión medida sólo dentro de Argentina), que queda en el historial (`5fae580`).
 
-**Código y artefactos**
-- Entrenamiento y métricas: `scripts/modelo/p1_compresion.py` (subcomandos `om`, `linear`, `train`, `linae`, `eval`); lanzador en paralelo: `scripts/modelo/p1_correr_ae.py`; figuras: `scripts/viz/p1_figuras.py`.
-- Métricas: `data/autoencoder_v3/p1_metricas.csv` (8.800 filas: método × d × semilla × subconjunto × ponderación × métrica) y `p1_entropia.csv`.
-- Modelos: `models/autoencoder_v3/p1/` (33 autoencoders con su `z`, su reconstrucción, sus pesos y su historia de pérdida; 33 autoencoders lineales; PCA y MCA para cada d). Distancia OM: `data/autoencoder_v3/p1/om_trate.npy` (7.827², 245 MB, no versionar fuera de LFS).
-- Figuras: `docs/autoencoder_v3/figuras/p1/`.
+**Código y salidas**
+- Modelos: `scripts/modelo/p1_compresion.py` (`train`, `linear`, `linae`; `ae_apply`, `lin_apply`, `pca_apply` y `mca_apply` los aplican a trayectorias nuevas). Lanzador de los autoencoders: `scripts/modelo/p1_correr_ae.py`.
+- Evaluación: `scripts/validacion/evaluacion_pregunta1.py` (`no_vistos`, `codificar`, `reconstruccion`, `accesibilidad`, `tipologias`).
+- Resultados: `data/autoencoder_v3/pregunta1/` (`p11_reconstruccion.csv`, `p11_accesibilidad.csv`, `p11_parametros.csv`, `p12_tipologias.csv`, `p12_semillas.csv`, `no_vistos.npz`; los códigos por modelo en `codigos/`, no versionados).
+- Figuras: `scripts/viz/pregunta1_figuras.py` → `docs/autoencoder_v3/figuras/p1/`.
+
+**Cómo leer las cifras.** Salvo indicación, cada trayectoria distinta (*tipo*) pesa 1. Para el autoencoder (AE) y el AE lineal se da la media de las tres semillas y, entre paréntesis, el rango mínimo–máximo; **una diferencia menor que ese rango no se interpreta** (protocolo §6).
 
 ---
 
 ## 1. Resumen
 
-1. **Con d = 4 el autoencoder reconstruye exactamente el 99,99 % de la superficie dinámica y el 98,4 % de los tipos dinámicos** (cada trayectoria distinta cuenta una vez). Es una compresión de 31 estados por píxel a 4 números reales. Se adopta **d = 4** (decisión del 2026-10-08).
-2. **La regla de d\* fijada a priori** (menor d con al menos 99 % de la superficie dinámica reconstruida exacta) da **d\* = 4 para el autoencoder** y **d\* = 13 para el autoencoder lineal**. PCA y MCA no la cumplen ni con d = 31 (85 % y 72 %). La grilla avanza de a 3 (1, 4, 7, …, 31), de modo que **no resuelve entre d = 2, 3 y 4**: se afirma que d = 4 *alcanza*, no que sea el mínimo.
-3. **Por tipo hace falta algo más:** el autoencoder pasa el 99 % con d = 7 (99,98 %); con d = 4 queda en 98,4 % (entre 98,0 y 99,0 % según la semilla). El autoencoder lineal sólo llega a 98,8 % con d = 31.
-4. **Qué se pierde primero** al bajar d: con d = 1 el autoencoder aún acierta el 78 % de los años por tipo, pero sólo el 24 % de las secuencias de estados y el 39 % del número de cambios; el error del año del cambio es de ~1,5 años. Con d ≥ 4 estos errores desaparecen.
-5. **Las semillas no importan desde d = 4:** el autoencoder da lo mismo con las tres semillas en superficie (rango 0,00003) y varía ±0,5 puntos por tipo. El ruido sólo es grande en d = 1.
-6. **Las costuras no afectan la fidelidad:** quitar los tipos con cambio en 1994/95 o 2015/16 mueve la reconstrucción exacta a lo sumo ~1 punto.
-7. **El autoencoder no mantiene la geometría de OM** cuando d crece. Ponderado por tipo, el Spearman con OM del autoencoder baja de 0,62 (d = 4) a ~0,33 (d ≥ 13), mientras PCA, MCA y el AE lineal quedan en 0,64–0,79. En vecinos en común el autoencoder gana en d bajo (d = 4 y 7) y pierde a partir de d = 13 (0,65–0,68 contra 0,72–0,78).
-8. **Advertencia sobre lo que mide P1.** Reconstruir exacto mide *capacidad*, no *estructura*: para distinguir 7.827 tipos hacen falta ~13 bits y 4 números reales alcanzan para indexarlos. El valor de P1 está en las curvas de d bajo y en la comparación contra las alternativas lineales, no en que el autoencoder llegue a 1,0.
+1. **En las trayectorias de ajuste (Argentina) el autoencoder reconstruye todo con d ≥ 3**, como ya se sabía. Pero **esa fidelidad no se traslada a trayectorias que no vio**: con d = 4, la secuencia de estados se reconstruye bien en el 99 % de las trayectorias de Argentina y sólo en el 34 % de las trayectorias del mundo cuyo proceso sí existe en Argentina.
+2. **Según la regla fijada en el protocolo (§7), con d = 4 el autoencoder reproduce lo que vio más que una regla general**: ya en las trayectorias que difieren de una argentina en un solo año (h = 1), la secuencia de estados cae de 0,99 a 0,53. Parte de esa caída se debe a que esas trayectorias suelen tener un estado de un solo año (análisis exploratorio, §3.4), pero aun sin ellas la fidelidad cae de 0,84 (h = 1) a 0,15 (h ≥ 4).
+3. **La generalización mejora con d.** Con d = 16 a 31 el autoencoder reconstruye la secuencia de estados del 82–84 % de las trayectorias no vistas de proceso conocido, y casi no depende de la distancia a lo visto (sin tramos de un año: 0,99 con h = 1 y 0,84–0,88 con h ≥ 2).
+4. **El autoencoder es el que más reconstruye con pocas dimensiones** en las trayectorias no vistas (por ejemplo, con d = 7: secuencia de estados 0,58 frente a 0,22 del AE lineal y ~0,02 de PCA y MCA). **Con d grande el AE lineal lo alcanza** (d = 31: 0,84 ambos) y, en los procesos que no existen en Argentina, lo supera (0,62 frente a 0,55).
+5. **La información accesible directamente en z es moderada en todos los métodos** y ninguno domina. Con d = 4 y la sonda de vecinos, el AE es mejor en el número de cambios y el AE lineal en el estado inicial y en el año del cambio.
+6. **Tipologías (1.2):** en la información alineada en el tiempo (exactitud por año del prototipo) **OM es el mejor espacio en todos los k** (k = 12: 0,62 frente a 0,56 del AE); sólo lo supera la referencia de Hamming, que está alineada con esa métrica por construcción. En la información de proceso (pureza de proceso) **el AE lineal es el mejor desde k = 12**. El AE queda en un lugar intermedio en ambas.
+7. **Las tipologías hechas sobre los embeddings aprendidos dependen mucho de la semilla del modelo**: el índice de Rand ajustado entre semillas es de 0,25 a 0,38 para el AE y de 0,26 a 0,38 para el AE lineal.
+8. **Consecuencia para la elección de d = 4.** d = 4 alcanza para reproducir Argentina, pero no para generalizar. Si la representación tiene que valer más allá de las trayectorias de ajuste, los resultados apuntan a d entre 16 y 31. Es una decisión abierta (§7).
 
-![Fidelidad exacta por superficie](figuras/p1/fig1_exacta_por_superficie.png)
-
----
-
-## 2. Lógica del análisis
-
-### 2.1 La pregunta
-P1 pregunta: **¿cuánta información de las trayectorias de cobertura se conserva cuando cada trayectoria se resume en un vector de d números?** Interesa saber (a) qué d hace falta, (b) qué se pierde primero cuando d es insuficiente y (c) si un autoencoder no lineal conserva más que alternativas lineales de la misma dimensión.
-
-No es una pregunta predictiva. No se pregunta si el modelo funciona con datos nuevos, sino cuánta información del universo observado cabe en d dimensiones. Por eso se ajusta y se evalúa sobre el mismo universo, sin partición de validación (ver §7).
-
-### 2.2 El universo: trayectorias distintas, no píxeles
-Una **trayectoria** es la secuencia de estados de un píxel durante 31 años (1992-2022). Los estados son 9 clases de cobertura agrupadas desde la leyenda LCCS de ESA CCI, más `Nd` (sin dato), que no aparece:
-
-| Token | Clase |
-|---|---|
-| A | cultivos y mosaicos con cultivo |
-| F | bosque (incluye mosaico árbol-arbusto y bosque inundado) |
-| G | herbáceas y pastizal |
-| Wt | humedal (vegetación inundada) |
-| U | urbano |
-| Sh | arbustal |
-| Sp | vegetación rala (líquenes, musgos) |
-| B | suelo desnudo |
-| Wa | agua, nieve y hielo |
-
-El censo de Argentina (36.084.989 píxeles) tiene sólo **7.827 trayectorias distintas**. Cada una es un **tipo**, y lleva asociado `n_px`, la cantidad de píxeles que la comparten. Trabajar con tipos y no con píxeles hace el problema enumerable y evita entrenar sobre millones de filas repetidas.
-
-| Medida | Valor |
-|---|---:|
-| Píxeles en Argentina | 36.084.989 |
-| Trayectorias distintas (tipos) | **7.827** |
-| Constantes (31 años iguales) | 9 tipos, 93,5 % de la superficie |
-| Dinámicas (al menos un cambio) | 7.818 tipos, 2.346.420 px (6,5 %) |
-| Tipos de un solo píxel | 1.729 |
-| Máximo de cambios por trayectoria | 4 (1 cambio: 1.380 tipos; 2: 5.950; 3: 487; 4: 1) |
-| Tipos que cubren el 50 / 90 / 99 % de la superficie dinámica | 44 / 391 / 2.254 |
-| Tipos con un cambio en 1994/95 o 2015/16 (`costura`) | 1.271 (7,7 % de los píxeles dinámicos) |
-| Tipos con un cambio en 1998/99 o 1999/00 (`sensor`) | 1.588 (17,2 % de los píxeles dinámicos) |
-
-![Concentración del universo](figuras/p1/fig0_universo.png)
-
-La concentración importa para leer los resultados: **44 tipos cubren la mitad de la superficie dinámica, pero hay 1.729 tipos de un solo píxel.** Una métrica ponderada por superficie mira sobre todo a los pocos tipos frecuentes; una ponderada por tipo mira a todos por igual, y está dominada por la cola larga de tipos raros. Se reportan las dos.
-
-**Las costuras del producto.** Los mapas de 1992-1994 son prácticamente el mismo mapa en todo el planeta (entre 1992 y 1993 cambian 498.096 de 8.398 millones de píxeles; entre 1993 y 1994, 157.175; entre 1994 y 1995, 6,4 millones). ESA CCI arma la serie retropolando un mapa base de 2003-2012 con cambios detectados por AVHRR a 1 km, que sólo confirma un cambio si persiste más de dos años. Además hay un salto de versión del producto entre 2015 (v2.0.7cds) y 2016 (C3S v2.1.1). Por eso se marcan los tipos con un cambio en 1994/95 y 2015/16 (`costura`) y, aparte, los de 1998/99 y 1999/00, donde cambia el sensor (`sensor`, sensibilidad). **Las marcas no cambian el entrenamiento**: sólo permiten recalcular las métricas sobre el subconjunto sin costura.
-
-### 2.3 La entrada: el one-hot
-Cada trayectoria es un vector de 31 estados. Para los métodos lineales se expande a **one-hot**: 31 años × 11 tokens del vocabulario (incluye `[UNK]` y `Nd`) = **341 columnas** de ceros y unos, con un solo 1 por año. De esas 341, 62 nunca valen 1 (tokens que no aparecen). El autoencoder recibe la secuencia de 31 enteros directamente.
-
-### 2.4 Los cuatro métodos y qué los distingue
-
-| Método | Se entrena | Lineal | Reconstrucción | Para qué sirve en la comparación |
-|---|---|---|---|---|
-| **AE** (autoencoder) | sí, con entropía cruzada por año | no (transformer) | argmax por año del decodificador | Es el modelo de interés |
-| **AE lineal** | sí, con la **misma pérdida** y los mismos pesos | sí (una capa en cada sentido) | argmax por año | Separa el efecto de la *no linealidad* del efecto de *entrenar con una pérdida categórica* |
-| **PCA** | no (descomposición en valores singulares ponderada) | sí | argmax del one-hot reconstruido | Línea de base clásica |
-| **MCA** | no (análisis de correspondencias múltiples ponderado) | sí | argmax de las probabilidades reconstruidas | Línea de base clásica para variables categóricas |
-
-La comparación contra el AE lineal es la que importa: PCA y MCA no optimizan una pérdida categórica, así que compararlos solos contra el AE confunde dos cosas (la no linealidad y el criterio de ajuste). El AE lineal las separa.
-
-**Detalles del autoencoder.** Codificador: embedding de estado más embedding de posición (año), 2 bloques transformer (128 de ancho, 4 cabezas), *pooling* por un query aprendido y una capa lineal a d dimensiones. Decodificador: la capa lineal inversa, se repite sobre los 31 años con embedding de posición, 2 bloques transformer y una cabeza que comparte pesos con el embedding. Unos 0,8 millones de parámetros (798.212 con d = 4; 805.151 con d = 31). Sin *dropout*. AdamW (lr 1e-3, decaimiento 1e-2), 20 épocas de calentamiento y descenso coseno, recorte de gradiente 1,0, **400 épocas con lote de 128** (62 pasos por época, unos 24.800 pasos). El AE lineal usa Adam (lr 1e-2), 3.000 pasos con todo el conjunto.
-
-**Pesos de ajuste.** Los cuatro métodos usan el peso **min(n_px, 100)**, para que las 9 constantes (93,5 % de la superficie) no dominen la pérdida. Con ese tope el universo equivale a unos 2.400 tipos de peso igual.
-
-### 2.5 La grilla: dimensiones y semillas
-- **d ∈ {1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31}** (11 valores, paso 3). La grilla anterior (1, 2, 3, 4, 6, 8, 12, 16) se descartó porque con 31 años podía hacer falta un d mayor.
-- **Semillas 0, 1, 2** para el AE y el AE lineal: 33 modelos de cada uno. PCA y MCA son determinísticos (una corrida por d).
-- Total: 33 + 33 + 11 + 11 = **88 modelos**, más la distancia OM.
-
-### 2.6 La reconstrucción y las métricas de fidelidad
-Para cada trayectoria se comprime a d números y se reconstruye. La reconstrucción toma, **para cada año, el estado de mayor puntaje** (el token `[UNK]` nunca se elige). Luego se compara con la trayectoria original. Todas las métricas se calculan **por trayectoria** y después se promedian:
-
-| Métrica | Qué mide | Cómo se define |
-|---|---|---|
-| `acc_anio` | Años bien reconstruidos | Fracción de los 31 años con el estado correcto |
-| `exacta` | Trayectoria entera correcta | 1 si los 31 años son correctos, 0 en otro caso |
-| `n_cambios_ok` | Número de cambios | 1 si la reconstrucción tiene tantos cambios como la original |
-| `estados_ok` | Secuencia de estados | 1 si los estados sucesivos coinciden (por ejemplo F→A), sin mirar *cuándo* ocurre cada cambio |
-| `err_anio_cambio` | Error de fechado | Media del error absoluto, en años, entre el año del cambio original y el reconstruido; **sólo se calcula si `estados_ok` vale 1** |
-| `macro_f1` | Equilibrio entre clases | F1 macro de las 9 clases presentes, sobre los años-píxel aplanados |
-| `recall_<clase>` | Cuánto de cada clase se conserva | Recall de esa clase sobre los años-píxel aplanados |
-
-Las métricas están ordenadas de menos a más exigente: `acc_anio` perdona errores sueltos; `exacta` no perdona ninguno; `estados_ok`, `n_cambios_ok` y `err_anio_cambio` separan *qué* pasó de *cuándo* pasó.
-
-**Cuidado con `err_anio_cambio`.** Como sólo se calcula donde la secuencia de estados es correcta, para métodos que fallan mucho (PCA y MCA con d bajo) se promedia sobre una minoría de trayectorias, las que salieron bien. Un valor chico en PCA/MCA con d bajo no significa que fechen bien: significa que fechan bien las pocas que reconstruyen con los estados correctos.
-
-### 2.7 Ponderaciones y subconjuntos
-Cada métrica se reporta con dos ponderaciones:
-- **`px` (superficie):** cada tipo pesa su número de píxeles. Responde a "¿qué fracción del territorio dinámico se reconstruye bien?". Está dominada por unos pocos tipos frecuentes.
-- **`tipo`:** cada tipo pesa 1. Responde a "¿qué fracción de las dinámicas distintas se reconstruye bien?". Está dominada por la cola larga de tipos raros.
-
-Y sobre cuatro subconjuntos: `todas`, `dinamicas` (el principal), `constantes` y `sin_costura` (excluye los tipos con cambio en 1994/95 o 2015/16, **sin reentrenar**: sólo se recalculan las métricas). Las constantes son sólo 9 tipos y pesan 93,5 % de la superficie, por eso el análisis central usa las **dinámicas**.
-
-### 2.8 La regla de d\*, fijada antes de mirar los resultados
-> **d\* es el menor d de la grilla para el cual la media entre semillas de la reconstrucción exacta, ponderada por superficie, sobre los píxeles dinámicos, es al menos 0,99.**
-
-Se reporta además la curva completa de fidelidad contra d, y la misma regla por tipo y con la peor semilla, para ver cuánto depende la conclusión de la ponderación y del azar.
-
-### 2.9 Preservación de la estructura de OM
-Además de reconstruir, interesa si las distancias en el espacio comprimido se parecen a las de **OM** (distancia de alineamiento óptimo entre secuencias, calculada con `seqdist` sobre los 7.827 tipos). Se miden dos cosas:
-- **Spearman:** correlación de rangos entre la distancia en z y la distancia OM, sobre 2 millones de pares de tipos muestreados al azar (con la ponderación indicada).
-- **Vecinos en común (kNN10):** de los 10 vecinos más cercanos de cada tipo según OM, cuántos siguen entre los 10 más cercanos en z (promedio sobre tipos).
-
-Esta medida **no es neutral**: usa OM como referencia, y el autoencoder no se entrenó para preservarla. Mide hasta qué punto el espacio aprendido *coincide* con OM, no si es "mejor" que OM.
-
-### 2.10 La entropía como escala de referencia
-La entropía de la distribución de trayectorias da una idea de cuánta información hay que representar. Se calcula con cuatro distribuciones (por superficie, sólo dinámicas, con el tope de entrenamiento y uniforme sobre los tipos). Es una referencia de escala, no una cota exacta: un número real puede portar información arbitraria, de modo que comparar bits contra "números reales" sólo es heurístico.
-
-### 2.11 Cómo se leen las curvas
-Con 7.827 tipos y d hasta 31, un modelo con capacidad suficiente puede reconstruirlos todos. **Por eso el autoencoder llega a 1,0 y deja de discriminar a partir de d = 7.** Lo informativo es: (i) *dónde* empieza a funcionar (d bajo), (ii) cómo se compara con lo lineal a igual d, y (iii) qué estructura conserva además de reconstruir.
+![Secuencia de estados correcta](figuras/p1/fig2_secuencia_de_estados.png)
 
 ---
 
-## 3. Montaje experimental
+## 2. Qué se midió
 
-| Aspecto | Valor |
-|---|---|
-| Serie | `landcover_timeseries_1992-2022_rebuild.nc` (31 años), recorte rectangular; censo dentro del polígono de Argentina |
-| Universo | `data/autoencoder_v3/universo_argentina.csv`, 7.827 tipos |
-| Peso de ajuste | min(n_px, 100) |
-| Autoencoder | transformer, 128 de ancho, 2+2 bloques, ~0,8 M parámetros, 400 épocas, lote 128 |
-| AE lineal | Adam lr 1e-2, 3.000 pasos |
-| Semillas | 0, 1, 2 (AE y AE lineal) |
-| d | 1, 4, 7, …, 31 |
-| Equipo | GPU GTX 1060 de 6 GB, 3 a 4 modelos en paralelo; 517 a 2.103 s por modelo (9 a 35 min) |
-| Ajuste y evaluación | mismo universo (sin partición) |
+Síntesis del protocolo; el detalle está en [`protocolo_evaluacion.md`](protocolo_evaluacion.md).
 
-**Un problema de memoria resuelto durante la corrida.** La codificación final de las 7.827 trayectorias se hacía de una vez y con 4 procesos simultáneos agotaba los 6 GB de la GPU (`CUDA out of memory`), después de entrenar. Dos modelos (d = 1 y d = 7, semilla 0) se perdieron y se repitieron. Desde entonces la codificación final se hace por bloques de 512; el resultado es numéricamente igual (diferencia máxima de z de 2×10⁻⁷, reconstrucción idéntica).
+- **Métodos:** autoencoder (transformer, ~800.000 parámetros), AE lineal (misma pérdida), PCA y MCA del one-hot. Todos ajustados **sólo con las 7.827 trayectorias de Argentina**, con d ∈ {1, 2, 3, 4, 7, 10, …, 31}.
+- **Evaluación:** las **62.121 trayectorias dinámicas del mundo que no existen en Argentina**, que ningún método vio. Se separan por:
+  - **A:** si su *proceso* (la secuencia de estados sin fechas) existe en Argentina (43.086, "proceso visto") o no (19.035, "proceso nuevo");
+  - **B:** **h**, cuántos de los 31 años difieren de la trayectoria argentina más parecida.
+- **1.1 Reconstrucción.** Principales: **exactitud por año** (*cuándo*) y **secuencia de estados correcta** (*qué*). Secundarias: reconstrucción exacta, número de cambios, error de fechado y F1 macro por clase.
+- **1.1 Accesibilidad.** Cinco tareas (estado inicial, estado final, número de cambios, proceso, año del primer cambio) predichas desde z con una sonda de 5 vecinos (principal) y una lineal (secundaria), ajustadas con Argentina.
+- **1.2 Tipologías.** k-medoides (10 arranques) y jerárquico de enlace completo sobre las 7.818 trayectorias dinámicas de Argentina, sin ponderar, con k de 4 a 48. Espacios: los cuatro métodos con d = 4 (2 y 7 de sensibilidad), OM y el one-hot con distancia de Hamming como referencia.
+
+Tamaño de los modelos (número de parámetros):
+
+| método | d = 1 | d = 4 | d = 31 |
+|---|--:|--:|--:|
+| AE | 797.441 | 798.212 | 805.151 |
+| AE lineal | 1.024 | 3.073 | 21.514 |
+| PCA | 682 | 1.705 | 10.912 |
+| MCA | 558 | 1.395 | 8.928 |
 
 ---
 
-## 4. Resultados
+## 3. Pregunta 1.1: reconstrucción
 
-### 4.1 La regla de d\*
+### 3.1 Métricas principales
 
-| ponderación | método | d* (media ≥ 0,99) | d* (peor semilla ≥ 0,99) | valor en d = 31 |
-|--:|--:|--:|--:|--:|
-| superficie | AE | 4 | 4 | 1,0000 |
-| superficie | AE lineal | 13 | 13 | 0,9999 |
-| superficie | PCA | — | — | 0,8516 |
-| superficie | MCA | — | — | 0,7219 |
-| tipo | AE | 7 | 7 | 1,0000 |
-| tipo | AE lineal | — | — | 0,9880 |
-| tipo | PCA | — | — | 0,4756 |
-| tipo | MCA | — | — | 0,3296 |
+**Exactitud por año (*cuándo*)**
 
-Reconstrucción exacta de las trayectorias dinámicas, **ponderada por superficie** (media entre semillas):
+![Exactitud por año](figuras/p1/fig1_exactitud_por_anio.png)
+
+Argentina (trayectorias de ajuste; referencia):
 
 | d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,2263 | 0,0124 | 0,0000 | 0,0001 |
-| 4 | 0,9999 | 0,2827 | 0,0244 | 0,0003 |
-| 7 | 1,0000 | 0,7629 | 0,0520 | 0,0242 |
-| 10 | 1,0000 | 0,9834 | 0,2018 | 0,0280 |
-| 13 | 1,0000 | 0,9974 | 0,2989 | 0,1800 |
-| 16 | 1,0000 | 0,9991 | 0,3232 | 0,2721 |
-| 19 | 1,0000 | 0,9996 | 0,5603 | 0,4069 |
-| 22 | 1,0000 | 0,9998 | 0,5732 | 0,5706 |
-| 25 | 1,0000 | 0,9999 | 0,7381 | 0,5990 |
-| 28 | 1,0000 | 0,9999 | 0,8257 | 0,5539 |
-| 31 | 1,0000 | 0,9999 | 0,8516 | 0,7219 |
+|---|--:|--:|--:|--:|
+| 1 | 0,775 (0,770–0,783) | 0,494 (0,491–0,497) | 0,306 | 0,300 |
+| 2 | 0,952 (0,950–0,956) | 0,608 (0,596–0,617) | 0,393 | 0,334 |
+| 3 | 0,995 (0,993–0,996) | 0,712 (0,704–0,721) | 0,478 | 0,373 |
+| 4 | 0,999 (0,999–1,000) | 0,789 (0,783–0,794) | 0,538 | 0,434 |
+| 7 | 1,000 (1,000–1,000) | 0,909 (0,906–0,913) | 0,665 | 0,587 |
+| 10 | 1,000 (1,000–1,000) | 0,965 (0,962–0,967) | 0,781 | 0,720 |
+| 16 | 1,000 (1,000–1,000) | 0,993 (0,993–0,994) | 0,896 | 0,873 |
+| 31 | 1,000 (1,000–1,000) | 1,000 (1,000–1,000) | 0,976 | 0,966 |
 
-- El autoencoder cumple la regla en **d = 4** (0,9999) y no la cumple en d = 1 (0,226).
-- El AE lineal la cumple en d = 13 (0,9974). Con d = 10 está en 0,983.
-- PCA y MCA no la cumplen con ningún d de la grilla: con d = 31 llegan a 0,85 y 0,72.
-- Entre d = 1 y d = 4 hay un salto de 0,23 a 0,9999. **La grilla no resuelve qué pasa con d = 2 y d = 3**, así que d\* ∈ {2, 3, 4}.
-
-### 4.2 La misma curva, por tipo
-
-![Fidelidad exacta por tipo](figuras/p1/fig2_exacta_por_tipo.png)
+Mundo no visto, proceso visto:
 
 | d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,0518 | 0,0005 | 0,0000 | 0,0001 |
-| 4 | 0,9840 | 0,0349 | 0,0006 | 0,0005 |
-| 7 | 0,9998 | 0,2218 | 0,0023 | 0,0008 |
-| 10 | 1,0000 | 0,5473 | 0,0171 | 0,0091 |
-| 13 | 1,0000 | 0,7394 | 0,0590 | 0,0287 |
-| 16 | 1,0000 | 0,8626 | 0,0979 | 0,0581 |
-| 19 | 1,0000 | 0,9244 | 0,1390 | 0,1117 |
-| 22 | 1,0000 | 0,9601 | 0,2107 | 0,1902 |
-| 25 | 1,0000 | 0,9725 | 0,3179 | 0,2328 |
-| 28 | 1,0000 | 0,9828 | 0,4230 | 0,2581 |
-| 31 | 1,0000 | 0,9880 | 0,4756 | 0,3296 |
+|---|--:|--:|--:|--:|
+| 1 | 0,594 (0,584–0,607) | 0,400 (0,396–0,405) | 0,253 | 0,239 |
+| 2 | 0,685 (0,671–0,698) | 0,519 (0,507–0,531) | 0,325 | 0,288 |
+| 3 | 0,746 (0,736–0,753) | 0,614 (0,613–0,616) | 0,412 | 0,336 |
+| 4 | 0,812 (0,802–0,821) | 0,685 (0,677–0,698) | 0,469 | 0,417 |
+| 7 | 0,928 (0,926–0,930) | 0,807 (0,804–0,812) | 0,605 | 0,555 |
+| 10 | 0,959 (0,957–0,961) | 0,888 (0,878–0,895) | 0,709 | 0,681 |
+| 16 | 0,977 (0,973–0,979) | 0,950 (0,949–0,952) | 0,853 | 0,832 |
+| 31 | 0,980 (0,979–0,980) | 0,981 (0,980–0,981) | 0,960 | 0,949 |
 
-Por tipo la exigencia es mayor, porque los tipos raros (la mayoría) cuentan igual que los frecuentes:
-- El autoencoder llega al 98,4 % con d = 4 y al 99,98 % con d = 7. **Con la regla aplicada por tipo, d\* sería 7.**
-- El AE lineal alcanza el 98,8 % con d = 31, de modo que **por tipo no cumple la regla en ningún d** de la grilla.
-- PCA y MCA llegan al 48 % y 33 % con d = 31.
-
-La diferencia entre superficie y tipo (99,99 % contra 98,4 % con d = 4) quiere decir que **con d = 4 el autoencoder falla en ~1,6 % de los tipos, casi todos raros**, que en conjunto suman una fracción minúscula del territorio.
-
-### 4.3 Qué se pierde primero
-
-![Fidelidad por aspecto](figuras/p1/fig3_fidelidad_por_aspecto.png)
-
-Por tipo (trayectorias dinámicas, media entre semillas):
-
-**Años correctos (`acc_anio`)**
+Mundo no visto, proceso nuevo:
 
 | d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,7753 | 0,4935 | 0,3056 | 0,3003 |
-| 4 | 0,9993 | 0,7886 | 0,5377 | 0,4343 |
-| 7 | 1,0000 | 0,9094 | 0,6645 | 0,5869 |
-| 10 | 1,0000 | 0,9653 | 0,7811 | 0,7200 |
-| 13 | 1,0000 | 0,9854 | 0,8561 | 0,8185 |
-| 16 | 1,0000 | 0,9935 | 0,8961 | 0,8726 |
-| 19 | 1,0000 | 0,9968 | 0,9269 | 0,9128 |
-| 22 | 1,0000 | 0,9984 | 0,9489 | 0,9424 |
-| 25 | 1,0000 | 0,9990 | 0,9632 | 0,9535 |
-| 28 | 1,0000 | 0,9994 | 0,9717 | 0,9594 |
-| 31 | 1,0000 | 0,9996 | 0,9762 | 0,9663 |
+|---|--:|--:|--:|--:|
+| 1 | 0,463 (0,461–0,465) | 0,338 (0,335–0,341) | 0,214 | 0,210 |
+| 2 | 0,517 (0,492–0,535) | 0,417 (0,397–0,443) | 0,280 | 0,284 |
+| 3 | 0,537 (0,494–0,560) | 0,513 (0,497–0,521) | 0,383 | 0,314 |
+| 4 | 0,616 (0,596–0,640) | 0,570 (0,553–0,586) | 0,437 | 0,391 |
+| 7 | 0,773 (0,761–0,787) | 0,694 (0,686–0,700) | 0,567 | 0,531 |
+| 10 | 0,872 (0,863–0,879) | 0,795 (0,791–0,799) | 0,663 | 0,656 |
+| 16 | 0,923 (0,909–0,933) | 0,890 (0,888–0,892) | 0,820 | 0,802 |
+| 31 | 0,939 (0,935–0,943) | 0,956 (0,955–0,957) | 0,950 | 0,942 |
 
-**Número de cambios correcto (`n_cambios_ok`)**
+**Secuencia de estados correcta (*qué*)**
 
-| d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,393 | 0,385 | 0,316 | 0,282 |
-| 4 | 0,993 | 0,445 | 0,287 | 0,250 |
-| 7 | 1,000 | 0,625 | 0,208 | 0,374 |
-| 10 | 1,000 | 0,791 | 0,301 | 0,243 |
-| 13 | 1,000 | 0,895 | 0,396 | 0,256 |
-| 16 | 1,000 | 0,949 | 0,509 | 0,421 |
-| 19 | 1,000 | 0,971 | 0,641 | 0,572 |
-| 22 | 1,000 | 0,984 | 0,733 | 0,686 |
-| 25 | 1,000 | 0,988 | 0,790 | 0,746 |
-| 28 | 1,000 | 0,992 | 0,825 | 0,792 |
-| 31 | 1,000 | 0,994 | 0,850 | 0,816 |
-
-**Secuencia de estados correcta (`estados_ok`)**
+Argentina (referencia):
 
 | d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,237 | 0,062 | 0,032 | 0,032 |
-| 4 | 0,992 | 0,322 | 0,067 | 0,053 |
-| 7 | 1,000 | 0,576 | 0,088 | 0,095 |
-| 10 | 1,000 | 0,770 | 0,231 | 0,146 |
-| 13 | 1,000 | 0,887 | 0,366 | 0,234 |
-| 16 | 1,000 | 0,945 | 0,501 | 0,404 |
-| 19 | 1,000 | 0,969 | 0,632 | 0,563 |
-| 22 | 1,000 | 0,983 | 0,731 | 0,684 |
-| 25 | 1,000 | 0,987 | 0,790 | 0,745 |
-| 28 | 1,000 | 0,991 | 0,824 | 0,792 |
-| 31 | 1,000 | 0,994 | 0,850 | 0,816 |
+|---|--:|--:|--:|--:|
+| 1 | 0,237 (0,208–0,259) | 0,062 (0,059–0,068) | 0,032 | 0,032 |
+| 2 | 0,722 (0,705–0,739) | 0,085 (0,081–0,091) | 0,063 | 0,035 |
+| 3 | 0,952 (0,946–0,956) | 0,181 (0,165–0,207) | 0,055 | 0,039 |
+| 4 | 0,992 (0,990–0,994) | 0,322 (0,311–0,337) | 0,067 | 0,053 |
+| 7 | 1,000 (1,000–1,000) | 0,576 (0,568–0,584) | 0,088 | 0,095 |
+| 10 | 1,000 (1,000–1,000) | 0,770 (0,751–0,783) | 0,231 | 0,146 |
+| 16 | 1,000 (1,000–1,000) | 0,945 (0,944–0,946) | 0,501 | 0,404 |
+| 31 | 1,000 (1,000–1,000) | 0,994 (0,993–0,995) | 0,850 | 0,816 |
 
-**Error del año del cambio, en años (`err_anio_cambio`, sólo donde `estados_ok` = 1)**
+Mundo no visto, proceso visto:
 
 | d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 1,457 | 4,288 | 6,849 | 4,344 |
-| 4 | 0,004 | 1,682 | 4,034 | 4,907 |
-| 7 | 0,000 | 0,639 | 2,969 | 4,451 |
-| 10 | 0,000 | 0,225 | 1,752 | 2,954 |
-| 13 | 0,000 | 0,110 | 1,343 | 1,848 |
-| 16 | 0,000 | 0,054 | 0,988 | 1,252 |
-| 19 | 0,000 | 0,027 | 0,781 | 0,921 |
-| 22 | 0,000 | 0,013 | 0,601 | 0,638 |
-| 25 | 0,000 | 0,008 | 0,441 | 0,541 |
-| 28 | 0,000 | 0,005 | 0,332 | 0,509 |
-| 31 | 0,000 | 0,003 | 0,290 | 0,418 |
+|---|--:|--:|--:|--:|
+| 1 | 0,016 (0,015–0,018) | 0,007 (0,006–0,010) | 0,010 | 0,010 |
+| 2 | 0,096 (0,090–0,100) | 0,012 (0,007–0,017) | 0,005 | 0,014 |
+| 3 | 0,233 (0,228–0,238) | 0,054 (0,048–0,057) | 0,003 | 0,015 |
+| 4 | 0,335 (0,319–0,365) | 0,104 (0,097–0,113) | 0,008 | 0,019 |
+| 7 | 0,584 (0,568–0,593) | 0,221 (0,219–0,224) | 0,018 | 0,023 |
+| 10 | 0,701 (0,695–0,705) | 0,381 (0,355–0,397) | 0,071 | 0,035 |
+| 16 | 0,817 (0,799–0,839) | 0,615 (0,609–0,625) | 0,247 | 0,192 |
+| 31 | 0,840 (0,834–0,846) | 0,837 (0,834–0,839) | 0,704 | 0,659 |
 
-**F1 macro (9 clases)**
+Mundo no visto, proceso nuevo:
 
 | d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,776 | 0,410 | 0,160 | 0,186 |
-| 4 | 0,999 | 0,792 | 0,397 | 0,452 |
-| 7 | 1,000 | 0,909 | 0,533 | 0,619 |
-| 10 | 1,000 | 0,964 | 0,728 | 0,731 |
-| 13 | 1,000 | 0,984 | 0,843 | 0,819 |
-| 16 | 1,000 | 0,993 | 0,889 | 0,871 |
-| 19 | 1,000 | 0,997 | 0,920 | 0,910 |
-| 22 | 1,000 | 0,998 | 0,946 | 0,942 |
-| 25 | 1,000 | 0,999 | 0,960 | 0,955 |
-| 28 | 1,000 | 0,999 | 0,969 | 0,961 |
-| 31 | 1,000 | 1,000 | 0,974 | 0,967 |
+|---|--:|--:|--:|--:|
+| 1 | 0,003 (0,002–0,006) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 2 | 0,004 (0,003–0,007) | 0,001 (0,000–0,001) | 0,001 | 0,000 |
+| 3 | 0,009 (0,007–0,012) | 0,016 (0,011–0,024) | 0,001 | 0,001 |
+| 4 | 0,030 (0,018–0,041) | 0,033 (0,024–0,038) | 0,000 | 0,001 |
+| 7 | 0,129 (0,122–0,137) | 0,059 (0,050–0,067) | 0,004 | 0,006 |
+| 10 | 0,283 (0,277–0,287) | 0,141 (0,136–0,150) | 0,028 | 0,029 |
+| 16 | 0,483 (0,423–0,538) | 0,288 (0,275–0,297) | 0,151 | 0,132 |
+| 31 | 0,554 (0,542–0,566) | 0,621 (0,616–0,623) | 0,580 | 0,550 |
 
 Lectura:
-1. **Lo que se pierde primero al bajar d es la secuencia de estados y el número de cambios**, no los años sueltos. Con d = 1 el autoencoder acierta el 78 % de los años (`acc_anio` 0,775) pero sólo el 24 % de las secuencias de estados y el 39 % del número de cambios. Una trayectoria con "casi todos los años bien" puede tener la historia equivocada.
-2. **Con d = 1 el autoencoder fecha mal el cambio** (1,5 años de error medio por tipo) y el AE lineal peor (4,3).
-3. **A partir de d = 4 el autoencoder pierde menos del 1 % de los tipos** en estas métricas (secuencia de estados 0,992 y número de cambios 0,993 con d = 4; 1,000 con d = 7) y el error de fechado es 0,004 años con d = 4 y 0,0001 con d = 7.
-4. **El AE lineal necesita unos 3 d más para cada nivel:** por ejemplo, 0,96 de `acc_anio` por tipo en d = 10, que el AE alcanza con d = 4 (0,9993).
-5. La métrica ponderada por superficie da el mismo orden con valores más altos (tablas del anexo A.1).
+- **La distancia entre Argentina y el mundo no visto es la medida de cuánto de la "compresión" era memoria.** Con d = 4, el AE pasa de 0,999 a 0,812 en exactitud por año y de 0,992 a 0,335 en secuencia de estados. Con d = 31, de 1,000 a 0,980 y de 1,000 a 0,840.
+- **Con d bajo, el autoencoder es el método que más reconstruye en las trayectorias no vistas**, por márgenes muy superiores al rango entre semillas. Por ejemplo, en proceso visto con d = 7: exactitud por año 0,928 frente a 0,807 (AE lineal), 0,605 (PCA) y 0,555 (MCA); secuencia de estados 0,584 frente a 0,221, 0,018 y 0,023.
+- **Con d alto la ventaja desaparece.** En proceso visto con d = 31, el AE y el AE lineal quedan iguales en las dos métricas. En proceso nuevo con d = 31, el AE lineal supera al AE en secuencia de estados (0,621 frente a 0,554) y PCA lo iguala.
+- **El autoencoder se satura:** en proceso visto, la secuencia de estados deja de crecer a partir de d ≈ 16 (0,82–0,84), lejos del 1,00 de Argentina.
 
-### 4.4 Qué clases se conservan
+### 3.2 Reconstrucción exacta por dimensión
 
-![Recall por clase](figuras/p1/fig6_recall_por_clase.png)
+**Cada tipo pesa 1**
 
-Recall por clase en trayectorias dinámicas, por tipo, con **d = 1**:
+![Reconstrucción exacta por tipo](figuras/p1/fig3_exacta_por_tipo.png)
 
-| clase | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| A | 0,805 | 0,484 | 0,061 | 0,200 |
-| F | 0,764 | 0,762 | 0,594 | 0,581 |
-| G | 0,752 | 0,318 | 0,000 | 0,000 |
-| Wt | 0,761 | 0,122 | 0,000 | 0,000 |
-| U | 0,699 | 0,000 | 0,000 | 0,000 |
-| Sh | 0,735 | 0,396 | 0,362 | 0,247 |
-| Sp | 0,821 | 0,701 | 0,866 | 0,461 |
-| B | 0,821 | 0,611 | 0,115 | 0,588 |
-| Wa | 0,797 | 0,251 | 0,000 | 0,000 |
+Argentina (referencia):
 
-Con **d = 4**:
+| d | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|
+| 1 | 0,052 (0,047–0,054) | 0,000 (0,000–0,001) | 0,000 | 0,000 |
+| 2 | 0,558 (0,546–0,576) | 0,003 (0,002–0,004) | 0,000 | 0,000 |
+| 3 | 0,911 (0,894–0,924) | 0,012 (0,011–0,015) | 0,001 | 0,000 |
+| 4 | 0,984 (0,980–0,990) | 0,035 (0,031–0,039) | 0,001 | 0,001 |
+| 7 | 1,000 (1,000–1,000) | 0,222 (0,217–0,228) | 0,002 | 0,001 |
+| 10 | 1,000 (1,000–1,000) | 0,547 (0,522–0,562) | 0,017 | 0,009 |
+| 16 | 1,000 (1,000–1,000) | 0,863 (0,857–0,870) | 0,098 | 0,058 |
+| 31 | 1,000 (1,000–1,000) | 0,988 (0,986–0,989) | 0,476 | 0,330 |
 
-| clase | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| A | 0,999 | 0,805 | 0,644 | 0,262 |
-| F | 1,000 | 0,802 | 0,805 | 0,498 |
-| G | 0,999 | 0,726 | 0,161 | 0,737 |
-| Wt | 0,999 | 0,738 | 0,000 | 0,077 |
-| U | 0,999 | 0,842 | 0,000 | 0,870 |
-| Sh | 0,999 | 0,815 | 0,689 | 0,235 |
-| Sp | 0,999 | 0,789 | 0,584 | 0,338 |
-| B | 0,999 | 0,840 | 0,451 | 0,611 |
-| Wa | 1,000 | 0,708 | 0,443 | 0,742 |
+Mundo no visto, proceso visto:
 
-- Con d = 1 el autoencoder conserva todas las clases con un recall de 0,70 a 0,82, incluidas las raras (Wa, B, U, Wt). PCA y MCA pierden por completo U, Wt, Wa y G (recall 0); el AE lineal pierde U (0) y conserva poco Wt (0,12) y Wa (0,25).
-- Con d = 4 el autoencoder llega a 0,999–1,000 en todas las clases; el AE lineal queda entre 0,71 y 0,84; PCA y MCA entre 0 y 0,87.
-- **El fallo de los métodos lineales con d bajo se concentra en las clases raras** (U, Wt, Wa, G). F, la clase dominante, se conserva relativamente bien incluso con métodos lineales (0,58–0,76 con d = 1).
+| d | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|
+| 1 | 0,000 (0,000–0,000) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 2 | 0,014 (0,013–0,016) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 3 | 0,077 (0,068–0,086) | 0,001 (0,001–0,001) | 0,000 | 0,000 |
+| 4 | 0,144 (0,136–0,154) | 0,002 (0,002–0,003) | 0,000 | 0,000 |
+| 7 | 0,351 (0,342–0,364) | 0,020 (0,018–0,021) | 0,000 | 0,000 |
+| 10 | 0,473 (0,459–0,483) | 0,100 (0,089–0,108) | 0,001 | 0,001 |
+| 16 | 0,608 (0,562–0,637) | 0,307 (0,298–0,323) | 0,021 | 0,011 |
+| 31 | 0,653 (0,635–0,682) | 0,607 (0,591–0,618) | 0,260 | 0,170 |
 
-### 4.5 Ruido entre semillas
+Mundo no visto, proceso nuevo:
 
-![Ruido entre semillas](figuras/p1/fig4_ruido_semillas.png)
+| d | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|
+| 1 | 0,000 (0,000–0,000) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 2 | 0,000 (0,000–0,000) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 3 | 0,000 (0,000–0,001) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 4 | 0,002 (0,002–0,002) | 0,000 (0,000–0,001) | 0,000 | 0,000 |
+| 7 | 0,025 (0,022–0,031) | 0,002 (0,002–0,003) | 0,000 | 0,000 |
+| 10 | 0,087 (0,073–0,098) | 0,014 (0,012–0,015) | 0,000 | 0,000 |
+| 16 | 0,197 (0,150–0,226) | 0,071 (0,056–0,082) | 0,010 | 0,003 |
+| 31 | 0,258 (0,221–0,292) | 0,304 (0,284–0,318) | 0,206 | 0,155 |
 
-Autoencoder, trayectorias dinámicas (media y rango entre las tres semillas):
+**Ponderada por superficie** (área en km² en el mundo; píxeles en Argentina)
 
-| d | superficie: media | superficie: mín–máx | tipo: media | tipo: mín–máx |
-|--:|--:|--:|--:|--:|
-| 1 | 0,2263 | 0,1957–0,2584 | 0,0518 | 0,0473–0,0542 |
-| 4 | 0,9999 | 0,9999–1,0000 | 0,9840 | 0,9799–0,9900 |
-| 7 | 1,0000 | 1,0000–1,0000 | 0,9998 | 0,9996–1,0000 |
-| 10 | 1,0000 | 1,0000–1,0000 | 1,0000 | 0,9999–1,0000 |
-| 13 | 1,0000 | 1,0000–1,0000 | 1,0000 | 1,0000–1,0000 |
-| 16 | 1,0000 | 1,0000–1,0000 | 1,0000 | 1,0000–1,0000 |
-| 19 | 1,0000 | 1,0000–1,0000 | 1,0000 | 1,0000–1,0000 |
-| 22 | 1,0000 | 1,0000–1,0000 | 1,0000 | 1,0000–1,0000 |
-| 25 | 1,0000 | 1,0000–1,0000 | 1,0000 | 1,0000–1,0000 |
-| 28 | 1,0000 | 1,0000–1,0000 | 1,0000 | 1,0000–1,0000 |
-| 31 | 1,0000 | 1,0000–1,0000 | 1,0000 | 1,0000–1,0000 |
+![Reconstrucción exacta por superficie](figuras/p1/fig4_exacta_por_superficie.png)
 
-AE lineal:
+Argentina (referencia):
 
-| d | superficie: media | superficie: mín–máx | tipo: media | tipo: mín–máx |
-|--:|--:|--:|--:|--:|
-| 1 | 0,0124 | 0,0123–0,0125 | 0,0005 | 0,0004–0,0005 |
-| 4 | 0,2827 | 0,2507–0,3129 | 0,0349 | 0,0311–0,0393 |
-| 7 | 0,7629 | 0,7364–0,8098 | 0,2218 | 0,2173–0,2276 |
-| 10 | 0,9834 | 0,9738–0,9885 | 0,5473 | 0,5220–0,5624 |
-| 13 | 0,9974 | 0,9973–0,9975 | 0,7394 | 0,7360–0,7417 |
-| 16 | 0,9991 | 0,9990–0,9992 | 0,8626 | 0,8567–0,8698 |
-| 19 | 0,9996 | 0,9996–0,9996 | 0,9244 | 0,9234–0,9256 |
-| 22 | 0,9998 | 0,9998–0,9998 | 0,9601 | 0,9578–0,9633 |
-| 25 | 0,9999 | 0,9998–0,9999 | 0,9725 | 0,9708–0,9756 |
-| 28 | 0,9999 | 0,9999–0,9999 | 0,9828 | 0,9820–0,9838 |
-| 31 | 0,9999 | 0,9999–0,9999 | 0,9880 | 0,9863–0,9889 |
+| d | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|
+| 1 | 0,226 (0,196–0,258) | 0,012 (0,012–0,013) | 0,000 | 0,000 |
+| 2 | 0,996 (0,995–0,996) | 0,044 (0,022–0,088) | 0,024 | 0,000 |
+| 3 | 1,000 (1,000–1,000) | 0,113 (0,099–0,121) | 0,027 | 0,000 |
+| 4 | 1,000 (1,000–1,000) | 0,283 (0,251–0,313) | 0,024 | 0,000 |
+| 7 | 1,000 (1,000–1,000) | 0,763 (0,736–0,810) | 0,052 | 0,024 |
+| 10 | 1,000 (1,000–1,000) | 0,983 (0,974–0,989) | 0,202 | 0,028 |
+| 16 | 1,000 (1,000–1,000) | 0,999 (0,999–0,999) | 0,323 | 0,272 |
+| 31 | 1,000 (1,000–1,000) | 1,000 (1,000–1,000) | 0,852 | 0,722 |
 
-- Para el autoencoder el ruido **sólo importa en d = 1** (por superficie, de 0,196 a 0,258) y en d = 4 por tipo (de 0,980 a 0,990). Desde d = 7 la diferencia entre semillas es menor a 0,0005.
-- Por superficie con d = 4 las tres semillas dan 0,99993–0,99997. **La regla de d\* da el mismo resultado con la peor semilla.**
-- El AE lineal tiene un ruido pequeño pero no nulo (hasta ±2 puntos por tipo en d = 10); las diferencias contra el autoencoder son mucho mayores que ese ruido.
-- Esta medida es el ruido de **inicialización** con el mismo universo y los mismos hiperparámetros. No cubre la variación por hiperparámetros ni por muestreo del universo.
+Mundo no visto, proceso visto:
 
-### 4.6 Subconjuntos: constantes y dinámicas
+| d | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|
+| 1 | 0,012 (0,003–0,029) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 2 | 0,059 (0,047–0,064) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 3 | 0,173 (0,146–0,202) | 0,001 (0,000–0,003) | 0,000 | 0,000 |
+| 4 | 0,317 (0,300–0,347) | 0,011 (0,002–0,018) | 0,000 | 0,000 |
+| 7 | 0,564 (0,501–0,601) | 0,054 (0,038–0,065) | 0,000 | 0,000 |
+| 10 | 0,636 (0,574–0,710) | 0,169 (0,124–0,233) | 0,005 | 0,006 |
+| 16 | 0,703 (0,660–0,727) | 0,296 (0,267–0,323) | 0,077 | 0,053 |
+| 31 | 0,760 (0,724–0,807) | 0,476 (0,417–0,511) | 0,272 | 0,306 |
 
-Reconstrucción exacta por superficie según subconjunto:
+Mundo no visto, proceso nuevo:
 
-| subconjunto | d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|--:|
-| todas | 1 | 0,4181 | 0,2931 | 0,0000 | 0,0000 |
-| todas | 4 | 1,0000 | 0,9534 | 0,4382 | 0,0445 |
-| todas | 7 | 1,0000 | 0,9846 | 0,9101 | 0,2894 |
-| todas | 10 | 1,0000 | 0,9989 | 0,9467 | 0,9354 |
-| todas | 16 | 1,0000 | 0,9999 | 0,9546 | 0,9512 |
-| todas | 31 | 1,0000 | 1,0000 | 0,9889 | 0,9819 |
-| constantes (9 tipos) | 1 | 0,4314 | 0,3126 | 0,0000 | 0,0000 |
-| constantes (9 tipos) | 4 | 1,0000 | 1,0000 | 0,4670 | 0,0476 |
-| constantes (9 tipos) | 7 | 1,0000 | 1,0000 | 0,9698 | 0,3079 |
-| constantes (9 tipos) | 10 | 1,0000 | 1,0000 | 0,9985 | 0,9985 |
-| constantes (9 tipos) | 16 | 1,0000 | 1,0000 | 0,9985 | 0,9985 |
-| constantes (9 tipos) | 31 | 1,0000 | 1,0000 | 0,9985 | 1,0000 |
-| dinámicas | 1 | 0,2263 | 0,0124 | 0,0000 | 0,0001 |
-| dinámicas | 4 | 0,9999 | 0,2827 | 0,0244 | 0,0003 |
-| dinámicas | 7 | 1,0000 | 0,7629 | 0,0520 | 0,0242 |
-| dinámicas | 10 | 1,0000 | 0,9834 | 0,2018 | 0,0280 |
-| dinámicas | 16 | 1,0000 | 0,9991 | 0,3232 | 0,2721 |
-| dinámicas | 31 | 1,0000 | 0,9999 | 0,8516 | 0,7219 |
+| d | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|
+| 1 | 0,000 (0,000–0,000) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 2 | 0,000 (0,000–0,000) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 3 | 0,000 (0,000–0,000) | 0,000 (0,000–0,000) | 0,000 | 0,000 |
+| 4 | 0,001 (0,000–0,002) | 0,000 (0,000–0,001) | 0,000 | 0,000 |
+| 7 | 0,016 (0,008–0,031) | 0,002 (0,001–0,003) | 0,000 | 0,000 |
+| 10 | 0,092 (0,054–0,126) | 0,010 (0,005–0,013) | 0,000 | 0,000 |
+| 16 | 0,169 (0,142–0,189) | 0,038 (0,031–0,044) | 0,010 | 0,004 |
+| 31 | 0,222 (0,139–0,303) | 0,187 (0,146–0,243) | 0,234 | 0,202 |
 
-Las constantes son 9 tipos y se reconstruyen exactas con d ≥ 4 (autoencoder y AE lineal). Por eso **la fidelidad sobre "todas" está inflada por las constantes** y el análisis principal se hace sobre las dinámicas. PCA queda en 0,9985 en las constantes: no reconstruye bien parte de la superficie constante.
+Lectura:
+- **Por tipo**, la reconstrucción exacta de lo no visto es baja para todos: con d = 4 el AE reconstruye exactas el 14 % de las trayectorias de proceso visto, y con d = 31 el 65 %.
+- **Por superficie, el autoencoder se separa mucho más de los métodos lineales**: en proceso visto con d = 31 reconstruye exacta el 76 % de la superficie, frente al 48 % del AE lineal y el 27–31 % de PCA y MCA. Las trayectorias no vistas que más superficie ocupan son las que el AE reconstruye mejor.
+- En Argentina, por superficie, el AE ya es exacto con d = 2 (0,996); el AE lineal llega a 0,98 con d = 10.
 
-### 4.7 Costuras
+### 3.3 Cómo cae la reconstrucción con la novedad
 
-Reconstrucción exacta de las dinámicas, con y sin los tipos de `costura` (1994/95 y 2015/16), sin reentrenar:
+![Gradiente de novedad](figuras/p1/fig5_gradiente_novedad.png)
 
-| ponderación | d | AE con | AE sin | AE lineal con | AE lineal sin |
-|--:|--:|--:|--:|--:|--:|
-| tipo | 1 | 0,0518 | 0,0578 | 0,0005 | 0,0006 |
-| tipo | 4 | 0,9840 | 0,9850 | 0,0349 | 0,0359 |
-| tipo | 7 | 0,9998 | 0,9999 | 0,2218 | 0,2273 |
-| tipo | 10 | 1,0000 | 0,9999 | 0,5473 | 0,5567 |
-| tipo | 16 | 1,0000 | 1,0000 | 0,8626 | 0,8653 |
-| tipo | 31 | 1,0000 | 1,0000 | 0,9880 | 0,9888 |
-| superficie | 1 | 0,2263 | 0,2360 | 0,0124 | 0,0134 |
-| superficie | 4 | 0,9999 | 1,0000 | 0,2827 | 0,2857 |
-| superficie | 7 | 1,0000 | 1,0000 | 0,7629 | 0,7571 |
-| superficie | 10 | 1,0000 | 1,0000 | 0,9834 | 0,9836 |
-| superficie | 16 | 1,0000 | 1,0000 | 0,9991 | 0,9992 |
-| superficie | 31 | 1,0000 | 1,0000 | 0,9999 | 1,0000 |
+Secuencia de estados correcta, d = 4, por estrato:
 
-La diferencia es **de un punto o menos** en todos los casos (por ejemplo, autoencoder por tipo con d = 4: 0,984 con costura y 0,985 sin ella). El autoencoder no tiene dificultad especial para reconstruir las trayectorias de las costuras. No se hizo el mismo cálculo para `sensor` (no está en el CSV de métricas).
+| estrato | tipos | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|--:|
+| visto, h = 1 | 11.617 | 0,529 (0,517–0,546) | 0,121 (0,117–0,126) | 0,011 | 0,030 |
+| visto, h = 2 | 8.927 | 0,433 (0,413–0,464) | 0,110 (0,103–0,115) | 0,007 | 0,023 |
+| visto, h = 3 | 8.267 | 0,273 (0,255–0,310) | 0,099 (0,087–0,106) | 0,006 | 0,014 |
+| visto, h = 4-5 | 9.786 | 0,173 (0,150–0,204) | 0,090 (0,076–0,103) | 0,006 | 0,009 |
+| visto, h = 6+ | 4.489 | 0,103 (0,072–0,148) | 0,087 (0,068–0,115) | 0,006 | 0,015 |
+| nuevo, h = 1 | 2.031 | 0,018 (0,010–0,022) | 0,010 (0,008–0,012) | 0,000 | 0,000 |
+| nuevo, h = 2 | 1.841 | 0,030 (0,023–0,034) | 0,012 (0,010–0,014) | 0,000 | 0,001 |
+| nuevo, h = 3 | 2.583 | 0,029 (0,023–0,038) | 0,027 (0,021–0,033) | 0,000 | 0,000 |
+| nuevo, h = 4-5 | 5.487 | 0,032 (0,020–0,046) | 0,038 (0,030–0,046) | 0,001 | 0,000 |
+| nuevo, h = 6+ | 7.093 | 0,034 (0,015–0,048) | 0,043 (0,026–0,055) | 0,000 | 0,002 |
 
-### 4.8 Estructura: ¿se parece el espacio comprimido a OM?
+Exactitud por año, d = 4:
 
-![Estructura frente a OM](figuras/p1/fig5_estructura_om.png)
+| estrato | tipos | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|--:|
+| visto, h = 1 | 11.617 | 0,937 (0,933–0,942) | 0,770 (0,762–0,778) | 0,520 | 0,433 |
+| visto, h = 2 | 8.927 | 0,881 (0,874–0,886) | 0,720 (0,710–0,732) | 0,491 | 0,428 |
+| visto, h = 3 | 8.267 | 0,813 (0,802–0,822) | 0,665 (0,656–0,676) | 0,460 | 0,425 |
+| visto, h = 4-5 | 9.786 | 0,715 (0,697–0,730) | 0,624 (0,615–0,637) | 0,436 | 0,403 |
+| visto, h = 6+ | 4.489 | 0,562 (0,534–0,602) | 0,566 (0,544–0,594) | 0,381 | 0,372 |
+| nuevo, h = 1 | 2.031 | 0,828 (0,811–0,857) | 0,789 (0,782–0,795) | 0,557 | 0,435 |
+| nuevo, h = 2 | 1.841 | 0,772 (0,756–0,804) | 0,728 (0,723–0,737) | 0,486 | 0,440 |
+| nuevo, h = 3 | 2.583 | 0,719 (0,696–0,753) | 0,640 (0,627–0,654) | 0,450 | 0,425 |
+| nuevo, h = 4-5 | 5.487 | 0,624 (0,606–0,649) | 0,564 (0,547–0,579) | 0,438 | 0,393 |
+| nuevo, h = 6+ | 7.093 | 0,472 (0,444–0,488) | 0,445 (0,418–0,467) | 0,384 | 0,353 |
 
-**Spearman con OM, cada tipo pesa 1**
+Secuencia de estados correcta, d = 31:
 
-| d | AE | AE lineal | PCA | MCA | AE: desvío entre semillas |
-|--:|--:|--:|--:|--:|--:|
-| 1 | 0,560 | 0,668 | 0,686 | 0,719 | 0,015 |
-| 4 | 0,621 | 0,671 | 0,638 | 0,753 | 0,009 |
-| 7 | 0,462 | 0,650 | 0,692 | 0,789 | 0,027 |
-| 10 | 0,370 | 0,637 | 0,670 | 0,767 | 0,027 |
-| 13 | 0,349 | 0,709 | 0,730 | 0,756 | 0,021 |
-| 16 | 0,337 | 0,721 | 0,725 | 0,713 | 0,021 |
-| 19 | 0,305 | 0,704 | 0,741 | 0,717 | 0,049 |
-| 22 | 0,319 | 0,706 | 0,747 | 0,709 | 0,038 |
-| 25 | 0,333 | 0,717 | 0,759 | 0,704 | 0,021 |
-| 28 | 0,336 | 0,717 | 0,761 | 0,705 | 0,028 |
-| 31 | 0,326 | 0,690 | 0,767 | 0,700 | 0,036 |
+| estrato | tipos | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|--:|
+| visto, h = 1 | 11.617 | 0,780 (0,776–0,783) | 0,778 (0,776–0,778) | 0,468 | 0,445 |
+| visto, h = 2 | 8.927 | 0,869 (0,860–0,874) | 0,865 (0,865–0,867) | 0,585 | 0,515 |
+| visto, h = 3 | 8.267 | 0,834 (0,827–0,846) | 0,835 (0,834–0,837) | 0,739 | 0,640 |
+| visto, h = 4-5 | 9.786 | 0,872 (0,865–0,884) | 0,871 (0,867–0,874) | 0,933 | 0,915 |
+| visto, h = 6+ | 4.489 | 0,877 (0,857–0,896) | 0,859 (0,844–0,882) | 0,986 | 0,980 |
+| nuevo, h = 1 | 2.031 | 0,237 (0,210–0,271) | 0,314 (0,299–0,322) | 0,000 | 0,000 |
+| nuevo, h = 2 | 1.841 | 0,416 (0,397–0,439) | 0,482 (0,479–0,485) | 0,052 | 0,016 |
+| nuevo, h = 3 | 2.583 | 0,490 (0,483–0,494) | 0,551 (0,531–0,562) | 0,355 | 0,237 |
+| nuevo, h = 4-5 | 5.487 | 0,610 (0,596–0,627) | 0,683 (0,678–0,691) | 0,718 | 0,691 |
+| nuevo, h = 6+ | 7.093 | 0,659 (0,623–0,685) | 0,722 (0,718–0,725) | 0,859 | 0,852 |
 
-**Vecinos en común con OM (10 vecinos), cada tipo pesa 1**
+Lectura según la regla del protocolo (§7):
+- **Con d = 4, el AE cae fuerte ya en h = 1** (secuencia de estados 0,529, frente a 0,992 en Argentina) y sigue cayendo con h (0,103 con h ≥ 6). Es el patrón que el protocolo identifica con reproducir lo visto más que una regla general.
+- **Con d = 31, la caída en h = 1 es menor** (0,780) y la fidelidad no empeora al alejarse.
+- **PCA y MCA con d = 31 mejoran con h**, lo que no es esperable si h midiera sólo novedad. El §3.4 lo explica.
+- En proceso nuevo, con d = 4, ningún método reconstruye la secuencia de estados (≤ 0,05).
 
-| d | AE | AE lineal | PCA | MCA | AE: desvío entre semillas |
-|--:|--:|--:|--:|--:|--:|
-| 1 | 0,210 | 0,029 | 0,023 | 0,029 | 0,002 |
-| 4 | 0,649 | 0,570 | 0,403 | 0,353 | 0,010 |
-| 7 | 0,671 | 0,644 | 0,532 | 0,413 | 0,004 |
-| 10 | 0,689 | 0,684 | 0,669 | 0,643 | 0,003 |
-| 13 | 0,679 | 0,719 | 0,736 | 0,719 | 0,005 |
-| 16 | 0,670 | 0,749 | 0,757 | 0,753 | 0,008 |
-| 19 | 0,660 | 0,756 | 0,767 | 0,779 | 0,019 |
-| 22 | 0,659 | 0,767 | 0,776 | 0,778 | 0,012 |
-| 25 | 0,659 | 0,774 | 0,774 | 0,778 | 0,016 |
-| 28 | 0,655 | 0,777 | 0,781 | 0,780 | 0,011 |
-| 31 | 0,654 | 0,782 | 0,785 | 0,783 | 0,024 |
+### 3.4 Análisis exploratorio: estados de un año *(no previsto en el protocolo)*
 
-Lectura (ponderación por tipo):
-1. **Los métodos lineales mantienen la correlación con OM a cualquier d** (0,64–0,79). El autoencoder la mantiene en d bajo (0,56 en d = 1; 0,62 en d = 4) y luego **la pierde** (0,46 en d = 7; ~0,33 desde d = 13). Cuando el autoencoder dispone de más dimensiones, usa el espacio para reconstruir y no para ordenar las trayectorias como lo hace OM.
-2. **En vecinos en común el autoencoder va primero y pierde después.** Gana con d = 4 y d = 7 (0,65 y 0,67 contra 0,57 y 0,64 del AE lineal y 0,40 y 0,53 de PCA), empata en d = 10 y queda por debajo desde d = 13 (0,65–0,68 contra 0,72–0,78). Esto es consistente con que los vecinos cercanos se preservan mejor que las distancias globales.
-3. **Ponderado por superficie el resultado es inestable** (tabla A.2): el desvío entre semillas del Spearman del autoencoder llega a 0,18, y aparecen correlaciones negativas. Los pares muestreados por superficie quedan dominados por pares con tipos muy frecuentes y casi iguales entre sí, donde la distancia OM tiene muy poca variación. No se debe interpretar.
-4. **Qué implica para P2.** Una tipología construida sobre z con d = 4 agrupará de manera parecida a OM en los vecinos inmediatos pero no en las distancias globales. Si se usa d grande en el autoencoder, la tipología se parece menos a OM.
+**Por qué.** El patrón de PCA y MCA del §3.3 sugirió que los estratos de h difieren en el tipo de trayectoria. Una trayectoria que difiere en un solo año de una argentina suele ser una argentina con un estado de **un solo año** intercalado (por ejemplo, bosque → rala un año → bosque). Esos tramos son difíciles de reconstruir para cualquier método y a menudo son ruido del producto.
 
-Esta es una comparación contra OM, no contra "la verdad": que el autoencoder se aleje de OM no lo hace peor sin una referencia independiente (ver §7).
+Trayectorias con algún tramo de un año, por estrato:
 
-### 4.9 Entropía y capacidad
+| estrato | trayectorias con algún tramo de 1 año |
+|---|--:|
+| Argentina (ajuste) | 8 % |
+| visto, h = 1 | 47 % |
+| visto, h = 2 | 6 % |
+| visto, h = 3 | 3 % |
+| visto, h = 4-5 | 2 % |
+| visto, h = 6+ | 0 % |
+| nuevo, h = 1 | 100 % |
+| nuevo, h = 2 | 36 % |
+| nuevo, h = 3 | 21 % |
+| nuevo, h = 4-5 | 14 % |
+| nuevo, h = 6+ | 6 % |
 
-| distribución | bits | ≈ tipos equiprobables (2^bits) |
-|--:|--:|--:|
-| distribución de trayectorias ponderada por superficie (todas) | 3,17 | 9 |
-| ídem, sólo dinámicas | 8,29 | 312 |
-| ponderada por min(n_px, 100), la de entrenamiento | 11,64 | 3.194 |
-| uniforme sobre los 7.827 tipos (log₂ 7.827) | 12,93 | 7.827 |
+Secuencia de estados correcta, separando las trayectorias con tramos de un año:
 
-Distinguir los 7.827 tipos en forma uniforme requiere ~12,9 bits (log₂ 7.827). Ponderando por superficie, sólo las dinámicas, la entropía es 8,3 bits: equivale a elegir entre unos 313 tipos equiprobables. Es coherente con la concentración del universo.
+| método | Argentina, sin tramo de 1 año (7.156) | visto, h = 1, sin tramo de 1 año (6.137) | visto, h = 1, con tramo de 1 año (5.480) | visto, h = 2–3, sin tramo de 1 año (16.439) | visto, h ≥ 4, sin tramo de 1 año (14.104) |
+|---|--:|--:|--:|--:|--:|
+| AE, d = 4 | 0,996 (0,994–0,998) | 0,843 (0,831–0,863) | 0,178 (0,160–0,191) | 0,367 (0,348–0,403) | 0,152 (0,126–0,188) |
+| AE, d = 7 | 1,000 (1,000–1,000) | 0,964 (0,961–0,966) | 0,306 (0,289–0,319) | 0,638 (0,626–0,645) | 0,489 (0,462–0,508) |
+| AE, d = 16 | 1,000 (1,000–1,000) | 0,995 (0,994–0,995) | 0,524 (0,511–0,547) | 0,852 (0,836–0,866) | 0,835 (0,800–0,872) |
+| AE, d = 31 | 1,000 (1,000–1,000) | 0,995 (0,994–0,996) | 0,539 (0,530–0,545) | 0,870 (0,865–0,875) | 0,879 (0,868–0,887) |
+| AE lineal, d = 4 | 0,347 (0,335–0,365) | 0,208 (0,197–0,218) | 0,023 (0,022–0,026) | 0,108 (0,103–0,115) | 0,090 (0,077–0,108) |
+| AE lineal, d = 31 | 0,999 (0,998–0,999) | 0,983 (0,982–0,985) | 0,548 (0,545–0,551) | 0,861 (0,859–0,862) | 0,871 (0,865–0,879) |
+| PCA, d = 31 | 0,928 | 0,886 | 0,000 | 0,689 | 0,961 |
+| MCA, d = 31 | 0,890 | 0,843 | 0,000 | 0,601 | 0,947 |
 
-Esto relativiza el resultado de d = 4: **un vector de 4 números reales tiene capacidad de sobra para indexar 7.827 tipos**. Que el autoencoder los reconstruya todos con d = 4 no prueba que el espacio de 4 dimensiones esté bien organizado. Prueba que es suficiente para *recuperar* cada trayectoria.
+Lectura:
+- **h está mezclado con la presencia de tramos de un año** (47 % en proceso visto con h = 1; 0–6 % con h ≥ 2). Parte de la caída del AE en h = 1 se debe a eso: **las trayectorias con un tramo de un año casi no se reconstruyen con ningún método ni d** (AE con d = 31: 0,54; PCA y MCA: 0).
+- **Aun sin esos tramos, el AE con d = 4 se degrada con la distancia**: 0,996 en Argentina, 0,843 con h = 1, 0,367 con h = 2–3 y 0,152 con h ≥ 4. La conclusión del §3.3 se mantiene.
+- **Con d ≥ 16, el AE generaliza a trayectorias sin tramos de un año** (0,99 con h = 1; 0,84–0,88 con h ≥ 2). El AE lineal con d = 31 da lo mismo.
+- PCA y MCA con d = 31 reconstruyen mejor que el AE las trayectorias alejadas sin tramos de un año (0,96 y 0,95 con h ≥ 4, frente a 0,88), y fallan por completo cuando hay un tramo de un año.
+- Este análisis es **exploratorio**: se definió después de ver los resultados. Sugiere tratar los tramos de un año como un factor propio en lo que sigue (por ejemplo, con medidas como la turbulencia).
 
----
+### 3.5 Métricas secundarias
 
-## 5. Comparación con el ejercicio 2000-2022
+d = 4:
 
-Cifras del informe archivado en el tag `v3-2000-2022`:
+| métrica | conjunto | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|--:|
+| número de cambios correcto | Argentina | 0,993 (0,992–0,995) | 0,445 (0,429–0,457) | 0,287 | 0,250 |
+| número de cambios correcto | visto | 0,471 (0,460–0,485) | 0,296 (0,284–0,315) | 0,253 | 0,364 |
+| número de cambios correcto | nuevo | 0,223 (0,218–0,229) | 0,250 (0,241–0,259) | 0,183 | 0,350 |
+| error de fechado (años) | Argentina | 0,004 (0,002–0,005) | 1,682 (1,602–1,760) | 4,034 | 4,907 |
+| error de fechado (años) | visto | 0,500 (0,485–0,527) | 2,348 (2,248–2,401) | 5,485 | 4,779 |
+| error de fechado (años) | nuevo | 1,584 (1,151–1,871) | 3,046 (2,663–3,450) | 6,905 | 5,694 |
+| F1 macro por clase | Argentina | 0,999 (0,999–1,000) | 0,792 (0,786–0,800) | 0,397 | 0,452 |
+| F1 macro por clase | visto | 0,809 (0,787–0,825) | 0,696 (0,683–0,713) | 0,356 | 0,395 |
+| F1 macro por clase | nuevo | 0,599 (0,570–0,627) | 0,573 (0,558–0,593) | 0,327 | 0,351 |
 
-| Medida | 2000-2022 (4.554 tipos) | 1992-2022 (7.827 tipos) |
-|---|---|---|
-| AE, exacta por superficie, d = 4 | 0,997 | 0,9999 |
-| AE, exacta por tipo, d = 4 | 0,641 | 0,984 |
-| AE, exacta por tipo, d = 8 (antes) / d = 7 (ahora) | 0,880 | 0,9998 |
-| AE lineal, exacta por tipo, d = 16 | 0,893 | 0,863 |
-| PCA / MCA, exacta por tipo, d = 16 | 0,165 / 0,132 | 0,098 / 0,058 |
-| Entropía uniforme (log₂ de los tipos) | 12,15 bits | 12,93 bits |
+d = 31:
 
-**Esta comparación no es limpia.** El ejercicio anterior entrenó el autoencoder con configuración distinta:
+| métrica | conjunto | AE | AE lineal | PCA | MCA |
+|---|--:|--:|--:|--:|--:|
+| número de cambios correcto | Argentina | 1,000 (1,000–1,000) | 0,994 (0,994–0,995) | 0,850 | 0,816 |
+| número de cambios correcto | visto | 0,855 (0,850–0,859) | 0,847 (0,844–0,850) | 0,705 | 0,660 |
+| número de cambios correcto | nuevo | 0,600 (0,595–0,603) | 0,655 (0,652–0,659) | 0,581 | 0,551 |
+| error de fechado (años) | Argentina | 0,000 (0,000–0,000) | 0,003 (0,003–0,004) | 0,290 | 0,418 |
+| error de fechado (años) | visto | 0,133 (0,111–0,148) | 0,168 (0,159–0,181) | 0,403 | 0,531 |
+| error de fechado (años) | nuevo | 0,385 (0,349–0,456) | 0,320 (0,310–0,337) | 0,397 | 0,477 |
+| F1 macro por clase | Argentina | 1,000 (1,000–1,000) | 1,000 (1,000–1,000) | 0,974 | 0,967 |
+| F1 macro por clase | visto | 0,980 (0,980–0,981) | 0,979 (0,978–0,979) | 0,959 | 0,950 |
+| F1 macro por clase | nuevo | 0,937 (0,934–0,942) | 0,953 (0,952–0,955) | 0,948 | 0,941 |
 
-| | 2000-2022 | 1992-2022 |
-|---|---|---|
-| Ancho del modelo | 64 | 128 |
-| Épocas | 300 | 400 |
-| Lote | 256 | 128 |
-| Pasos de entrenamiento (aprox.) | 5.400 (18 por época) | 24.800 (62 por época) |
-| Grilla de d | 1, 2, 3, 4, 6, 8, 12, 16 | 1, 4, 7, …, 31 |
-
-El autoencoder pasa de 0,64 a 0,98 por tipo con d = 4, y el AE lineal, que usó la misma configuración en ambos ejercicios, **casi no cambia** (0,89 y 0,86 con d = 16). Esto es coherente con que la mejora del autoencoder se deba sobre todo a **más capacidad y unas 4,6 veces más pasos de entrenamiento**, y no a los ocho años más. Es una lectura, no una conclusión: para separar los efectos hay que repetir el ejercicio con una sola configuración sobre los dos períodos, lo que no se hizo.
-
-Consecuencia práctica: **d\* depende del presupuesto de entrenamiento.** Con menos pasos o menos capacidad, el mismo autoencoder necesitaría más dimensiones.
-
----
-
-## 6. Conclusiones
-
-1. **d = 4 es una elección suficiente** para el universo de Argentina 1992-2022: reconstruye el 99,99 % de la superficie dinámica y el 98,4 % de los tipos dinámicos exactos, sin pérdida de estados ni de fechado en promedio. La regla a priori da d\* = 4 (por superficie) y d\* = 7 (por tipo).
-2. **El autoencoder comprime con unas 3 veces menos dimensiones que lo lineal** (d\* = 4 contra d\* = 13 por superficie) y PCA y MCA no llegan a comprimir sin pérdida en la grilla.
-3. **La ventaja del autoencoder se concentra en d bajo** (d ≤ 7). A partir de d = 10 todo lo que importa se reconstruye exacto y el AE lineal lo alcanza por superficie.
-4. **La fidelidad es robusta a las semillas y a las costuras** para d ≥ 4.
-5. **El autoencoder no preserva la geometría global de OM** al aumentar d, aunque sí los vecinos más cercanos con d bajo. Esto hay que tenerlo presente en P2.
-6. **La reconstrucción exacta mide capacidad.** No distingue un espacio organizado de uno que simplemente indexa los tipos. Las pruebas que sí discriminan (coherencia espacial, pares sintéticos con desfase, sondas lineales, análisis de desacuerdos) están pendientes (batería del Bloque C).
+- Con d = 4 el AE acierta el número de cambios en el 47 % de las trayectorias de proceso visto (AE lineal: 30 %) y, cuando acierta la secuencia de estados, fecha los cambios con un error medio de 0,5 años (AE lineal: 2,3). El error de fechado se calcula sólo donde la secuencia de estados es correcta, así que en cada método se promedia sobre un subconjunto distinto (protocolo §4.2).
+- El F1 macro por clase muestra que las clases raras se conservan bastante mejor que las trayectorias completas: con d = 31 está entre 0,94 y 0,98 para todos los métodos en lo no visto.
 
 ---
 
-## 7. Límites
+## 4. Pregunta 1.1: accesibilidad en z
 
-- **Sin partición de validación.** Se ajusta y se evalúa sobre las mismas 7.827 trayectorias. La pregunta es de compresión del universo observado, no de generalización.
-- **La grilla de d no resuelve d < 4.** d\* ∈ {2, 3, 4}. Hay que correr d = 2 y d = 3 para fijarlo, si se quiere afirmar un mínimo.
-- **La comparación con 2000-2022 está confundida** por el cambio de configuración (§5).
-- **Un solo peso de ajuste** (tope 100) y una sola configuración del autoencoder, sin tunear.
-- **OM es la única referencia de estructura** y es circular como juez (§2.9). No hay una referencia independiente.
-- **Los años 1992-1994 son casi un solo mapa.** El período de 31 años contiene en la práctica ~29 años de información independiente. Los cambios de 1994/95 y 1998/99 pueden mezclar cambio real con artefactos del producto.
-- **El ruido medido es de inicialización** (3 semillas); no hay intervalos por remuestreo.
-- **`err_anio_cambio` es condicional** a tener la secuencia de estados correcta (§2.6).
-- **No se midió `sensor` en las métricas** (sólo `costura`).
+![Accesibilidad, sonda de vecinos](figuras/p1/fig6_accesibilidad_vecinos.png)
+
+**Sonda de vecinos (principal), proceso visto.** Exactitud balanceada (promedio de aciertos por clase) o error medio en años:
+
+| tarea | d | AE | AE lineal | PCA | MCA | línea de base |
+|---|--:|--:|--:|--:|--:|--:|
+| estado inicial | 2 | 0,537 (0,528–0,544) | 0,276 (0,269–0,288) | 0,358 | 0,355 | 0,125 |
+| estado inicial | 4 | 0,608 (0,595–0,619) | 0,775 (0,711–0,813) | 0,551 | 0,497 |  |
+| estado inicial | 7 | 0,751 (0,718–0,775) | 0,833 (0,820–0,855) | 0,646 | 0,539 |  |
+| estado inicial | 31 | 0,751 (0,717–0,777) | 0,818 (0,816–0,820) | 0,850 | 0,843 |  |
+| estado final | 2 | 0,425 (0,423–0,427) | 0,298 (0,295–0,301) | 0,261 | 0,335 | 0,111 |
+| estado final | 4 | 0,558 (0,519–0,618) | 0,587 (0,570–0,602) | 0,355 | 0,403 |  |
+| estado final | 7 | 0,656 (0,651–0,666) | 0,702 (0,694–0,706) | 0,401 | 0,455 |  |
+| estado final | 31 | 0,742 (0,739–0,746) | 0,685 (0,680–0,689) | 0,702 | 0,703 |  |
+| número de cambios | 2 | 0,341 (0,331–0,361) | 0,287 (0,275–0,295) | 0,307 | 0,284 | 0,250 |
+| número de cambios | 4 | 0,448 (0,435–0,459) | 0,378 (0,368–0,385) | 0,359 | 0,333 |  |
+| número de cambios | 7 | 0,495 (0,477–0,509) | 0,443 (0,428–0,465) | 0,397 | 0,369 |  |
+| número de cambios | 31 | 0,504 (0,498–0,514) | 0,437 (0,431–0,440) | 0,448 | 0,429 |  |
+| proceso | 2 | 0,180 (0,173–0,192) | 0,040 (0,037–0,045) | 0,041 | 0,061 | 0,002 |
+| proceso | 4 | 0,294 (0,276–0,320) | 0,257 (0,246–0,267) | 0,130 | 0,130 |  |
+| proceso | 7 | 0,345 (0,337–0,353) | 0,358 (0,335–0,377) | 0,192 | 0,182 |  |
+| proceso | 31 | 0,316 (0,273–0,348) | 0,338 (0,335–0,341) | 0,370 | 0,352 |  |
+| año del primer cambio (error, años) | 2 | 4,20 (3,94–4,37) | 5,03 (4,90–5,12) | 5,03 | 4,70 | 5,02 |
+| año del primer cambio (error, años) | 4 | 3,43 (3,34–3,50) | 3,01 (2,92–3,09) | 3,74 | 4,29 |  |
+| año del primer cambio (error, años) | 7 | 2,17 (2,07–2,23) | 2,48 (2,42–2,56) | 3,11 | 4,35 |  |
+| año del primer cambio (error, años) | 31 | 1,84 (1,68–1,93) | 2,52 (2,48–2,54) | 2,51 | 2,49 |  |
+
+**Sonda de vecinos, proceso nuevo:**
+
+| tarea | d | AE | AE lineal | PCA | MCA | línea de base |
+|---|--:|--:|--:|--:|--:|--:|
+| estado inicial | 2 | 0,312 (0,307–0,316) | 0,174 (0,167–0,181) | 0,263 | 0,235 | 0,111 |
+| estado inicial | 4 | 0,341 (0,314–0,377) | 0,544 (0,505–0,586) | 0,422 | 0,321 |  |
+| estado inicial | 7 | 0,520 (0,480–0,552) | 0,606 (0,578–0,647) | 0,491 | 0,385 |  |
+| estado inicial | 31 | 0,533 (0,513–0,554) | 0,649 (0,645–0,657) | 0,681 | 0,672 |  |
+| estado final | 2 | 0,270 (0,264–0,274) | 0,219 (0,204–0,231) | 0,214 | 0,252 | 0,111 |
+| estado final | 4 | 0,321 (0,293–0,370) | 0,409 (0,395–0,430) | 0,275 | 0,291 |  |
+| estado final | 7 | 0,446 (0,438–0,457) | 0,517 (0,509–0,527) | 0,322 | 0,324 |  |
+| estado final | 31 | 0,642 (0,630–0,653) | 0,552 (0,549–0,557) | 0,574 | 0,576 |  |
+| número de cambios | 2 | 0,146 (0,133–0,160) | 0,173 (0,167–0,180) | 0,168 | 0,114 | 0,143 |
+| número de cambios | 4 | 0,149 (0,110–0,168) | 0,120 (0,111–0,133) | 0,126 | 0,141 |  |
+| número de cambios | 7 | 0,152 (0,128–0,180) | 0,153 (0,115–0,181) | 0,197 | 0,133 |  |
+| número de cambios | 31 | 0,205 (0,188–0,216) | 0,110 (0,101–0,119) | 0,108 | 0,118 |  |
+| año del primer cambio (error, años) | 2 | 5,38 (5,35–5,40) | 4,99 (4,92–5,07) | 5,05 | 5,00 | 4,74 |
+| año del primer cambio (error, años) | 4 | 4,77 (4,48–5,25) | 4,13 (4,02–4,24) | 4,49 | 4,97 |  |
+| año del primer cambio (error, años) | 7 | 3,53 (3,36–3,68) | 3,51 (3,36–3,69) | 3,97 | 4,93 |  |
+| año del primer cambio (error, años) | 31 | 3,13 (2,90–3,38) | 3,78 (3,70–3,86) | 3,85 | 3,81 |  |
+
+**Sonda lineal (secundaria), proceso visto:**
+
+| tarea | d | AE | AE lineal | PCA | MCA | línea de base |
+|---|--:|--:|--:|--:|--:|--:|
+| estado inicial | 2 | 0,210 (0,165–0,233) | 0,234 (0,218–0,246) | 0,251 | 0,201 | 0,125 |
+| estado inicial | 4 | 0,318 (0,302–0,334) | 0,731 (0,674–0,763) | 0,368 | 0,267 |  |
+| estado inicial | 7 | 0,648 (0,580–0,702) | 0,819 (0,798–0,846) | 0,438 | 0,361 |  |
+| estado inicial | 31 | 0,926 (0,924–0,929) | 0,964 (0,963–0,966) | 0,983 | 0,989 |  |
+| estado final | 2 | 0,268 (0,259–0,278) | 0,291 (0,287–0,297) | 0,225 | 0,316 | 0,111 |
+| estado final | 4 | 0,314 (0,288–0,338) | 0,558 (0,543–0,567) | 0,250 | 0,332 |  |
+| estado final | 7 | 0,504 (0,471–0,529) | 0,711 (0,705–0,718) | 0,304 | 0,406 |  |
+| estado final | 31 | 0,943 (0,936–0,951) | 0,968 (0,967–0,970) | 0,903 | 0,885 |  |
+| número de cambios | 2 | 0,250 (0,250–0,250) | 0,250 (0,249–0,250) | 0,250 | 0,251 | 0,250 |
+| número de cambios | 4 | 0,253 (0,250–0,258) | 0,254 (0,252–0,256) | 0,250 | 0,253 |  |
+| número de cambios | 7 | 0,252 (0,250–0,254) | 0,253 (0,252–0,254) | 0,250 | 0,255 |  |
+| número de cambios | 31 | 0,338 (0,323–0,354) | 0,258 (0,256–0,260) | 0,255 | 0,276 |  |
+| proceso | 2 | 0,031 (0,030–0,033) | 0,015 (0,013–0,017) | 0,014 | 0,019 | 0,002 |
+| proceso | 4 | 0,108 (0,098–0,119) | 0,093 (0,086–0,096) | 0,051 | 0,047 |  |
+| proceso | 7 | 0,240 (0,227–0,249) | 0,236 (0,228–0,248) | 0,137 | 0,117 |  |
+| proceso | 31 | 0,500 (0,490–0,517) | 0,502 (0,500–0,505) | 0,500 | 0,512 |  |
+| año del primer cambio (error, años) | 2 | 5,03 (5,02–5,05) | 5,01 (5,01–5,02) | 5,03 | 5,01 | 5,02 |
+| año del primer cambio (error, años) | 4 | 5,02 (5,00–5,03) | 5,06 (5,02–5,08) | 5,06 | 5,01 |  |
+| año del primer cambio (error, años) | 7 | 5,00 (4,95–5,02) | 5,05 (5,02–5,07) | 5,05 | 5,00 |  |
+| año del primer cambio (error, años) | 31 | 2,91 (2,66–3,24) | 5,12 (5,10–5,15) | 5,08 | 5,17 |  |
+
+![Accesibilidad, sonda lineal](figuras/p1/fig6_accesibilidad_lineal.png)
+
+Lectura:
+- **La información accesible en z es moderada en todos los métodos.** Con la sonda de vecinos en proceso visto, el mejor espacio alcanza ~0,8 en el estado inicial, ~0,75 en el final, ~0,5 en el número de cambios y ~0,35 en el proceso. Todos superan la línea de base.
+- **Con d = 4 ninguno domina:** el AE es mejor en el número de cambios (0,448 frente a 0,378 del AE lineal) y el AE lineal en el estado inicial (0,775 frente a 0,608) y en el año del cambio (3,0 años de error frente a 3,4). En el estado final y en el proceso las diferencias quedan dentro del rango entre semillas.
+- **Con d alto el AE es el que mejor ubica el año del cambio** (1,8 años de error con d = 31, frente a ~2,5 de los demás), pero no el estado inicial.
+- **La sonda lineal no recupera el número de cambios en ningún espacio** (exactitud balanceada 0,25, igual a la línea de base, salvo el AE con d = 31: 0,34): esa información sólo es accesible localmente.
+- Accesibilidad y reconstrucción no coinciden: el AE reconstruye mucho mejor que el AE lineal con d = 4, pero la información no queda más a mano en su z.
 
 ---
 
-## 8. Cómo reproducirlo
+## 5. Pregunta 1.2: tipologías
 
-Desde la raíz del repo (el entorno necesita torch con soporte de la GPU; para GTX 1060 el wheel `cu126`, ver `scripts/setup_venv.sh`):
+![Tipologías con k-medoides](figuras/p1/fig7_tipologias_kmedoides.png)
+
+### 5.1 k-medoides (principal), embeddings con d = 4
+
+**Exactitud por año del prototipo (*cuándo*)**
+
+| k | AE | AE lineal | PCA | MCA | OM | One-hot, Hamming (ref.) | azar (piso) |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| 4 | 0,401 (0,379–0,413) | 0,368 (0,342–0,381) | 0,461 | 0,386 | 0,459 | 0,475 | 0,226 |
+| 8 | 0,516 (0,487–0,531) | 0,454 (0,432–0,478) | 0,510 | 0,442 | 0,588 | 0,601 | 0,226 |
+| 12 | 0,564 (0,554–0,577) | 0,525 (0,509–0,537) | 0,523 | 0,449 | 0,622 | 0,649 | 0,227 |
+| 24 | 0,625 (0,616–0,631) | 0,605 (0,596–0,621) | 0,565 | 0,545 | 0,693 | 0,705 | 0,228 |
+| 36 | 0,669 (0,663–0,674) | 0,643 (0,628–0,658) | 0,599 | 0,547 | 0,719 | 0,740 | 0,230 |
+| 48 | 0,687 (0,679–0,696) | 0,671 (0,662–0,677) | 0,602 | 0,586 | 0,744 | 0,766 | 0,231 |
+
+**Pureza de proceso (*qué*)**
+
+| k | AE | AE lineal | PCA | MCA | OM | One-hot, Hamming (ref.) | azar (piso) |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| 4 | 0,080 (0,077–0,084) | 0,082 (0,074–0,088) | 0,079 | 0,087 | 0,083 | 0,076 | 0,030 |
+| 8 | 0,111 (0,096–0,122) | 0,123 (0,114–0,134) | 0,112 | 0,109 | 0,103 | 0,096 | 0,032 |
+| 12 | 0,129 (0,127–0,130) | 0,165 (0,160–0,170) | 0,128 | 0,123 | 0,128 | 0,122 | 0,034 |
+| 24 | 0,182 (0,173–0,188) | 0,225 (0,213–0,231) | 0,175 | 0,160 | 0,177 | 0,171 | 0,038 |
+| 36 | 0,216 (0,204–0,230) | 0,260 (0,251–0,270) | 0,192 | 0,181 | 0,219 | 0,215 | 0,041 |
+| 48 | 0,245 (0,234–0,257) | 0,303 (0,297–0,308) | 0,217 | 0,205 | 0,232 | 0,244 | 0,044 |
+
+**Dispersión del año del primer cambio (años; menor es mejor)**
+
+| k | AE | AE lineal | PCA | MCA | OM | One-hot, Hamming (ref.) | azar (piso) |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| 4 | 4,81 (4,80–4,82) | 4,80 (4,78–4,81) | 4,82 | 4,81 | 4,82 | 4,82 | 4,83 |
+| 8 | 4,78 (4,75–4,81) | 4,71 (4,67–4,75) | 4,78 | 4,79 | 4,80 | 4,80 | 4,83 |
+| 12 | 4,71 (4,66–4,78) | 4,63 (4,56–4,69) | 4,75 | 4,79 | 4,76 | 4,71 | 4,83 |
+| 24 | 4,52 (4,40–4,58) | 4,40 (4,34–4,43) | 4,64 | 4,73 | 4,66 | 4,58 | 4,82 |
+| 36 | 4,43 (4,35–4,52) | 4,13 (3,96–4,24) | 4,50 | 4,71 | 4,56 | 4,38 | 4,82 |
+| 48 | 4,29 (4,17–4,45) | 3,94 (3,82–4,06) | 4,43 | 4,63 | 4,27 | 4,20 | 4,81 |
+
+Lectura:
+- **Todas las tipologías superan con amplitud a la partición al azar** en las dos métricas principales.
+- **Cuándo:** OM es el mejor espacio en todos los k, por encima del AE fuera del rango entre semillas (k = 12: 0,622 frente a 0,564; k = 48: 0,744 frente a 0,687). Sólo lo supera la referencia de Hamming (0,649 y 0,766), que por construcción está alineada con esta métrica. A partir de k = 8 siguen el AE, el AE lineal, PCA y MCA; con k = 4, PCA queda por encima del AE.
+- **Qué:** el AE lineal es el mejor desde k = 12 (k = 48: 0,303 frente a 0,245 del AE y 0,232 de OM). Los demás espacios quedan juntos. **La pureza es baja en todos**: con 48 grupos, la mayoría de las trayectorias de un grupo no comparten el proceso más frecuente del grupo.
+- **Las tipologías casi no ordenan el momento del cambio**: la dispersión del año baja de 4,8 años (azar) a 3,9–4,6 con k = 48. El AE lineal es el que más la reduce.
+- Ningún espacio produce grupos degenerados con k-medoides (salvo MCA, con un grupo de 37 % de las trayectorias con k = 12).
+
+| k | espacio | grupos con menos de 5 trayectorias | fracción en el grupo mayor |
+|---|--:|--:|--:|
+| 12 | AE | 0,0 | 0,124 |
+| 12 | AE lineal | 0,0 | 0,153 |
+| 12 | PCA | 0,0 | 0,152 |
+| 12 | MCA | 0,0 | 0,366 |
+| 12 | OM | 0,0 | 0,148 |
+| 12 | One-hot (Hamming) | 0,0 | 0,135 |
+| 48 | AE | 0,0 | 0,041 |
+| 48 | AE lineal | 0,0 | 0,046 |
+| 48 | PCA | 0,0 | 0,058 |
+| 48 | MCA | 1,0 | 0,082 |
+| 48 | OM | 0,0 | 0,053 |
+| 48 | One-hot (Hamming) | 0,0 | 0,055 |
+
+### 5.2 Jerárquico de enlace completo (sensibilidad)
+
+![Tipologías con jerárquico](figuras/p1/fig8_tipologias_jerarquico.png)
+
+**Exactitud por año del prototipo**
+
+| k | AE | AE lineal | PCA | MCA | OM | One-hot, Hamming (ref.) | azar (piso) |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| 4 | 0,336 (0,333–0,339) | 0,278 (0,262–0,310) | 0,401 | 0,309 | 0,347 | 0,262 | 0,226 |
+| 8 | 0,467 (0,450–0,483) | 0,366 (0,351–0,389) | 0,507 | 0,407 | 0,518 | 0,360 | 0,226 |
+| 12 | 0,499 (0,477–0,520) | 0,407 (0,397–0,412) | 0,513 | 0,424 | 0,593 | 0,412 | 0,227 |
+| 24 | 0,573 (0,557–0,584) | 0,509 (0,488–0,531) | 0,539 | 0,463 | 0,651 | 0,601 | 0,228 |
+| 36 | 0,608 (0,597–0,618) | 0,565 (0,560–0,573) | 0,557 | 0,481 | 0,690 | 0,682 | 0,230 |
+| 48 | 0,637 (0,632–0,642) | 0,602 (0,587–0,623) | 0,570 | 0,492 | 0,708 | 0,705 | 0,232 |
+
+**Pureza de proceso**
+
+| k | AE | AE lineal | PCA | MCA | OM | One-hot, Hamming (ref.) | azar (piso) |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| 4 | 0,070 (0,064–0,074) | 0,048 (0,040–0,061) | 0,078 | 0,052 | 0,071 | 0,036 | 0,030 |
+| 8 | 0,107 (0,095–0,115) | 0,090 (0,078–0,107) | 0,109 | 0,093 | 0,108 | 0,072 | 0,032 |
+| 12 | 0,120 (0,112–0,124) | 0,113 (0,099–0,130) | 0,118 | 0,099 | 0,128 | 0,091 | 0,033 |
+| 24 | 0,162 (0,149–0,174) | 0,186 (0,169–0,218) | 0,150 | 0,125 | 0,191 | 0,165 | 0,037 |
+| 36 | 0,195 (0,189–0,202) | 0,233 (0,218–0,252) | 0,178 | 0,139 | 0,220 | 0,220 | 0,040 |
+| 48 | 0,222 (0,212–0,232) | 0,269 (0,249–0,282) | 0,193 | 0,151 | 0,240 | 0,253 | 0,043 |
+
+| k | espacio | grupos con menos de 5 trayectorias | fracción en el grupo mayor |
+|---|--:|--:|--:|
+| 12 | AE | 0,0 | 0,196 |
+| 12 | AE lineal | 0,3 | 0,292 |
+| 12 | PCA | 0,0 | 0,176 |
+| 12 | MCA | 0,0 | 0,461 |
+| 12 | OM | 0,0 | 0,151 |
+| 12 | One-hot (Hamming) | 0,0 | 0,569 |
+| 48 | AE | 0,0 | 0,056 |
+| 48 | AE lineal | 0,7 | 0,091 |
+| 48 | PCA | 0,0 | 0,122 |
+| 48 | MCA | 2,0 | 0,306 |
+| 48 | OM | 0,0 | 0,090 |
+| 48 | One-hot (Hamming) | 0,0 | 0,050 |
+
+Lectura: **el orden entre espacios se mantiene** (OM primero en la métrica por año salvo con k = 4, donde lo supera PCA; AE lineal y OM arriba en pureza con k alto), con valores algo menores que con k-medoides. El jerárquico produce grupos más desiguales, sobre todo con el one-hot (un grupo con el 57 % de las trayectorias con k = 12) y con MCA, por eso la referencia de Hamming cae en k bajos.
+
+### 5.3 Estabilidad
+
+![Estabilidad](figuras/p1/fig9_estabilidad.png)
+
+Índice de Rand ajustado (1 = particiones idénticas; 0 = coincidencia esperable al azar):
+
+| k | arranques: AE | arranques: AE lineal | arranques: PCA | arranques: MCA | arranques: OM | arranques: one-hot | semillas: AE | semillas: AE lineal |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| 4 | 0,410 (0,365–0,438) | 0,444 (0,329–0,507) | 0,548 | 0,631 | 0,449 | 0,339 | 0,249 (0,159–0,323) | 0,382 (0,315–0,506) |
+| 12 | 0,464 (0,418–0,495) | 0,401 (0,364–0,431) | 0,633 | 0,714 | 0,554 | 0,575 | 0,380 (0,324–0,421) | 0,286 (0,245–0,338) |
+| 24 | 0,433 (0,416–0,464) | 0,423 (0,403–0,436) | 0,570 | 0,637 | 0,525 | 0,503 | 0,318 (0,304–0,337) | 0,260 (0,219–0,296) |
+| 48 | 0,441 (0,416–0,454) | 0,447 (0,435–0,462) | 0,578 | 0,611 | 0,547 | 0,492 | 0,307 (0,278–0,323) | 0,278 (0,244–0,315) |
+
+- **Entre semillas del modelo, las tipologías del AE y del AE lineal coinciden poco** (0,25–0,38). Dos entrenamientos del mismo modelo, con la misma configuración, producen tipologías bastante distintas.
+- **Entre arranques de k-medoides**, el AE y el AE lineal son los menos estables (0,39–0,47); PCA, MCA y OM quedan entre 0,45 y 0,80.
+- Esto importa para la tipología final: una tipología sobre un embedding aprendido debería reportar su variación entre semillas, o combinarlas.
+
+### 5.4 Sensibilidad a d
+
+Exactitud por año del prototipo, k-medoides:
+
+| k | espacio | d = 2 | d = 4 | d = 7 |
+|---|--:|--:|--:|--:|
+| 12 | AE | 0,508 (0,492–0,528) | 0,564 (0,554–0,577) | 0,502 (0,466–0,522) |
+| 12 | AE lineal | 0,551 (0,548–0,552) | 0,525 (0,509–0,537) | 0,545 (0,522–0,566) |
+| 12 | PCA | 0,478 | 0,523 | 0,616 |
+| 12 | MCA | 0,459 | 0,449 | 0,579 |
+| 48 | AE | 0,675 (0,658–0,683) | 0,687 (0,679–0,696) | 0,682 (0,679–0,687) |
+| 48 | AE lineal | 0,619 (0,610–0,624) | 0,671 (0,662–0,677) | 0,702 (0,695–0,706) |
+| 48 | PCA | 0,536 | 0,602 | 0,682 |
+| 48 | MCA | 0,501 | 0,586 | 0,630 |
+
+Pureza de proceso, k-medoides:
+
+| k | espacio | d = 2 | d = 4 | d = 7 |
+|---|--:|--:|--:|--:|
+| 12 | AE | 0,170 (0,155–0,180) | 0,129 (0,127–0,130) | 0,120 (0,115–0,125) |
+| 12 | AE lineal | 0,129 (0,125–0,134) | 0,165 (0,160–0,170) | 0,130 (0,120–0,141) |
+| 12 | PCA | 0,134 | 0,128 | 0,131 |
+| 12 | MCA | 0,143 | 0,123 | 0,127 |
+| 48 | AE | 0,298 (0,288–0,315) | 0,245 (0,234–0,257) | 0,238 (0,230–0,245) |
+| 48 | AE lineal | 0,190 (0,183–0,194) | 0,303 (0,297–0,308) | 0,272 (0,258–0,283) |
+| 48 | PCA | 0,206 | 0,217 | 0,216 |
+| 48 | MCA | 0,196 | 0,205 | 0,210 |
+
+Los resultados no cambian de forma sistemática entre d = 2, 4 y 7: el orden entre AE y AE lineal se invierte según k y d. La comparación del §5.1 no depende de haber elegido d = 4.
+
+---
+
+## 6. Respuesta a la Pregunta 1
+
+**¿Qué capacidad de compresión tiene cada método?**
+
+- **Reconstrucción.** El autoencoder tiene la mayor capacidad de compresión **con pocas dimensiones** y es el único que reconstruye bien las trayectorias no vistas que más superficie ocupan. Pero su fidelidad con d bajo está atada a las trayectorias de ajuste: **con d = 4 reproduce Argentina, no una regla general**. Con d ≥ 16 generaliza a procesos conocidos, y ahí el AE lineal lo alcanza en las métricas por tipo.
+- **Accesibilidad.** Ningún método deja la información claramente más a mano en z. La ventaja de reconstrucción del AE no se traduce en una representación más fácil de leer.
+- **Tipologías.** El espacio del AE no es el mejor para agrupar: OM conserva más información alineada en el tiempo y el AE lineal más información de proceso. Las tipologías de los embeddings aprendidos dependen mucho de la semilla.
+- **En conjunto**, la dimensión interna no muestra que el autoencoder describa mejor que las alternativas. Muestra que **comprime mejor con pocas dimensiones dentro de lo que vio**, y que esa ventaja no se sostiene como generalización ni como base para tipologías.
+
+---
+
+## 7. Decisiones que quedan abiertas
+
+1. **d de trabajo.** d = 4 se eligió con el informe anterior, que medía dentro de Argentina. Los resultados sobre trayectorias no vistas apuntan a d = 16–31 si la representación tiene que generalizar. Hay que decidir si d = 4 se mantiene para la tipología final.
+2. **Estados de un año.** Afectan a todos los métodos y están mezclados con la novedad. Hay que decidir si se tratan como ruido del producto (por ejemplo, filtrándolos) o como un factor de análisis.
+3. **Estabilidad entre semillas.** Si la tipología final se hace sobre un embedding aprendido, hay que definir cómo se maneja su variación entre semillas.
+
+## 8. Límites
+
+- **Tres semillas**: los rangos son aproximados.
+- **La configuración del autoencoder no se tuneó** (ancho, épocas, peso de ajuste). Un modelo regularizado o entrenado de otra forma podría generalizar mejor con d bajo.
+- **El conjunto no visto es casi todo de trayectorias raras** (mediana de 2 a 9 píxeles por tipo) y viene de otras regiones del mundo: la generalización medida es a ese conjunto.
+- **Las métricas de tipología encarnan nociones de parecido:** la exactitud por año está alineada con Hamming (y favorece a OM, que es una distancia de edición), y la pureza de proceso con agrupar por secuencia de estados.
+- **El análisis del §3.4 es exploratorio.**
+
+## 9. Desviaciones del protocolo
+
+- **§3.4 (estados de un año)**: análisis agregado después de ver los resultados; se presenta como exploratorio.
+- **Corte del jerárquico**: se usa `cut_tree`, que corta en exactamente k grupos. La función habitual (`fcluster`) devolvía menos grupos con la distancia de Hamming por los empates (con k = 4, un solo grupo). No cambia lo fijado en el protocolo ("cortado en los mismos k").
+- **AE lineal**: se reentrenó con la misma configuración y semillas para guardar sus pesos (requisito de implementación del protocolo). Reproduce el anterior: reconstrucción idéntica en Argentina y códigos con diferencias de 2×10⁻⁵.
+
+## 10. Cómo reproducirlo
 
 ```bash
-# 33 autoencoders (11 d x 3 semillas), en paralelo; reanudable
-python scripts/modelo/p1_correr_ae.py --workers 3
-
-# resto de P1 (CPU)
-python scripts/modelo/p1_compresion.py om
-python scripts/modelo/p1_compresion.py linear
-python scripts/modelo/p1_compresion.py linae
-python scripts/modelo/p1_compresion.py eval      # -> p1_metricas.csv, p1_entropia.csv
-
-# figuras
-python scripts/viz/p1_figuras.py                 # -> docs/autoencoder_v3/figuras/p1/
+python scripts/modelo/p1_correr_ae.py --workers 3                # autoencoders (GPU)
+python scripts/modelo/p1_compresion.py linear                    # PCA y MCA, con su ajuste
+python scripts/modelo/p1_compresion.py linae                     # AE lineal, con sus pesos
+python scripts/modelo/p1_compresion.py om                        # distancia OM (para la 1.2)
+python scripts/validacion/evaluacion_pregunta1.py no_vistos
+python scripts/validacion/evaluacion_pregunta1.py codificar
+python scripts/validacion/evaluacion_pregunta1.py reconstruccion
+python scripts/validacion/evaluacion_pregunta1.py accesibilidad
+python scripts/validacion/evaluacion_pregunta1.py tipologias
+python scripts/viz/pregunta1_figuras.py
 ```
 
-`eval` lee **todos** los `.npz` de `models/autoencoder_v3/p1/`: no deben quedar modelos de prueba en esa carpeta.
-
----
-
-## Anexo A. Tablas complementarias
-
-### A.1 Ponderadas por superficie (trayectorias dinámicas)
-
-**Años correctos**
-
-| d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,9120 | 0,6647 | 0,3751 | 0,3810 |
-| 4 | 1,0000 | 0,9443 | 0,7130 | 0,4586 |
-| 7 | 1,0000 | 0,9908 | 0,8181 | 0,7268 |
-| 10 | 1,0000 | 0,9993 | 0,9166 | 0,8337 |
-| 13 | 1,0000 | 0,9999 | 0,9588 | 0,9348 |
-| 16 | 1,0000 | 1,0000 | 0,9658 | 0,9610 |
-| 19 | 1,0000 | 1,0000 | 0,9810 | 0,9719 |
-| 22 | 1,0000 | 1,0000 | 0,9836 | 0,9813 |
-| 25 | 1,0000 | 1,0000 | 0,9898 | 0,9837 |
-| 28 | 1,0000 | 1,0000 | 0,9937 | 0,9838 |
-| 31 | 1,0000 | 1,0000 | 0,9948 | 0,9900 |
-
-**Número de cambios correcto**
-
-| d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,546 | 0,265 | 0,011 | 0,010 |
-| 4 | 1,000 | 0,841 | 0,380 | 0,022 |
-| 7 | 1,000 | 0,957 | 0,552 | 0,455 |
-| 10 | 1,000 | 0,994 | 0,760 | 0,493 |
-| 13 | 1,000 | 0,999 | 0,864 | 0,784 |
-| 16 | 1,000 | 1,000 | 0,883 | 0,871 |
-| 19 | 1,000 | 1,000 | 0,929 | 0,899 |
-| 22 | 1,000 | 1,000 | 0,948 | 0,919 |
-| 25 | 1,000 | 1,000 | 0,955 | 0,934 |
-| 28 | 1,000 | 1,000 | 0,974 | 0,961 |
-| 31 | 1,000 | 1,000 | 0,978 | 0,965 |
-
-**Secuencia de estados correcta**
-
-| d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,507 | 0,151 | 0,004 | 0,004 |
-| 4 | 1,000 | 0,822 | 0,277 | 0,013 |
-| 7 | 1,000 | 0,956 | 0,477 | 0,308 |
-| 10 | 1,000 | 0,994 | 0,730 | 0,457 |
-| 13 | 1,000 | 0,999 | 0,862 | 0,780 |
-| 16 | 1,000 | 1,000 | 0,883 | 0,869 |
-| 19 | 1,000 | 1,000 | 0,929 | 0,898 |
-| 22 | 1,000 | 1,000 | 0,948 | 0,919 |
-| 25 | 1,000 | 1,000 | 0,955 | 0,934 |
-| 28 | 1,000 | 1,000 | 0,974 | 0,961 |
-| 31 | 1,000 | 1,000 | 0,978 | 0,965 |
-
-**Error del año del cambio (años)**
-
-| d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 1,095 | 2,771 | 7,997 | 3,427 |
-| 4 | 0,000 | 1,163 | 2,223 | 6,329 |
-| 7 | 0,000 | 0,202 | 1,849 | 3,527 |
-| 10 | 0,000 | 0,009 | 1,084 | 3,186 |
-| 13 | 0,000 | 0,001 | 0,815 | 1,243 |
-| 16 | 0,000 | 0,000 | 0,756 | 0,863 |
-| 19 | 0,000 | 0,000 | 0,421 | 0,628 |
-| 22 | 0,000 | 0,000 | 0,403 | 0,393 |
-| 25 | 0,000 | 0,000 | 0,225 | 0,362 |
-| 28 | 0,000 | 0,000 | 0,149 | 0,432 |
-| 31 | 0,000 | 0,000 | 0,125 | 0,247 |
-
-**F1 macro**
-
-| d | AE | AE lineal | PCA | MCA |
-|--:|--:|--:|--:|--:|
-| 1 | 0,922 | 0,540 | 0,186 | 0,222 |
-| 4 | 1,000 | 0,937 | 0,482 | 0,501 |
-| 7 | 1,000 | 0,989 | 0,617 | 0,742 |
-| 10 | 1,000 | 0,999 | 0,845 | 0,845 |
-| 13 | 1,000 | 1,000 | 0,941 | 0,936 |
-| 16 | 1,000 | 1,000 | 0,959 | 0,956 |
-| 19 | 1,000 | 1,000 | 0,973 | 0,969 |
-| 22 | 1,000 | 1,000 | 0,980 | 0,979 |
-| 25 | 1,000 | 1,000 | 0,985 | 0,983 |
-| 28 | 1,000 | 1,000 | 0,989 | 0,984 |
-| 31 | 1,000 | 1,000 | 0,991 | 0,989 |
-
-### A.2 Estructura ponderada por superficie (inestable)
-
-**Spearman con OM, pares muestreados por superficie**
-
-| d | AE | AE lineal | PCA | MCA | AE: desvío entre semillas |
-|--:|--:|--:|--:|--:|--:|
-| 1 | 0,827 | 0,830 | 0,682 | 0,883 | 0,016 |
-| 4 | 0,127 | 0,816 | -0,285 | 0,720 | 0,067 |
-| 7 | -0,082 | 0,494 | 0,250 | 0,692 | 0,173 |
-| 10 | -0,219 | 0,267 | 0,258 | 0,662 | 0,134 |
-| 13 | -0,228 | 0,572 | 0,272 | 0,669 | 0,020 |
-| 16 | -0,368 | 0,311 | 0,089 | 0,666 | 0,105 |
-| 19 | -0,221 | 0,216 | 0,016 | 0,669 | 0,151 |
-| 22 | -0,277 | 0,137 | 0,166 | 0,669 | 0,122 |
-| 25 | -0,276 | 0,375 | -0,109 | 0,669 | 0,081 |
-| 28 | -0,187 | 0,273 | -0,112 | 0,668 | 0,108 |
-| 31 | -0,260 | 0,182 | -0,065 | 0,667 | 0,180 |
-
-**Vecinos en común con OM, ponderado por superficie**
-
-| d | AE | AE lineal | PCA | MCA | AE: desvío entre semillas |
-|--:|--:|--:|--:|--:|--:|
-| 1 | 0,287 | 0,090 | 0,054 | 0,022 | 0,031 |
-| 4 | 0,332 | 0,540 | 0,541 | 0,546 | 0,042 |
-| 7 | 0,290 | 0,578 | 0,628 | 0,795 | 0,058 |
-| 10 | 0,351 | 0,652 | 0,676 | 0,824 | 0,102 |
-| 13 | 0,106 | 0,675 | 0,686 | 0,809 | 0,020 |
-| 16 | 0,295 | 0,773 | 0,760 | 0,812 | 0,011 |
-| 19 | 0,218 | 0,786 | 0,778 | 0,791 | 0,133 |
-| 22 | 0,189 | 0,775 | 0,797 | 0,832 | 0,108 |
-| 25 | 0,322 | 0,794 | 0,793 | 0,846 | 0,135 |
-| 28 | 0,282 | 0,780 | 0,770 | 0,836 | 0,105 |
-| 31 | 0,302 | 0,793 | 0,770 | 0,836 | 0,145 |
+En CPU (8 núcleos), la evaluación tarda alrededor de una hora y cuarto.
