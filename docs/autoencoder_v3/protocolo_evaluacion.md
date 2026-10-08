@@ -134,3 +134,46 @@ Cada trayectoria se codifica en d números y se decodifica; la reconstrucción t
 - El AE lineal no guardó sus pesos en P1, sólo sus códigos y reconstrucciones: hay que reentrenarlo con la misma configuración guardando los pesos para codificar las trayectorias del mundo.
 - PCA y MCA se reajustan con Argentina (son determinísticos) y se proyectan las trayectorias del mundo; para MCA, con la proyección de filas suplementarias.
 - El AE codifica el mundo con los pesos guardados (`models/autoencoder_v3/p1/ae_d<d>_s<s>.pt`).
+
+---
+
+## 9. Pregunta 1.2: tipologías *(en diseño; esta sección se completa con las decisiones pendientes)*
+
+### 9.1 Algoritmo de agrupamiento (decidido 2026-10-08)
+- **Principal: k-medoides**, con varios arranques, conservando el de menor costo, para que el azar del algoritmo no se confunda con diferencias entre espacios.
+- **Sensibilidad: agrupamiento jerárquico con enlace completo**, determinístico, aplicado a los mismos espacios.
+
+**Justificación.** En la evaluación de las representaciones el algoritmo de agrupamiento se mantiene fijo para que las diferencias entre tipologías se puedan atribuir al espacio de representación y no al algoritmo. Se usa k-medoides porque es el único algoritmo de uso estándar que opera sobre una matriz de distancias arbitraria (necesario para incluir OM, que no produce coordenadas), permite fijar el número de grupos, admite ponderación y representa cada grupo con una trayectoria observada. La sensibilidad a esta elección se evalúa con un agrupamiento jerárquico de enlace completo. La tipología final, que se construye después sobre el espacio seleccionado, no está sujeta a esta restricción: allí se comparan los algoritmos válidos para ese espacio con criterios internos, y la referencia externa se reserva para la validación.
+
+**Algoritmos descartados para la evaluación, y por qué:**
+
+| Algoritmo | Motivo |
+|---|---|
+| k-medias, mezclas gaussianas | requieren coordenadas; no se aplican a OM |
+| Ward | requiere distancia euclídea; no se aplica a OM |
+| HDBSCAN, DBSCAN | no permiten fijar k y dejan trayectorias sin grupo; en el ejercicio 2000-2022 fue inservible en este universo |
+| Jerárquico de enlace promedio | encadena: en el ejercicio 2000-2022 reunió el 35 % de las trayectorias en un solo grupo |
+
+**Límite.** El orden entre espacios que resulte de la 1.2 vale para k-medoides. Lo atenúan el análisis de sensibilidad y el antecedente de 2000-2022, donde k-medoides, k-medias y Ward dieron resultados prácticamente iguales sobre los embeddings.
+
+### 9.2 Evaluación de los espacios y tipología final: dos etapas distintas
+
+| | Evaluación (1.2) | Tipología final |
+|---|---|---|
+| Pregunta | ¿qué espacio de representación conserva más información? | ¿cuál es la mejor tipología sobre el espacio elegido? |
+| Qué varía | el espacio | el algoritmo de agrupamiento (y k) |
+| Qué se mantiene fijo | el algoritmo | el espacio |
+| Algoritmos posibles | sólo los aplicables a todos los espacios, incluido OM | todos los válidos para ese espacio |
+
+Dos reglas para la etapa final, fijadas desde ahora:
+1. **El espacio final no se presupone.** Se elige según los resultados de las Preguntas 1 y 2; no tiene por qué ser el autoencoder.
+2. **El desmonte no se usa a la vez para elegir y para validar.** El algoritmo final se elige por criterios internos (las métricas de la 1.2 y la estabilidad) y la referencia de desmonte se reserva para la validación; o bien, si se la usa para elegir, se la divide en una parte de selección y otra de validación.
+
+### 9.3 Decisiones pendientes
+- d de los embeddings (propuesta: 4, con 2 y 7 como sensibilidad).
+- Universo agrupado (propuesta: las 7.818 trayectorias dinámicas de Argentina).
+- Ponderación al agrupar (propuesta: min(n_px, 100)).
+- Grilla de k (propuesta: 4, 8, 12, 16, 24, 32, 48) y número de arranques de k-medoides.
+- Métricas (propuesta: exactitud por año del prototipo del grupo, pureza de proceso y, como secundaria, dispersión del año del primer cambio).
+- Referencias (propuesta: partición al azar con los mismos tamaños; one-hot con distancia de Hamming como techo de la métrica por año; descripción por censo, a decidir).
+- Estabilidad entre arranques y entre semillas (propuesta: incluirla como secundaria).
