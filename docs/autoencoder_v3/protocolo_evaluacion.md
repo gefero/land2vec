@@ -1,6 +1,6 @@
 # Protocolo de evaluación de las representaciones (autoencoder_v3, 1992-2022)
 
-**Fecha:** 2026-10-08. **Estado:** fijado **antes** de implementar y correr. Cubre la Pregunta 1.1; la 1.2 y la Pregunta 2 se agregarán como secciones nuevas. Cualquier cambio posterior se registra en §8 (desviaciones) sin reescribir lo anterior.
+**Fecha:** 2026-10-08. **Estado:** fijado **antes** de implementar y correr. Cubre la Pregunta 1.1 (§2–§7) y la 1.2 (§9); la Pregunta 2 se agregará como sección nueva. Cualquier cambio posterior se registra en §8 (desviaciones) sin reescribir lo anterior.
 
 Antecedentes: [`p1_resultados.md`](p1_resultados.md) (compresión dentro de Argentina, 1992-2022). Reemplaza a las pruebas "AE contra OM" del 2026-10-08, descartadas (commits `69cc1e6` y `85ce841`, eliminadas en `7b78f76`).
 
@@ -137,7 +137,7 @@ Cada trayectoria se codifica en d números y se decodifica; la reconstrucción t
 
 ---
 
-## 9. Pregunta 1.2: tipologías *(en diseño; esta sección se completa con las decisiones pendientes)*
+## 9. Pregunta 1.2: tipologías
 
 ### 9.1 Algoritmo de agrupamiento (decidido 2026-10-08)
 - **Principal: k-medoides**, con varios arranques, conservando el de menor costo, para que el azar del algoritmo no se confunda con diferencias entre espacios.
@@ -169,11 +169,44 @@ Dos reglas para la etapa final, fijadas desde ahora:
 1. **El espacio final no se presupone.** Se elige según los resultados de las Preguntas 1 y 2; no tiene por qué ser el autoencoder.
 2. **El desmonte no se usa a la vez para elegir y para validar.** El algoritmo final se elige por criterios internos (las métricas de la 1.2 y la estabilidad) y la referencia de desmonte se reserva para la validación; o bien, si se la usa para elegir, se la divide en una parte de selección y otra de validación.
 
-### 9.3 Decisiones pendientes
-- d de los embeddings (propuesta: 4, con 2 y 7 como sensibilidad).
-- Universo agrupado (propuesta: las 7.818 trayectorias dinámicas de Argentina).
-- Ponderación al agrupar (propuesta: min(n_px, 100)).
-- Grilla de k (propuesta: 4, 8, 12, 16, 24, 32, 48) y número de arranques de k-medoides.
-- Métricas (propuesta: exactitud por año del prototipo del grupo, pureza de proceso y, como secundaria, dispersión del año del primer cambio).
-- Referencias (propuesta: partición al azar con los mismos tamaños; one-hot con distancia de Hamming como techo de la métrica por año; descripción por censo, a decidir).
-- Estabilidad entre arranques y entre semillas (propuesta: incluirla como secundaria).
+### 9.3 Espacios
+| Espacio | Distancia | d | Semillas |
+|---|---|---|---|
+| AE | euclídea en z | **4** (principal); 2 y 7 (sensibilidad) | 0, 1, 2 |
+| AE lineal | euclídea en z | 4; 2 y 7 | 0, 1, 2 |
+| PCA | euclídea en z | 4; 2 y 7 | — |
+| MCA | euclídea en z | 4; 2 y 7 | — |
+| OM | matriz OM completa (`om_trate.npy`) | — | — |
+| One-hot | Hamming (años distintos) | — | — |
+
+El one-hot con distancia de Hamming es una **referencia**, no un método candidato: es el techo de la métrica por año (§9.6), que está alineada con esa distancia.
+
+### 9.4 Universo agrupado
+Las **7.818 trayectorias dinámicas de Argentina**. Las 9 constantes se excluyen: cada una sería su propio grupo y, con el 93,5 % de la superficie, dominarían cualquier métrica ponderada.
+
+### 9.5 Ponderación (decidido 2026-10-08)
+**Sin ponderar: cada trayectoria distinta pesa 1.** La tipología describe la **variedad de dinámicas**, no la superficie que ocupa cada una. Es coherente con el jerárquico de enlace completo, que es indiferente a los pesos (repetir una trayectoria no cambia la distancia máxima entre grupos), de modo que el análisis de sensibilidad cambia sólo el algoritmo. Todas las métricas de la 1.2 se calculan por tipo. Como hay 1.729 trayectorias de un solo píxel, se reporta el tamaño de los grupos para detectar grupos formados sólo por trayectorias raras.
+
+### 9.6 Agrupamiento y métricas
+- **k ∈ {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48}.** Los métodos se comparan siempre a igual k.
+- **k-medoides:** implementación del proyecto (`scripts/clustering/p2_tipologias.py`, iteraciones alternadas con inicio k-medoides++), **10 arranques**, se conserva el de menor costo.
+- **Jerárquico de enlace completo:** un árbol por espacio, cortado en los mismos k.
+- **Métricas principales** (por tipo):
+  - **Exactitud por año del prototipo** (*cuándo*): cada grupo tiene como prototipo, en cada año, su estado más frecuente; es la fracción de los años de cada trayectoria que coincide con el prototipo de su grupo.
+  - **Pureza de proceso** (*qué*): cada grupo tiene como prototipo su proceso más frecuente; es la fracción de las trayectorias cuyo proceso coincide con el de su grupo.
+- **Secundaria:** dispersión del año del primer cambio, error absoluto medio respecto del año mediano de su grupo.
+
+### 9.7 Referencias
+- **Piso: partición al azar** con los mismos tamaños de grupo que la partición evaluada (20 permutaciones de las etiquetas; se reporta la media).
+- **Techo de la métrica por año:** el one-hot con Hamming (§9.3).
+- **Descartada:** la descripción por censo (los k−1 procesos con más trayectorias, más un grupo "resto"). Sin ponderar, el "resto" reúne el 92 % de las trayectorias con k = 4 y el 75 % con k = 12: es una referencia trivialmente débil y sesgada a favor de la pureza de proceso.
+
+### 9.8 Estabilidad (secundaria)
+Índice de Rand ajustado entre particiones del mismo espacio y el mismo k:
+- **entre los 10 arranques** de k-medoides (ruido del algoritmo);
+- **entre las tres semillas** del AE y del AE lineal (ruido del modelo).
+
+### 9.9 Lectura
+- Cada métrica se reporta por separado; no hay una puntuación única.
+- Para el AE y el AE lineal se reporta la media de las tres semillas y el rango; **una diferencia menor que ese rango no se interpreta**.
+- La métrica por año está alineada con la distancia de Hamming y favorece al one-hot por construcción; la pureza de proceso favorece a los espacios que agrupan por secuencia de estados. Se lee cada una sabiendo a qué noción de parecido responde.
