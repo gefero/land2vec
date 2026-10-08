@@ -1,3 +1,4 @@
 data/*.nc filter=lfs diff=lfs merge=lfs -text
 data/autoencoder_v3/*.nc filter=lfs diff=lfs merge=lfs -text
 data/autoencoder_v3/p1/*.npy filter=lfs diff=lfs merge=lfs -text
+models/autoencoder_v3/** filter=lfs diff=lfs merge=lfs -text
