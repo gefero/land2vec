@@ -2,15 +2,21 @@
 
 Subcomandos (desde la raíz del repo; salidas en data/autoencoder_v3/pregunta2/):
     python scripts/validacion/evaluacion_pregunta2.py catalogo    # catálogo descriptivo de procesos (§7.6), Argentina y mundo
+    python scripts/validacion/evaluacion_pregunta2.py tipologias  # particiones de cada espacio (§8): k-medoides x10 arranques y jerárquico completo
+    python scripts/validacion/evaluacion_pregunta2.py nivel1      # Nivel 1 (§9): recuperación de los procesos -> nivel1.csv
+
+`tipologias` requiere los códigos de la Pregunta 1 (`evaluacion_pregunta1.py codificar`) y la matriz OM (`p1_compresion.py om`).
 
 Los eventos y procesos se definen en src/land2vec/procesos.py.
 """
 import argparse
 import sys
+import time
+import warnings
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-for _p in (_ROOT / "src", _ROOT / "scripts" / "modelo", _ROOT / "scripts" / "datos"):
+for _p in (_ROOT / "src", _ROOT / "scripts" / "modelo", _ROOT / "scripts" / "datos", _ROOT / "scripts" / "clustering"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 from land2vec import paths as P  # noqa: E402
@@ -23,6 +29,8 @@ from land2vec.procesos import PROCESOS, eventos_de, procesos_por_evento  # noqa:
 from land2vec.tokenizer import Tokenizer  # noqa: E402
 
 OUT = P.DATA / "autoencoder_v3" / "pregunta2"
+TIPOLOGIAS = OUT / "tipologias"
+CODIGOS = P.DATA / "autoencoder_v3" / "pregunta1" / "codigos"
 MUNDO = P.DATA / "autoencoder_v3" / "mundo" / "universo_mundo.csv.gz"
 ORDEN = list(PROCESOS)
 
@@ -140,11 +148,201 @@ def cmd_catalogo(args):
     print("->", P.rel(OUT))
 
 
+# ---------------------------------------------------------------------------
+# Tipologías (§8)
+# ---------------------------------------------------------------------------
+D_ESPACIOS = (4, 16)
+K = tuple(range(4, 49, 4))
+SEEDS = (0, 1, 2)
+NOMBRE_ESPACIO = {"ae": "AE", "lin": "AE lineal", "pca": "PCA", "mca": "MCA", "om": "OM", "onehot": "One-hot (Hamming)"}
+UMBRAL_FRAC, UMBRAL_N = 0.01, 100   # §13: proceso evaluable
+
+
+def espacios():
+    "(espacio, d, semilla) de §8.1."
+    for d in D_ESPACIOS:
+        for met in ("ae", "lin", "pca", "mca"):
+            for s in (SEEDS if met in ("ae", "lin") else (None,)):
+                yield met, d, s
+    yield "om", 0, None
+    yield "onehot", 0, None
+
+
+def tag(met, d, s):
+    return met + (f"_d{d}" if d else "") + (f"_s{s}" if s is not None else "")
+
+
+def distancias(met, d, s, din):
+    "Matriz de distancias (float32) entre las trayectorias dinámicas de Argentina."
+    if met == "om":
+        D = np.load(p1.OUT_DATA / "om_trate.npy", mmap_mode="r")
+        return np.ascontiguousarray(D[np.ix_(din, din)], dtype=np.float32)
+    if met == "onehot":
+        _, Xa = p1.load_universe()
+        OH = p1.onehot(Xa[din]).astype(np.float32)
+        return (Xa.shape[1] - OH @ OH.T).astype(np.float32)
+    from scipy.spatial.distance import cdist
+    z = np.load(CODIGOS / f"{tag(met, d, s)}.npz")["z_arg"][din]
+    return cdist(z, z).astype(np.float32)
+
+
+def _tipologia(job):
+    met, d, s, arranques, rehacer = job
+    f = TIPOLOGIAS / f"{tag(met, d, s)}.npz"
+    if f.exists() and not rehacer:
+        return f"{tag(met, d, s):12s} ya estaba"
+    from scipy.cluster.hierarchy import cut_tree, linkage
+    from scipy.spatial.distance import squareform
+    from p2_tipologias import kmedoids
+    t0 = time.time()
+    u, _ = p1.load_universe()
+    din = np.flatnonzero(~u.constante.values)
+    D = distancias(met, d, s, din)
+    n = len(D)
+    km = np.zeros((len(K), arranques, n), np.int16)
+    costo = np.zeros((len(K), arranques))
+    med = np.full((len(K), arranques, max(K)), -1, np.int32)
+    w = np.ones(n)                                   # §8.3: el agrupamiento no se pondera
+    for a, k in enumerate(K):
+        rng = np.random.default_rng(k)
+        for r in range(arranques):
+            m, lab, c = kmedoids(D, w, k, rng, n_init=1)
+            km[a, r], costo[a, r], med[a, r, :k] = lab, c, m
+    # cut_tree corta en exactamente k grupos (fcluster "maxclust" da menos con alturas empatadas, p. ej. Hamming)
+    jq = cut_tree(linkage(squareform(D, checks=False), "complete"), n_clusters=list(K)).T.astype(np.int16)
+    TIPOLOGIAS.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(f, k=np.array(K), km=km, costo=costo, medoides=med, jq=jq, din=din)
+    return f"{tag(met, d, s):12s} {time.time() - t0:5.0f}s"
+
+
+def cmd_tipologias(args):
+    from multiprocessing import Pool
+    jobs = [(m, d, s, args.arranques, args.rehacer) for m, d, s in espacios()]
+    with Pool(args.workers) as pool:
+        for msg in pool.imap_unordered(_tipologia, jobs):
+            print(msg, flush=True)
+    print("->", P.rel(TIPOLOGIAS))
+
+
+def cargar_tipologia(met, d, s):
+    "{'k-medoides': (len(K), n) mejor arranque, 'jerarquico completo': (len(K), n), 'arranques': (len(K), R, n), ...}"
+    z = np.load(TIPOLOGIAS / f"{tag(met, d, s)}.npz")
+    best = z["costo"].argmin(1)
+    return {"k": z["k"], "k-medoides": z["km"][np.arange(len(best)), best].astype(int),
+            "jerarquico completo": z["jq"].astype(int), "arranques": z["km"], "medoides": z["medoides"], "din": z["din"]}
+
+
+# ---------------------------------------------------------------------------
+# Nivel 1 (§9)
+# ---------------------------------------------------------------------------
+def etiquetas_procesos(X):
+    """Para cada variante de eventos ('todos' | 'sin_marcas', §7.5) y proceso: positivos (bool) y año del primer
+    evento del proceso (nan si no es positivo)."""
+    ev, _ = eventos_de(X)
+    pe = procesos_por_evento(ev)
+    marcado = (pe.costura | pe.sensor | pe.censurado).values
+    out = {}
+    for var, q in (("todos", pe), ("sin_marcas", pe[~marcado])):
+        for p in ORDEN:
+            a = q[q.proceso == p].groupby("i").anio.min()
+            anio = np.full(len(X), np.nan)
+            anio[a.index.values] = a.values
+            out[var, p] = (~np.isnan(anio), anio)
+    return out
+
+
+def recuperacion(lab, w, pos, anio, mitad):
+    """Métricas del Nivel 1 con ajuste cruzado (§9.1): la asignación de grupos al proceso se estima con una mitad
+    y se evalúa con la otra, en los dos sentidos; se devuelve el promedio."""
+    G = lab.max() + 1
+    res = []
+    for m in (0, 1):
+        fit, ev = mitad == m, mitad != m
+        wg = np.bincount(lab[fit], w[fit], G)
+        wp = np.bincount(lab[fit], w[fit] * pos[fit], G)
+        asig = (wg > 0) & (wp >= 0.5 * wg)
+        dentro = asig[lab[ev]]
+        we, pe_ = w[ev], pos[ev]
+        tp, npos, nasig = (we * pe_ * dentro).sum(), (we * pe_).sum(), (we * dentro).sum()
+        rec = tp / npos if npos > 0 else np.nan
+        prec = tp / nasig if nasig > 0 else np.nan
+        f1 = 2 * prec * rec / (prec + rec) if nasig > 0 and tp > 0 else 0.0
+        # fechado: año mediano (ponderado) del primer evento entre los positivos del grupo, estimado con la mitad de ajuste
+        fe = np.nan
+        if nasig > 0 and tp > 0:
+            med = np.full(G, np.nan)
+            for g in np.flatnonzero(asig):
+                sel = fit & pos & (lab == g)
+                med[g] = mediana_ponderada(anio[sel], w[sel])
+            sel = ev & pos & asig[lab]
+            fe = float((w[sel] * np.abs(anio[sel] - med[lab[sel]])).sum() / w[sel].sum())
+        res.append((rec, prec, f1, fe, int(asig.sum())))
+    r = np.array(res, float)
+    with warnings.catch_warnings():   # precisión sin grupo asignado en las dos mitades -> nan
+        warnings.simplefilter("ignore", RuntimeWarning)
+        prom = np.nanmean(r, 0)
+    return {"recall": prom[0], "precision": prom[1], "f1": prom[2], "fechado_mae": prom[3], "n_grupos_asignados": prom[4],
+            "sin_grupo": int(np.isnan(r[:, 1]).sum())}
+
+
+def _nivel1(job):
+    met, d, s, X_, w_px, etiq, mitad, n_azar = job
+    t = cargar_tipologia(met, d, s)
+    rng = np.random.default_rng(1)
+    filas = []
+    for alg in ("k-medoides", "jerarquico completo"):
+        for a, k in enumerate(t["k"]):
+            lab = t[alg][a]
+            perms = [rng.permutation(lab) for _ in range(n_azar)]
+            for pond, w in (("superficie", w_px), ("tipo", np.ones_like(w_px))):
+                for (var, p), (pos, anio) in etiq.items():
+                    r = recuperacion(lab, w, pos, anio, mitad)
+                    az = [recuperacion(q, w, pos, anio, mitad) for q in perms]
+                    azar = {f"azar_{c}": float(np.nanmean([x[c] for x in az])) if not all(np.isnan(x[c]) for x in az) else np.nan
+                            for c in ("recall", "precision", "f1")}
+                    filas.append({"espacio": NOMBRE_ESPACIO[met], "metodo": met, "d": d or np.nan, "semilla": s,
+                                  "algoritmo": alg, "k": int(k), "ponderacion": pond, "eventos": var, "proceso": p} | r | azar)
+    return filas
+
+
+def cmd_nivel1(args):
+    from multiprocessing import Pool
+    X, w, _ = universo_argentina()
+    etiq = etiquetas_procesos(X)
+    for p in ORDEN:   # §13: umbral de evaluabilidad (Argentina, todos los eventos)
+        pos = etiq["todos", p][0]
+        ok = w[pos].sum() / w.sum() >= UMBRAL_FRAC and pos.sum() >= UMBRAL_N
+        print(f"{p:18s} {w[pos].sum() / w.sum():6.1%} {pos.sum():5d} trayectorias  {'evaluable' if ok else 'NO evaluable'}")
+        if not ok:
+            for var in ("todos", "sin_marcas"):
+                etiq.pop((var, p))
+    mitad = np.zeros(len(X), int)
+    mitad[np.random.default_rng(0).permutation(len(X))[len(X) // 2:]] = 1
+    jobs = [(m, d, s, X, w, etiq, mitad, args.azar) for m, d, s in espacios()]
+    filas = []
+    with Pool(args.workers) as pool:
+        for f in pool.imap_unordered(_nivel1, jobs):
+            filas += f
+            print(f"{f[0]['espacio']:18s} d={f[0]['d']} s={f[0]['semilla']}", flush=True)
+    df = pd.DataFrame(filas).sort_values(["eventos", "ponderacion", "proceso", "algoritmo", "metodo", "d", "semilla", "k"])
+    df.to_csv(OUT / "nivel1.csv", index=False)
+    print("->", P.rel(OUT / "nivel1.csv"))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("catalogo")
     sp.set_defaults(fn=cmd_catalogo)
+    sp = sub.add_parser("tipologias")
+    sp.add_argument("--arranques", type=int, default=10)
+    sp.add_argument("--workers", type=int, default=4)
+    sp.add_argument("--rehacer", action="store_true")
+    sp.set_defaults(fn=cmd_tipologias)
+    sp = sub.add_parser("nivel1")
+    sp.add_argument("--azar", type=int, default=20, help="permutaciones para el piso al azar (§9.3)")
+    sp.add_argument("--workers", type=int, default=6)
+    sp.set_defaults(fn=cmd_nivel1)
     args = ap.parse_args()
     args.fn(args)
 

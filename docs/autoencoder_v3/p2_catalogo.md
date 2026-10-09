@@ -23,7 +23,7 @@
 6. **Los procesos casi no se superponen.** La mayor superposición es entre regeneración y degradación en Argentina: el 8 % de la superficie con regeneración también tiene degradación (F → Sh → F con tramos largos).
 7. **Un 30 % de la superficie dinámica de Argentina no tiene ninguno de los cuatro procesos** (36 % en el mundo). Son, sobre todo, cambios entre suelo desnudo y vegetación rala (B ↔ Sp), de bosque a humedal (F → Wt) y entre pastizal y vegetación rala.
 
-**Propuesta de umbral (protocolo §13, pendiente 1):** evaluar un proceso si tiene al menos el **1 % de la superficie dinámica y 100 trayectorias en Argentina**. Con ese umbral los seis entran (las tres variantes de deforestación y los otros tres procesos). Hay que fijarlo antes de evaluar métodos.
+**Umbral (fijado 2026-10-09, protocolo §13):** evaluar un proceso si tiene al menos el **1 % de la superficie dinámica y 100 trayectorias en Argentina**. Con ese umbral los seis entran (las tres variantes de deforestación y los otros tres procesos). Se fijó antes de evaluar métodos.
 
 ![Año de los eventos](figuras/p2/fig1_anio_de_los_eventos.png)
 
@@ -162,7 +162,7 @@ Estas dinámicas no forman parte de la evaluación, pero sí del universo que se
 
 ## 7. Qué implica para la evaluación
 
-- **Todos los procesos son evaluables** con el umbral propuesto (§1).
+- **Todos los procesos son evaluables** con el umbral fijado (§1).
 - **Las marcas no son marginales** (un tercio de la superficie de algunos procesos), así que la versión sin eventos marcados (protocolo §7.5) es una sensibilidad importante, sobre todo para la regeneración (costura de 2016) y la deforestación (sensor en 1999).
 - **La persistencia no resuelve la confusión entre F, Sh y G**, porque esa confusión es persistente. El único control posible está en el Nivel 2: comparar con fuentes independientes.
 - **El fechado de la deforestación según ESA (mediana 2001-2002)** es una hipótesis a contrastar con el Monitor de Desmontes, que en el Nivel 2 da la fecha de cada desmonte desde 2001.

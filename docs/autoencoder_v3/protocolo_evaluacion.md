@@ -291,11 +291,11 @@ Las reglas de §7 aplicadas directamente a los píxeles ESA, comparadas con la r
 - Persistencia mínima de 3 años; los estados transitorios no definen procesos.
 - Los eventos en costuras y cambios de sensor se marcan, no se excluyen.
 - La retracción urbana y la degradación dentro del bosque quedan fuera: el producto no las registra.
+- **Umbral para evaluar un proceso:** al menos el **1 % de la superficie dinámica y 100 trayectorias en Argentina**. Fijado con el catálogo (`p2_catalogo.md`), antes de ver resultados de métodos. Entran los seis (D1, D2, D3, expansión urbana, degradación y regeneración); el menor es la expansión urbana (2,0 %, 619 trayectorias).
 
 **Pendientes (antes de correr):**
-1. **Umbral de superficie mínima** para evaluar un proceso, a fijar con el catálogo (§7.6) antes de ver ningún resultado de métodos.
-2. **Disponibilidad de Hansen y GHSL** (§10.1).
-3. **d de trabajo para la tipología final** (abierto desde la Parte I): esta evaluación lo informa con d = 4 y 16.
+1. **Disponibilidad de Hansen y GHSL** (§10.1).
+2. **d de trabajo para la tipología final** (abierto desde la Parte I): esta evaluación lo informa con d = 4 y 16.
 
 ---
 
