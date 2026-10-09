@@ -20,8 +20,8 @@ más abajo.
 
 El repo tiene tres ejercicios: **v1** (`GPTDecoder`, predicción del próximo estado),
 **v2** (`TrajectoryAutoencoder` + tipologías, el borrador de paper actual) y
-**autoencoder_v3** (reformulación descriptiva: compresión y descripción de trayectorias,
-ver [`docs/autoencoder_v3/plan.md`](docs/autoencoder_v3/plan.md)). El código es uno
+**autoencoder_v3** (reformulación descriptiva sobre 1992-2022; en reinicio: los resultados
+anteriores están archivados en el tag git `v3-1992-2022-previo`). El código es uno
 solo (`src/` y `scripts/`); los productos de cada ejercicio viven en su subcarpeta de
 `data/`, `models/`, `notebooks/` y `docs/`. Todas las rutas están centralizadas en
 `src/land2vec/paths.py`.

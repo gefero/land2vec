@@ -1,4 +1,4 @@
-"""Pregunta 1 (docs/autoencoder_v3/protocolo_evaluacion.md): ajuste de los métodos de compresión sobre las
+"""Ajuste de los métodos de compresión sobre las
 7.827 trayectorias de Argentina 1992-2022. Autoencoder, autoencoder lineal, PCA y MCA del one-hot.
 
 Trabaja sobre data/autoencoder_v3/universo_argentina.csv (una fila por trayectoria distinta,
@@ -10,8 +10,6 @@ Subcomandos (desde la raíz del repo):
     python scripts/modelo/p1_compresion.py linear                   # PCA y MCA para todas las d
     python scripts/modelo/p1_compresion.py train --d 8 --seed 0     # una corrida del autoencoder
     python scripts/modelo/p1_compresion.py linae                    # autoencoder lineal (misma pérdida que el AE)
-
-La evaluación (sobre trayectorias no vistas) está en scripts/validacion/evaluacion_pregunta1.py.
 """
 import argparse
 import json
