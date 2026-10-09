@@ -1,17 +1,17 @@
-"""P1 (plan autoencoder_v3 §4.1): ¿cuánta información de las 4.554 trayectorias de Argentina
-sobrevive a una compresión de d dimensiones? Autoencoder frente a PCA y MCA del one-hot.
+"""Pregunta 1 (docs/autoencoder_v3/protocolo_evaluacion.md): ajuste de los métodos de compresión sobre las
+7.827 trayectorias de Argentina 1992-2022. Autoencoder, autoencoder lineal, PCA y MCA del one-hot.
 
 Trabaja sobre data/autoencoder_v3/universo_argentina.csv (una fila por trayectoria distinta,
-`n_px` = superficie). Es descriptivo: se ajusta y se evalúa sobre el mismo universo, no hay
-partición de validación. Los datos de ajuste se ponderan con min(n_px, tope) para que las
-9 constantes (95 % de la superficie) no dominen la pérdida.
+`n_px` = superficie). Los datos de ajuste se ponderan con min(n_px, tope) para que las
+constantes (casi toda la superficie) no dominen la pérdida.
 
 Subcomandos (desde la raíz del repo):
     python scripts/modelo/p1_compresion.py om                       # distancia OM, cacheada en data/autoencoder_v3/p1/
     python scripts/modelo/p1_compresion.py linear                   # PCA y MCA para todas las d
     python scripts/modelo/p1_compresion.py train --d 8 --seed 0     # una corrida del autoencoder
     python scripts/modelo/p1_compresion.py linae                    # autoencoder lineal (misma pérdida que el AE)
-    python scripts/modelo/p1_compresion.py eval                     # métricas de todo lo que haya -> p1_metricas.csv, p1_entropia.csv
+
+La evaluación (sobre trayectorias no vistas) está en scripts/validacion/evaluacion_pregunta1.py.
 """
 import argparse
 import json
@@ -258,7 +258,7 @@ def lin_apply(m, X: np.ndarray):
 
 
 # ---------------------------------------------------------------------------
-# Métricas de fidelidad
+# Métricas de fidelidad por trayectoria
 # ---------------------------------------------------------------------------
 def runs_of(row):
     "Estados sucesivos (sin años) y posiciones donde cambia."
@@ -283,71 +283,6 @@ def per_traj(X: np.ndarray, R: np.ndarray) -> pd.DataFrame:
                          "dif_cambios": a[:, 3]})
 
 
-def wmean(v, w):
-    m = ~np.isnan(v)
-    return float((v[m] * w[m]).sum() / w[m].sum()) if m.any() and w[m].sum() > 0 else np.nan
-
-
-def subsets(u: pd.DataFrame) -> dict[str, np.ndarray]:
-    din, sc = ~u.constante.values, ~u.costura.values
-    return {"todas": np.ones(len(u), bool), "dinamicas": din, "constantes": ~din,
-            "todas_sin_costura": sc, "dinamicas_sin_costura": din & sc}
-
-
-def fidelity(u: pd.DataFrame, X: np.ndarray, R: np.ndarray) -> list[dict]:
-    from sklearn.metrics import f1_score, recall_score
-    pt = per_traj(X, R)
-    out = []
-    labels = sorted(set(np.unique(X)))
-    for sname, mask in subsets(u).items():
-        for wname, w in (("px", u.n_px.values.astype(float)), ("tipo", np.ones(len(u)))):
-            ws = w[mask]
-            for col in ("acc_anio", "exacta", "n_cambios_ok", "estados_ok", "err_anio_cambio"):
-                out.append({"subset": sname, "peso": wname, "metrica": col, "valor": wmean(pt[col].values[mask], ws)})
-            yt, yp = X[mask].ravel(), R[mask].ravel()
-            sw = np.repeat(ws, X.shape[1])
-            out.append({"subset": sname, "peso": wname, "metrica": "macro_f1",
-                        "valor": float(f1_score(yt, yp, labels=labels, average="macro", sample_weight=sw, zero_division=0))})
-            if sname in ("dinamicas", "todas"):
-                rec = recall_score(yt, yp, labels=labels, average=None, sample_weight=sw, zero_division=0)
-                for lab, v in zip(labels, rec):
-                    out.append({"subset": sname, "peso": wname, "metrica": f"recall_{Tokenizer.REVERSE_VOCAB[lab]}", "valor": float(v)})
-    return out
-
-
-def structure(z: np.ndarray, D: np.ndarray, u: pd.DataFrame, k: int = 10, npairs: int = 2_000_000, seed: int = 0) -> list[dict]:
-    "Correlación de Spearman entre distancias en z y OM (pares muestreados) y solapamiento de kNN."
-    from scipy.spatial.distance import cdist
-    from scipy.stats import spearmanr
-    n = len(z)
-    rng = np.random.default_rng(seed)
-    Dz = cdist(z, z).astype(np.float32)
-    out = []
-    px = u.n_px.values.astype(float)
-    for wname, p in (("tipo", None), ("px", px / px.sum())):
-        i = rng.choice(n, npairs, p=p)
-        j = rng.choice(n, npairs, p=p)
-        m = i != j
-        out.append({"peso": wname, "metrica": "spearman_om", "valor": float(spearmanr(Dz[i[m], j[m]], D[i[m], j[m]])[0])})
-    nn_z = np.argsort(Dz + np.diag(np.full(n, np.inf, np.float32)), axis=1)[:, :k]
-    nn_o = np.argsort(D + np.diag(np.full(n, np.inf)), axis=1)[:, :k]
-    ov = np.array([len(set(a) & set(b)) / k for a, b in zip(nn_z, nn_o)])
-    out.append({"peso": "tipo", "metrica": f"knn{k}_om", "valor": float(ov.mean())})
-    out.append({"peso": "px", "metrica": f"knn{k}_om", "valor": float((ov * px).sum() / px.sum())})
-    return out
-
-
-def entropies(u: pd.DataFrame, w_train: np.ndarray) -> list[dict]:
-    def H(w):
-        p = w[w > 0] / w.sum()
-        return float(-(p * np.log2(p)).sum())
-    din = ~u.constante.values
-    return [{"distribucion": "px_todas", "bits": H(u.n_px.values.astype(float))},
-            {"distribucion": "px_dinamicas", "bits": H(u.n_px.values[din].astype(float))},
-            {"distribucion": f"tope{TOPE}_todas", "bits": H(w_train)},
-            {"distribucion": "uniforme_tipos", "bits": float(np.log2(len(u)))}]
-
-
 # ---------------------------------------------------------------------------
 # Subcomandos
 # ---------------------------------------------------------------------------
@@ -369,7 +304,7 @@ def cmd_linear(args):
     (OUT_MODELS / "lineales").mkdir(parents=True, exist_ok=True)
     for name, fit, emb in (("pca", pca_fit, pca_embed_recon), ("mca", mca_fit, mca_embed_recon)):
         m = fit(X, w, max(DIMS))
-        # el ajuste, para aplicarlo a trayectorias nuevas (pca_apply / mca_apply); en una subcarpeta para que `eval` no lo lea
+        # el ajuste, para aplicarlo a trayectorias nuevas (pca_apply / mca_apply)
         keys = ("mu", "Vt") if name == "pca" else ("c", "Vt", "keep", "s")
         np.savez_compressed(OUT_MODELS / "lineales" / f"{name}.npz", **{k: m[k] for k in keys})
         for d in DIMS:
@@ -409,40 +344,13 @@ def cmd_linae(args):
             print(f"lin_d{d}_s{seed}: acc año {(R == X).mean():.4f}", flush=True)
 
 
-def cmd_eval(args):
-    u, X = load_universe()
-    om_path = args.om or OUT_DATA / "om_trate.npy"
-    D = np.load(om_path) if om_path.exists() and om_path.stat().st_size > 1000 else None  # un puntero LFS pesa ~130 B
-    if D is None:
-        print("(sin OM cacheada: se omite la preservación de estructura; correr `om` primero)")
-    rows = []
-    for f in sorted(OUT_MODELS.glob("*.npz")):
-        method, d, *seed = f.stem.split("_")
-        d = int(d[1:])
-        seed = int(seed[0][1:]) if seed else 0
-        a = np.load(f)
-        meta = {"metodo": method, "d": d, "semilla": seed}
-        for r in fidelity(u, X, a["recon"].astype(np.int64)):
-            rows.append(meta | r)
-        if D is not None:
-            for r in structure(a["z"], D, u):
-                rows.append(meta | {"subset": "todas"} | r)
-        print(f.stem, flush=True)
-    out = P.DATA / "autoencoder_v3" / "p1_metricas.csv"
-    pd.DataFrame(rows).to_csv(out, index=False)
-    pd.DataFrame(entropies(u, train_weights(u, args.tope))).to_csv(P.DATA / "autoencoder_v3" / "p1_entropia.csv", index=False)
-    print("->", P.rel(out))
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("om", cmd_om), ("linear", cmd_linear), ("train", cmd_train), ("linae", cmd_linae), ("eval", cmd_eval)):
+    for name, fn in (("om", cmd_om), ("linear", cmd_linear), ("train", cmd_train), ("linae", cmd_linae)):
         sp = sub.add_parser(name)
         sp.set_defaults(fn=fn)
         sp.add_argument("--tope", type=int, default=TOPE, help="peso de ajuste = min(n_px, tope)")
-        if name == "eval":
-            sp.add_argument("--om", type=Path, default=None, help="distancia OM (default: data/autoencoder_v3/p1/om_trate.npy)")
         if name == "linae":
             sp.add_argument("--steps", type=int, default=3000)
             sp.add_argument("--lr", type=float, default=1e-2)

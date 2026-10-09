@@ -1,0 +1,37 @@
+conjunto,categoria,superficie,frac
+Argentina,sin proceso: total,693433.0,0.2955280810767041
+Argentina,sin proceso: sin ningún evento persistente,536.0,0.00022843310234314402
+Argentina,sin proceso: evento B→Sp,130553.0,0.05563922912351582
+Argentina,sin proceso: evento F→Wt,119958.0,0.05112383972178894
+Argentina,sin proceso: evento Sp→B,77126.0,0.03286964823006964
+Argentina,sin proceso: evento G→Sp,57758.0,0.024615371502118122
+Argentina,sin proceso: evento Wt→F,45696.0,0.019474774337075205
+Argentina,sin proceso: evento Sp→G,42236.0,0.01800018751971088
+Argentina,sin proceso: evento Wa→Wt,28492.0,0.012142753641718022
+Argentina,sin proceso: evento F→Sp,20675.0,0.008811295505493475
+Argentina,sin proceso: evento A→Sh,16773.0,0.007148336614928274
+Argentina,sin proceso: evento F→Wa,16694.0,0.007114668303202325
+Argentina,sin proceso: evento Wa→Sp,16101.0,0.006861942874677168
+Argentina,sin proceso: evento Sp→Sh,15292.0,0.006517162315357012
+Argentina,sin proceso: evento G→B,13717.0,0.005845926986643483
+Argentina,sin proceso: evento Sh→G,13693.0,0.0058356986387773715
+Argentina,sin proceso: evento Wa→Sh,13466.0,0.005738955515210406
+Argentina,trayectorias con alguna oscilación,603.0,0.000256987240136037
+mundo,sin proceso: total,3093646.8003183324,0.35957781176451564
+mundo,sin proceso: sin ningún evento persistente,11532.190868431959,0.001340398637910055
+mundo,sin proceso: evento B→Sp,458984.69558385835,0.05334827248361502
+mundo,sin proceso: evento Sp→G,413507.5198669505,0.04806241266023976
+mundo,sin proceso: evento Wt→F,273124.2073726631,0.03174551303557806
+mundo,sin proceso: evento G→Sp,263853.7567203017,0.03066799883476366
+mundo,sin proceso: evento B→G,220370.4812455648,0.02561389212744638
+mundo,sin proceso: evento Sp→A,197942.06728963225,0.02300701405371376
+mundo,sin proceso: evento F→Wt,196302.7380698002,0.02281647309940437
+mundo,sin proceso: evento Sp→F,156677.77446117104,0.018210822026317
+mundo,sin proceso: evento Sp→B,142518.56102472203,0.016565081800489937
+mundo,sin proceso: evento F→Sp,105910.33286244338,0.012310069051842041
+mundo,sin proceso: evento A→G,102447.03692253053,0.011907526532948595
+mundo,sin proceso: evento F→Wa,99037.75980970643,0.011511262678974704
+mundo,sin proceso: evento G→B,95452.01411698612,0.011094487696905086
+mundo,sin proceso: evento Wa→B,53792.15666548767,0.006252318778562487
+mundo,sin proceso: evento B→A,48934.919759444725,0.005687757039414679
+mundo,trayectorias con alguna oscilación,17732.008253089687,0.0020610099139889643

@@ -1,25 +1,30 @@
 # Protocolo de evaluación de las representaciones (autoencoder_v3, 1992-2022)
 
-**Fecha:** 2026-10-08. **Estado:** fijado **antes** de implementar y correr. Cubre la Pregunta 1.1 (§2–§7) y la 1.2 (§9); la Pregunta 2 se agregará como sección nueva. Cualquier cambio posterior se registra en §8 (desviaciones) sin reescribir lo anterior.
+**Fecha:** 2026-10-08; revisado el 2026-10-09. **Estado:** la Parte I está fijada y ejecutada ([`p1_resultados.md`](p1_resultados.md)); la Parte II está fijada **antes** de implementar y correr. Cualquier cambio posterior se registra en §14 (desviaciones) sin reescribir lo anterior.
 
-Antecedentes: [`p1_resultados.md`](p1_resultados.md) (compresión dentro de Argentina, 1992-2022). Reemplaza a las pruebas "AE contra OM" del 2026-10-08, descartadas (commits `69cc1e6` y `85ce841`, eliminadas en `7b78f76`).
+**Revisión del 2026-10-09.** La Pregunta 1 se redujo a la capacidad de compresión (reconstrucción). La accesibilidad de la información en z (antes §5) y las tipologías evaluadas con métricas genéricas (antes §9, "Pregunta 1.2") se eliminaron, junto con su código y sus resultados (quedan en el historial, commit `c1f9365`). Se reemplazan por la Parte II: la evaluación de las tipologías según su capacidad de detectar los procesos territoriales que motivan el trabajo. Las decisiones de diseño del agrupamiento tomadas el 2026-10-08 (algoritmo, universo, ponderación, valores de k) se conservan en §8.
 
----
-
-## 1. Qué significa "describir mejor"
-
-Se evalúan dos dimensiones, por separado:
-
-- **Pregunta 1, dimensión interna:** ¿qué capacidad de compresión de la información de las trayectorias tiene cada método?
-  - **1.1** Sobre las representaciones continuas ("en crudo"): reconstrucción y accesibilidad de la información.
-  - **1.2** Sobre las tipologías de k grupos que se obtienen de cada método *(pendiente de diseño)*.
-- **Pregunta 2, dimensión externa:** ¿qué capacidad tiene cada método de detectar procesos registrados por fuentes independientes, como el Monitor de Desmontes? *(pendiente de diseño)*.
-
-**Principio:** todos los métodos se comparan en pie de igualdad. Ninguno funciona como juez de los demás; en particular, **OM es un método más**, no una referencia de lo correcto. En la 1.1 OM no participa porque no produce una representación continua; participa en la 1.2.
+Antecedentes: reemplaza a las pruebas "AE contra OM" del 2026-10-08, descartadas (commits `69cc1e6` y `85ce841`, eliminadas en `7b78f76`).
 
 ---
 
-## 2. Pregunta 1.1: métodos
+## 1. Qué se evalúa
+
+El objetivo es usar las representaciones para **agrupar secuencias de uso del suelo en tipologías que expresen procesos reales del territorio**. Se evalúan dos preguntas, por separado:
+
+- **Pregunta 1 (Parte I): capacidad de compresión.** ¿Cuánta información de las trayectorias conserva cada método en d dimensiones, medida como reconstrucción de trayectorias que no vio?
+- **Pregunta 2 (Parte II): detección de procesos.** ¿Las tipologías construidas sobre cada representación detectan los procesos de interés (deforestación, expansión urbana, degradación y regeneración de bosque)? En tres niveles:
+  1. **Nivel 1:** ¿recuperan los procesos tal como los registra el producto (ESA CCI)?
+  2. **Nivel 2:** ¿esos procesos coinciden con lo que registran fuentes independientes?
+  3. **Nivel 3:** ¿el resultado es robusto a la semilla del modelo, al azar del agrupamiento y a trayectorias no vistas?
+
+**Principio:** todos los métodos se comparan en pie de igualdad. Ninguno funciona como juez de los demás; en particular, **OM es un método más**, no una referencia de lo correcto. En la Parte I OM no participa porque no reconstruye trayectorias; participa en la Parte II.
+
+---
+
+# Parte I. Pregunta 1: capacidad de compresión
+
+## 2. Métodos
 
 | Método | Qué es | Semillas |
 |---|---|---|
@@ -29,12 +34,12 @@ Se evalúan dos dimensiones, por separado:
 | **MCA** | análisis de correspondencias múltiples ponderado del one-hot | — |
 
 - **Dimensiones:** d ∈ {1, 2, 3, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31}. La zona de interés es d ≤ 7.
-- **Ajuste:** todos los métodos se ajustan **sólo con el universo de Argentina** (7.827 trayectorias de `universo_argentina.csv`). Los AE de d ≠ 2, 3 ya están entrenados (P1); los de d = 2 y 3 se entrenan con la misma configuración.
+- **Ajuste:** todos los métodos se ajustan **sólo con el universo de Argentina** (7.827 trayectorias de `universo_argentina.csv`).
 - **Tamaño de cada método:** se reporta el número de parámetros junto a los resultados (el AE tiene unos 800.000; PCA con d = 4, unos 1.700), como información, no como criterio.
 
 ---
 
-## 3. Pregunta 1.1: trayectorias de evaluación
+## 3. Trayectorias de evaluación
 
 ### 3.1 Conjunto no visto
 Las trayectorias **dinámicas del censo mundial que no existen en Argentina**: 62.121 tipos (`data/autoencoder_v3/mundo/universo_mundo.csv.gz`), 3,9 % del área dinámica mundial. Usan los mismos 9 estados que Argentina y no tienen valores sin dato. Ningún método las vio al ajustarse.
@@ -63,7 +68,7 @@ Las mismas métricas sobre las 7.818 trayectorias dinámicas de Argentina (las d
 
 ---
 
-## 4. Pregunta 1.1: reconstrucción
+## 4. Reconstrucción
 
 Cada trayectoria se codifica en d números y se decodifica; la reconstrucción toma, en cada año, el estado de mayor puntaje.
 
@@ -81,34 +86,7 @@ Cada trayectoria se codifica en d números y se decodifica; la reconstrucción t
 
 ---
 
-## 5. Pregunta 1.1: accesibilidad de la información en z
-
-**Qué mide.** La reconstrucción mide si la información es *recuperable* con el decodificador. Aquí se mide si es **accesible** directamente en z, con una operación simple. Importa porque la Pregunta 1.2 agrupa sobre z, sin decodificador.
-
-### 5.1 Tareas (etiquetas calculadas de la propia trayectoria)
-| Tarea | Tipo | Dimensión |
-|---|---|---|
-| Estado inicial | clasificación (9 clases) | *qué* |
-| Estado final | clasificación (9 clases) | *qué* |
-| Número de cambios | clasificación | *qué* |
-| Proceso | clasificación | *qué* |
-| Año del primer cambio | regresión (años) | *cuándo* |
-
-"Proceso" se evalúa **sólo en el estrato de proceso visto**: un proceso nuevo no está entre las clases con que se ajusta la sonda.
-
-### 5.2 Sondas
-- **Principal: vecinos.** 5 vecinos más cercanos, distancia euclídea **sobre z sin reescalar** (la misma geometría que usará el agrupamiento de la 1.2). Clasificación por voto; regresión por promedio.
-- **Secundaria: lineal.** Regresión logística multinomial (clasificación) o regresión lineal con penalización L2 (año), con z estandarizado con la media y el desvío de Argentina. Regularización fija: C = 1 (logística) y α = 1 (lineal).
-- No se usa una red neuronal como sonda: con capacidad suficiente recuperaría lo mismo que el decodificador.
-
-### 5.3 Ajuste y evaluación
-- Las sondas se **ajustan con las 7.818 trayectorias dinámicas de Argentina** (cada tipo pesa 1) y se **evalúan en las no vistas del mundo**, por estrato.
-- **Métricas:** exactitud balanceada (promedio de la tasa de acierto de cada clase presente en el conjunto evaluado) para las clasificaciones; error absoluto medio en años para el año del primer cambio.
-- **Líneas de base:** predecir siempre la clase más frecuente en Argentina y el año promedio de Argentina.
-
----
-
-## 6. Ponderación y semillas
+## 5. Ponderación y semillas
 
 - **Ponderación principal: por tipo** (cada trayectoria distinta pesa 1). Las no vistas son casi todas raras (mediana de 2 a 9 píxeles por tipo), así que la superficie dice poco.
 - **Secundaria: por superficie**, con el área en km² del censo mundial (el área del píxel varía con la latitud).
@@ -116,7 +94,7 @@ Cada trayectoria se codifica en d números y se decodifica; la reconstrucción t
 
 ---
 
-## 7. Cómo se leen los resultados
+## 6. Cómo se leen los resultados
 
 - No hay una puntuación única. Se reportan las curvas de cada métrica contra d, por estrato.
 - **Interpretación fijada:** un método que comprime información general de las trayectorias debería mantener la fidelidad en el estrato de proceso visto y degradarse de forma gradual con h. Una caída fuerte ya en h = 1 indica que el método reproduce lo que vio más que una regla general.
@@ -124,89 +102,218 @@ Cada trayectoria se codifica en d números y se decodifica; la reconstrucción t
 
 ---
 
-## 8. Desviaciones
+# Parte II. Pregunta 2: detección de procesos
 
-*(Ninguna por ahora.)*
+## 7. Procesos y definiciones operativas (decididas 2026-10-09)
+
+### 7.1 Estados
+Los 9 estados del producto agrupado: agrícola (A), bosque (F), pastizal (G), humedal (Wt), urbano (U), arbustal (Sh), vegetación rala (Sp), suelo desnudo (B) y agua (Wa).
+
+### 7.2 Tramos y persistencia
+- Un **tramo** es una racha máxima de años consecutivos con el mismo estado.
+- Un tramo es **persistente** si dura **al menos 3 años**. Dos excepciones, por censura:
+  - **a la izquierda:** el tramo que empieza en 1992 es persistente aunque dure menos (no se sabe desde cuándo estaba);
+  - **a la derecha:** un tramo que empieza en 2021 o 2022 y llega a 2022 es persistente (no hay años suficientes para comprobarlo).
+- Los tramos no persistentes son **transitorios** y no definen procesos. Esto excluye, entre otros, los estados de un año.
+
+### 7.3 Eventos
+- Un **evento** es el paso entre dos tramos persistentes consecutivos (ignorando los transitorios que haya entre ellos) con estados distintos.
+- **Origen:** el estado del tramo persistente anterior. **Destino:** el del siguiente. **Año:** el primer año del tramo de destino.
+- Si dos tramos persistentes consecutivos tienen el mismo estado (por ejemplo, F – Sh de 2 años – F), no hay evento: los transitorios intermedios se registran como **oscilación**. Las oscilaciones entre F, Sh y G son una medida directa de la confusión entre esas clases.
+- Una trayectoria puede tener varios eventos y, por lo tanto, **varios procesos** (por ejemplo, F → A → F es deforestación y después regeneración).
+
+### 7.4 Procesos
+
+| Proceso | Eventos (origen → destino) |
+|---|---|
+| **Deforestación, variante estricta (D1)** | F → A |
+| **Deforestación, variante amplia (D2)** | F → A, Sh → A |
+| **Deforestación, variante muy amplia (D3)** | F → A, Sh → A, G → A |
+| **Expansión urbana** | cualquier estado → U |
+| **Degradación de bosque** | F → G, F → Sh, F → B |
+| **Regeneración de bosque** | A → F, Sh → F, G → F |
+
+- **Las tres variantes de deforestación se evalúan en paralelo, sin elegir una.** Responden a la confusión entre F, Sh y G en el producto: cuanto más amplia, más robusta a esa confusión y menos específica de bosque. Con D3, el proceso es más bien "conversión de vegetación natural a agricultura" (G → A incluye la expansión agrícola sobre pastizal).
+- Un mismo evento puede contar para más de un proceso sólo entre las variantes D1–D3. Entre procesos distintos, los eventos no se superponen; sí puede haber varios procesos en una trayectoria (por ejemplo, F → Sh → A con los dos tramos persistentes es degradación y después deforestación D2/D3).
+- **Procesos excluidos y por qué:**
+  - **Retracción urbana:** el producto no la registra (no hay ningún paso de U a otro estado en Argentina).
+  - **Degradación dentro del bosque** (pérdida de dosel sin cambio de clase): no es observable, porque los subtipos de bosque están agrupados en F.
+
+### 7.5 Marcas
+Los eventos se **marcan, no se excluyen**:
+- **costura de producto:** año del evento 1995 o 2016;
+- **cambio de sensor:** año del evento 1999 o 2000;
+- **censura:** el tramo de destino está censurado a la derecha (§7.2), o el de origen a la izquierda.
+
+Todas las métricas se calculan con todos los eventos (principal) y sin los eventos marcados (secundario). En particular, la costura de 2016 reclasifica hacia bosque y **puede inflar la regeneración**. Se reporta aparte, aunque esa inflación juegue en contra de la hipótesis de trabajo.
+
+### 7.6 Catálogo descriptivo (antes de cualquier método)
+Para Argentina y para el mundo, y por proceso y variante:
+- superficie (km²) y número de trayectorias con el proceso;
+- distribución del año del evento;
+- fracción de eventos con cada marca;
+- superposición entre procesos (trayectorias con más de uno);
+- oscilaciones por par de estados.
+
+Es una descripción del producto, no una evaluación de métodos. Sirve para decidir si un proceso tiene superficie suficiente para evaluarse (umbral: ver §13).
 
 ---
 
-## Requisitos de implementación (no cambian el protocolo)
-- El AE lineal no guardó sus pesos en P1, sólo sus códigos y reconstrucciones: hay que reentrenarlo con la misma configuración guardando los pesos para codificar las trayectorias del mundo.
-- PCA y MCA se reajustan con Argentina (son determinísticos) y se proyectan las trayectorias del mundo; para MCA, con la proyección de filas suplementarias.
-- El AE codifica el mundo con los pesos guardados (`models/autoencoder_v3/p1/ae_d<d>_s<s>.pt`).
+## 8. Espacios y tipologías
 
----
+### 8.1 Espacios
+| Espacio | Distancia | d | Semillas |
+|---|---|---|---|
+| AE | euclídea en z | **4** (principal); 16 (sensibilidad) | 0, 1, 2 |
+| AE lineal | euclídea en z | 4; 16 | 0, 1, 2 |
+| PCA | euclídea en z | 4; 16 | — |
+| MCA | euclídea en z | 4; 16 | — |
+| OM | matriz OM completa (`om_trate.npy`) | — | — |
+| One-hot | Hamming (años distintos) | — | — |
 
-## 9. Pregunta 1.2: tipologías
+d = 16 se agrega como sensibilidad porque es donde la Parte I mostró que el AE empieza a generalizar. El one-hot con Hamming es la representación sin compresión: se compara como un método más.
 
-### 9.1 Algoritmo de agrupamiento (decidido 2026-10-08)
-- **Principal: k-medoides**, con varios arranques, conservando el de menor costo, para que el azar del algoritmo no se confunda con diferencias entre espacios.
-- **Sensibilidad: agrupamiento jerárquico con enlace completo**, determinístico, aplicado a los mismos espacios.
+### 8.2 Algoritmo de agrupamiento (decidido 2026-10-08)
+- **Principal: k-medoides**, 10 arranques (inicio k-medoides++, iteraciones alternadas; implementación de `scripts/clustering/p2_tipologias.py`), conservando el de menor costo.
+- **Sensibilidad: jerárquico de enlace completo**, cortado en exactamente k grupos.
 
-**Justificación.** En la evaluación de las representaciones el algoritmo de agrupamiento se mantiene fijo para que las diferencias entre tipologías se puedan atribuir al espacio de representación y no al algoritmo. Se usa k-medoides porque es el único algoritmo de uso estándar que opera sobre una matriz de distancias arbitraria (necesario para incluir OM, que no produce coordenadas), permite fijar el número de grupos, admite ponderación y representa cada grupo con una trayectoria observada. La sensibilidad a esta elección se evalúa con un agrupamiento jerárquico de enlace completo. La tipología final, que se construye después sobre el espacio seleccionado, no está sujeta a esta restricción: allí se comparan los algoritmos válidos para ese espacio con criterios internos, y la referencia externa se reserva para la validación.
+**Justificación.** En la evaluación el algoritmo se mantiene fijo para que las diferencias entre tipologías se puedan atribuir al espacio y no al algoritmo. Se usa k-medoides porque es el único algoritmo de uso estándar que:
+- opera sobre una matriz de distancias arbitraria (necesario para incluir OM);
+- permite fijar el número de grupos;
+- representa cada grupo con una trayectoria observada.
 
-**Algoritmos descartados para la evaluación, y por qué:**
-
-| Algoritmo | Motivo |
+| Algoritmo descartado | Motivo |
 |---|---|
 | k-medias, mezclas gaussianas | requieren coordenadas; no se aplican a OM |
 | Ward | requiere distancia euclídea; no se aplica a OM |
 | HDBSCAN, DBSCAN | no permiten fijar k y dejan trayectorias sin grupo; en el ejercicio 2000-2022 fue inservible en este universo |
 | Jerárquico de enlace promedio | encadena: en el ejercicio 2000-2022 reunió el 35 % de las trayectorias en un solo grupo |
 
-**Límite.** El orden entre espacios que resulte de la 1.2 vale para k-medoides. Lo atenúan el análisis de sensibilidad y el antecedente de 2000-2022, donde k-medoides, k-medias y Ward dieron resultados prácticamente iguales sobre los embeddings.
+**Límite.** El orden entre espacios vale para k-medoides. Lo atenúan el análisis de sensibilidad y el antecedente de 2000-2022, donde k-medoides, k-medias y Ward dieron resultados prácticamente iguales sobre los embeddings.
 
-### 9.2 Evaluación de los espacios y tipología final: dos etapas distintas
+### 8.3 Universo agrupado y ponderación (decidido 2026-10-08)
+- Las **7.818 trayectorias dinámicas de Argentina**. Las 9 constantes se excluyen: no tienen eventos.
+- **El agrupamiento no se pondera**: cada trayectoria distinta pesa 1, porque la tipología describe la variedad de dinámicas. **La evaluación sí se pondera por superficie** (§12): detectar un proceso es una cuestión de hectáreas.
 
-| | Evaluación (1.2) | Tipología final |
+### 8.4 Número de grupos
+**k ∈ {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48}.** Los espacios se comparan siempre a igual k. En esta evaluación **no se elige k**: se reportan las curvas.
+
+### 8.5 Evaluación de los espacios y tipología final: dos etapas distintas
+
+| | Evaluación (Parte II) | Tipología final |
 |---|---|---|
-| Pregunta | ¿qué espacio de representación conserva más información? | ¿cuál es la mejor tipología sobre el espacio elegido? |
-| Qué varía | el espacio | el algoritmo de agrupamiento (y k) |
+| Pregunta | ¿qué espacio produce tipologías que detectan mejor los procesos? | ¿cuál es la mejor tipología sobre el espacio elegido? |
+| Qué varía | el espacio | el algoritmo de agrupamiento y k |
 | Qué se mantiene fijo | el algoritmo | el espacio |
-| Algoritmos posibles | sólo los aplicables a todos los espacios, incluido OM | todos los válidos para ese espacio |
 
 Dos reglas para la etapa final, fijadas desde ahora:
 1. **El espacio final no se presupone.** Se elige según los resultados de las Preguntas 1 y 2; no tiene por qué ser el autoencoder.
-2. **El desmonte no se usa a la vez para elegir y para validar.** El algoritmo final se elige por criterios internos (las métricas de la 1.2 y la estabilidad) y la referencia de desmonte se reserva para la validación; o bien, si se la usa para elegir, se la divide en una parte de selección y otra de validación.
+2. **Las referencias externas no se usan a la vez para elegir y para validar.** Si se las usa para elegir el algoritmo o k, se dividen en una parte de selección y otra de validación (por bloques espaciales).
 
-### 9.3 Espacios
-| Espacio | Distancia | d | Semillas |
+---
+
+## 9. Nivel 1: recuperación de los procesos definidos sobre el producto
+
+**Pregunta.** Con las etiquetas de §7, que son reglas aplicadas a la propia secuencia, ¿la tipología no supervisada reúne en algunos de sus grupos las trayectorias de cada proceso?
+
+Una regla acierta por construcción; no se pregunta si el agrupamiento es mejor detector que la regla, sino **si encuentra solo los procesos** y cómo los organiza.
+
+### 9.1 Asignación de grupos a procesos
+- Para cada proceso P, una trayectoria es **positiva** si tiene al menos un evento de P.
+- Un grupo se asigna a P si **al menos el 50 % de su superficie** son trayectorias positivas de P. Un grupo puede quedar asignado a varios procesos, o a ninguno.
+- **Ajuste cruzado:** las trayectorias se dividen al azar en dos mitades (semilla fija). La asignación se estima con una mitad y las métricas se calculan con la otra, y viceversa; se reporta el promedio. Así, con k alto, un grupo chico no "acierta" sólo porque su asignación se estimó con sus propias trayectorias.
+
+### 9.2 Métricas (por proceso y variante, ponderadas por superficie)
+- **Recall:** fracción de la superficie positiva de P que cae en grupos asignados a P.
+- **Precisión:** fracción de la superficie de los grupos asignados a P que es positiva de P. Si ningún grupo queda asignado, la precisión no se define y se reporta "sin grupo".
+- **F1:** media armónica de las dos.
+- **Fechado:** dentro de los grupos asignados a P, error absoluto medio entre el año del primer evento de P de cada trayectoria positiva y el año mediano (ponderado) de su grupo.
+- **Fragmentación** (descriptiva): número de grupos asignados a P.
+
+### 9.3 Piso
+**Partición al azar** con los mismos tamaños de grupo que la evaluada (20 permutaciones; se reporta la media), con la misma asignación por ajuste cruzado.
+
+---
+
+## 10. Nivel 2: correspondencia con fuentes independientes
+
+**Pregunta.** Los píxeles que la tipología asigna a un proceso, ¿son los que una fuente independiente registra con ese proceso?
+
+### 10.1 Referencias
+| Proceso | Referencia | Cobertura | Estado |
 |---|---|---|---|
-| AE | euclídea en z | **4** (principal); 2 y 7 (sensibilidad) | 0, 1, 2 |
-| AE lineal | euclídea en z | 4; 2 y 7 | 0, 1, 2 |
-| PCA | euclídea en z | 4; 2 y 7 | — |
-| MCA | euclídea en z | 4; 2 y 7 | — |
-| OM | matriz OM completa (`om_trate.npy`) | — | — |
-| One-hot | Hamming (años distintos) | — | — |
+| Deforestación (D1–D3) | Monitor de Desmontes, Colección 13.0 | Chaco Seco argentino; desmontes anuales 2001-2022, los previos agrupados | disponible (`data/geo/`) |
+| Degradación y regeneración | Global Forest Change (Hansen et al.): pérdida y ganancia de cobertura arbórea | global; período según la versión | a obtener |
+| Expansión urbana | GHSL, superficie construida (épocas quinquenales) | global | a obtener |
 
-El one-hot con distancia de Hamming es una **referencia**, no un método candidato: es el techo de la métrica por año (§9.6), que está alineada con esa distancia.
+- Antes de correr se verifica, para cada referencia por obtener, su resolución, su período y su cobertura en Argentina. Si una referencia no es utilizable, ese proceso queda sólo en el Nivel 1 y se registra como desviación.
+- Ninguna referencia separa exactamente nuestros procesos. La pérdida de cobertura arbórea de Hansen no distingue deforestación de degradación, así que se compara con la **unión** de los dos procesos (los píxeles asignados a deforestación o a degradación). No se filtra la referencia con información de ESA, para no quitarle independencia. La ganancia de Hansen se compara con la regeneración.
 
-### 9.4 Universo agrupado
-Las **7.818 trayectorias dinámicas de Argentina**. Las 9 constantes se excluyen: cada una sería su propio grupo y, con el 93,5 % de la superficie, dominarían cualquier métrica ponderada.
+### 10.2 Unidad y ventana
+- **Unidad:** el píxel ESA (300 m) dentro de la cobertura de cada referencia. La referencia se lleva a la grilla ESA; un píxel es **positivo** si al menos el 50 % de su área tiene el proceso en la ventana.
+- **Ventana:** la intersección entre 1993-2022 y el período de la referencia. Para el Monitor, la ventana fechada es 2001-2022; los desmontes previos a 2001 se evalúan aparte, como un solo período (1993-2000), sin fechado.
 
-### 9.5 Ponderación (decidido 2026-10-08)
-**Sin ponderar: cada trayectoria distinta pesa 1.** La tipología describe la **variedad de dinámicas**, no la superficie que ocupa cada una. Es coherente con el jerárquico de enlace completo, que es indiferente a los pesos (repetir una trayectoria no cambia la distancia máxima entre grupos), de modo que el análisis de sensibilidad cambia sólo el algoritmo. Todas las métricas de la 1.2 se calculan por tipo. Como hay 1.729 trayectorias de un solo píxel, se reporta el tamaño de los grupos para detectar grupos formados sólo por trayectorias raras.
+### 10.3 Techo del producto
+Las reglas de §7 aplicadas directamente a los píxeles ESA, comparadas con la referencia: precisión, recall y F1. Es lo máximo que puede alcanzar una tipología basada en este producto. Separa el error de ESA del error del método.
 
-### 9.6 Agrupamiento y métricas
-- **k ∈ {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48}.** Los métodos se comparan siempre a igual k.
-- **k-medoides:** implementación del proyecto (`scripts/clustering/p2_tipologias.py`, iteraciones alternadas con inicio k-medoides++), **10 arranques**, se conserva el de menor costo.
-- **Jerárquico de enlace completo:** un árbol por espacio, cortado en los mismos k.
-- **Métricas principales** (por tipo):
-  - **Exactitud por año del prototipo** (*cuándo*): cada grupo tiene como prototipo, en cada año, su estado más frecuente; es la fracción de los años de cada trayectoria que coincide con el prototipo de su grupo.
-  - **Pureza de proceso** (*qué*): cada grupo tiene como prototipo su proceso más frecuente; es la fracción de las trayectorias cuyo proceso coincide con el de su grupo.
-- **Secundaria:** dispersión del año del primer cambio, error absoluto medio respecto del año mediano de su grupo.
+### 10.4 Métricas de los métodos
+- Cada píxel hereda el grupo de su trayectoria. La asignación de grupos a procesos es la del Nivel 1, estimada con todas las trayectorias. **La referencia no se usa para ajustar nada**, así que no hace falta dividirla.
+- **Precisión, recall y F1** por superficie, en absoluto y **relativos al techo** (F1 del método / F1 del techo).
+- **Fechado:** en los píxeles positivos en ambas fuentes, error absoluto medio entre el año mediano del grupo y el año de la referencia.
 
-### 9.7 Referencias
-- **Piso: partición al azar** con los mismos tamaños de grupo que la partición evaluada (20 permutaciones de las etiquetas; se reporta la media).
-- **Techo de la métrica por año:** el one-hot con Hamming (§9.3).
-- **Descartada:** la descripción por censo (los k−1 procesos con más trayectorias, más un grupo "resto"). Sin ponderar, el "resto" reúne el 92 % de las trayectorias con k = 4 y el 75 % con k = 12: es una referencia trivialmente débil y sesgada a favor de la pureza de proceso.
+---
 
-### 9.8 Estabilidad (secundaria)
-Índice de Rand ajustado entre particiones del mismo espacio y el mismo k:
-- **entre los 10 arranques** de k-medoides (ruido del algoritmo);
-- **entre las tres semillas** del AE y del AE lineal (ruido del modelo).
+## 11. Nivel 3: robustez
 
-### 9.9 Lectura
-- Cada métrica se reporta por separado; no hay una puntuación única.
-- Para el AE y el AE lineal se reporta la media de las tres semillas y el rango; **una diferencia menor que ese rango no se interpreta**.
-- La métrica por año está alineada con la distancia de Hamming y favorece al one-hot por construcción; la pureza de proceso favorece a los espacios que agrupan por secuencia de estados. Se lee cada una sabiendo a qué noción de parecido responde.
+- **Semillas del modelo (AE y AE lineal):** el rango de las métricas de los Niveles 1 y 2 entre las tres semillas. Además, por proceso, el **índice de Jaccard ponderado por superficie** entre los conjuntos de trayectorias asignados a P en cada par de semillas. Esto reemplaza al índice de Rand ajustado global: una tipología puede variar mucho en general y conservar el grupo de un proceso.
+- **Arranques de k-medoides (todos los espacios):** el mismo Jaccard por proceso entre los 10 arranques.
+- **Trayectorias no vistas (secundaria):** las 62.121 trayectorias del conjunto no visto (§3.1) se asignan al medoide más cercano en cada espacio (en OM, con la distancia OM entre cada trayectoria y los medoides). Se calculan las métricas del Nivel 1 con la asignación de grupos a procesos estimada en Argentina, ponderando por km². Mide si la tipología reconoce los procesos en dinámicas que no participaron del agrupamiento.
+
+---
+
+## 12. Ponderación, semillas y lectura (Parte II)
+
+- **Ponderación principal: por superficie** (píxeles en Argentina; km² en el mundo). **Secundaria: por tipo.**
+- **Semillas:** media de las tres y rango mínimo–máximo; **una diferencia menor que ese rango no se interpreta**.
+- No hay una puntuación única: cada proceso, variante y nivel se reporta por separado, contra k.
+- **Lectura:**
+  - El Nivel 1 dice si el espacio permite que una tipología reúna los procesos que el producto registra.
+  - El Nivel 2, si eso se corresponde con el terreno, siempre leído relativo al techo del producto.
+  - El Nivel 3, si el resultado depende del azar.
+  - Un espacio que gana en el Nivel 1 y no en el 2 organiza bien el producto, pero no agrega correspondencia con el terreno.
+
+---
+
+## 13. Decisiones registradas y pendientes
+
+**Registradas (2026-10-09):**
+- Procesos: deforestación (D1–D3, en paralelo), expansión urbana, degradación y regeneración de bosque.
+- Persistencia mínima de 3 años; los estados transitorios no definen procesos.
+- Los eventos en costuras y cambios de sensor se marcan, no se excluyen.
+- La retracción urbana y la degradación dentro del bosque quedan fuera: el producto no las registra.
+
+**Pendientes (antes de correr):**
+1. **Umbral de superficie mínima** para evaluar un proceso, a fijar con el catálogo (§7.6) antes de ver ningún resultado de métodos.
+2. **Disponibilidad de Hansen y GHSL** (§10.1).
+3. **d de trabajo para la tipología final** (abierto desde la Parte I): esta evaluación lo informa con d = 4 y 16.
+
+---
+
+## 14. Desviaciones
+
+*(Ninguna en la Parte II por ahora. En la Parte I: el análisis de estados de un año y el reentrenamiento del AE lineal, registrados en `p1_resultados.md` §7.)*
+
+---
+
+## Requisitos de implementación (no cambian el protocolo)
+
+**Parte I**
+- El AE lineal se reentrena con la misma configuración, guardando los pesos, para codificar las trayectorias del mundo.
+- PCA y MCA se reajustan con Argentina (son determinísticos) y se proyectan las trayectorias del mundo; para MCA, con la proyección de filas suplementarias.
+- El AE codifica el mundo con los pesos guardados (`models/autoencoder_v3/p1/ae_d<d>_s<s>.pt`).
+
+**Parte II**
+- Etiquetado de eventos y procesos (§7) para los censos de Argentina y del mundo.
+- Un mapa de píxel a trayectoria para Argentina, en la grilla ESA (el censo actual cuenta píxeles por trayectoria, pero no guarda dónde están).
+- Los polígonos del Monitor de Desmontes llevados a la grilla ESA completa del Chaco Seco (el preprocesamiento de v2 lo hacía sólo por zonas).
+- Distancias OM entre las trayectorias no vistas y los medoides (§11).
