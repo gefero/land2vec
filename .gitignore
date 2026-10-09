@@ -255,3 +255,7 @@ data/geo/.*_extracted/
 data/ESA_data/
 data/autoencoder_v3/anual/
 data/autoencoder_v3/mundo/ckpt.pkl
+
+# autoencoder_v3: intermedios del censo y fuente descargable de la máscara de AL
+data/autoencoder_v3/*/ckpt_*.pkl
+data/geo/ne_50m_admin_0_map_units_*.geojson

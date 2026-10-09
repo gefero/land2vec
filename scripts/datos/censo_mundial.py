@@ -16,7 +16,7 @@ Modos (desde la raíz del repo):
     python scripts/datos/censo_mundial.py --bloques 16 --workers 1     # medición de tiempos con 16 bloques al azar
     python scripts/datos/censo_mundial.py --completo --workers 6       # censo completo (con checkpoints; se puede retomar)
 
-El modo --completo escribe en --out-dir (default data/autoencoder_v3/mundo/) universo_mundo.csv.gz con las columnas
+El modo --completo escribe en --out-dir (default data/autoencoder_v3/mundo/) <--nombre>.csv.gz (default universo_mundo) con las columnas
 hi, lo (uint64 de la codificación), n_px, area_km2, n_cambios, descartado.json y el checkpoint ckpt_<años>.pkl.
 Período: --years (default 1992-2022 = P.V3_YEARS); el nombre de cada archivo de raw_unzipped debe empezar con el año.
 """
@@ -209,7 +209,7 @@ def benchmark(n_blocks: int, workers: int, seed: int):
     print("trayectorias por n.º de cambios:", tot.n_cambios.value_counts().sort_index().to_dict())
 
 
-def full(workers: int, out_dir: Path):
+def full(workers: int, out_dir: Path, nombre: str = "universo_mundo"):
     out_dir.mkdir(parents=True, exist_ok=True)
     ckpt = out_dir / f"ckpt_{Y0}-{Y1}.pkl"
     nb = (NY // TILE) * (NX // TILE)
@@ -236,7 +236,7 @@ def full(workers: int, out_dir: Path):
                 print(f"  {k}/{len(todo)} bloques ({(time.time() - t0) / 3600:.2f} h); {len(acc):,} trayectorias", flush=True)
     assert int(acc.n_px.sum()) + disc[0] == nb * TILE * TILE, "los píxeles dentro y fuera de la máscara no suman el planeta"
     acc["n_cambios"] = n_changes(acc.hi.values, acc.lo.values)
-    out = out_dir / "universo_mundo.csv.gz"
+    out = out_dir / f"{nombre}.csv.gz"
     acc.sort_values("area_km2", ascending=False).to_csv(out, index=False)
     json.dump({"px": int(disc[0]), "km2": disc[1], "mascara": str(MASK["path"]), "buffer_px": MASK["buffer_px"],
                "dentro_px": int(acc.n_px.sum()), "dentro_km2": float(acc.area_km2.sum())}, open(out_dir / "descartado.json", "w"), indent=1)
@@ -251,12 +251,13 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--years", default=f"{P.V3_YEARS[0]}-{P.V3_YEARS[1]}", help="período (default 1992-2022); la regresión con la serie vieja es --years 2000-2022")
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
+    ap.add_argument("--nombre", default="universo_mundo", help="nombre del archivo de salida (sin .csv.gz)")
     ap.add_argument("--mascara", type=Path, default=None, help="polígono de tierra (default: data/geo/World_Continents_*.geojson)")
     ap.add_argument("--buffer-px", type=int, default=16, help="dilatación del polígono, en píxeles de 300 m")
     a = ap.parse_args()
     MASK["path"], MASK["buffer_px"] = a.mascara, a.buffer_px
     set_years(*(int(x) for x in a.years.split("-")))
     if a.completo:
-        full(a.workers, a.out_dir)
+        full(a.workers, a.out_dir, a.nombre)
     else:
         benchmark(a.bloques or 16, a.workers, a.seed)
