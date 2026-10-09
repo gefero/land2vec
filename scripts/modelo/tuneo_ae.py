@@ -11,7 +11,7 @@ Subcomandos, en orden (desde la raíz del repo):
     python scripts/modelo/tuneo_ae.py referencias                  # S de z al azar, one-hot y PCA d=8 (§4.4)
     python scripts/modelo/tuneo_ae.py piloto --workers 1           # configuración base, d=8, 100.000 pasos (§6.1)
     python scripts/modelo/tuneo_ae.py resumen                      # métricas; del piloto sale S_max
-    python scripts/modelo/tuneo_ae.py busqueda --s-max 50000 --workers 3   # 24 configuraciones, successive halving (§6.2)
+    python scripts/modelo/tuneo_ae.py busqueda --s-max 80000 --workers 3   # 24 configuraciones hasta S_max (§6.2)
     python scripts/modelo/tuneo_ae.py confirmar --workers 3        # 4 mejores x 3 semillas x d 4, 8, 16, 20 (§6.3)
     python scripts/modelo/tuneo_ae.py final --config c07 --workers 3       # configuración elegida, todo AL (§6.5)
     python scripts/modelo/tuneo_ae.py estado                       # avance de todas las corridas
@@ -439,8 +439,9 @@ def plan_busqueda(s_max: int | None) -> dict:
 
 
 def rondas(s_max: int):
-    "(objetivo, cuántas corridas) de cada ronda del successive halving."
-    return [(s_max // 4, N_BUSQUEDA), (s_max // 2, N_BUSQUEDA // 2), (s_max, N_BUSQUEDA // 4)]
+    """(objetivo, cuántas corridas) de cada ronda. Una sola: las 24 hasta S_max (desviación 3 de tuneo.md: con rondas
+    pasaban las configuraciones menos entrenadas, porque S baja con el entrenamiento)."""
+    return [(s_max, N_BUSQUEDA)]
 
 
 def ranking(plan: dict, ids: list[str], paso: int) -> list[str]:
@@ -565,13 +566,14 @@ def cmd_resumen(args):
         if etapa == "piloto":
             print(m[["paso", "loss", "S", "S_sup", "rec_anio", "rec_exacta"]].to_string(index=False, float_format=lambda v: f"{v:.4f}"))
             if m.paso.max() >= PILOTO_PASOS:
-                tope = 0.99 * m.S.max()
-                c = m[(m.paso % 10_000 == 0) & (m.S >= tope)].paso.min()
-                s_max = int(min(max(c, 20_000), PILOTO_PASOS))
+                # S_max por la reconstrucción (desviación 2 de tuneo.md): S baja con el entrenamiento
+                tope = 0.99 * m.rec_exacta.max()
+                c = m[(m.paso % 10_000 == 0) & (m.rec_exacta >= tope)].paso.min()
                 u = m.iloc[-1]
                 vel = (u.paso - u.paso_inicio) / u.seg
-                print(f"S_max = {s_max:,} (primer múltiplo de 10.000 con S >= 99 % del máximo, {tope:.4f}); "
-                      f"velocidad {vel:.1f} pasos/s con un proceso")
+                print(f"velocidad {vel:.1f} pasos/s con un proceso; máximo de S {m.S.max():.4f} en el paso {m.paso[m.S.idxmax()]:,}")
+                print(f"S_max = {int(min(max(c, 20_000), PILOTO_PASOS)):,} (primer múltiplo de 10.000 con secuencias exactas en "
+                      f"validación >= 99 % del máximo, {tope:.4f})")
         elif etapa == "busqueda":
             plan = plan_busqueda(None)
             for obj, _ in rondas(plan["s_max"]):

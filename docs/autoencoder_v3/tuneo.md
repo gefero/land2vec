@@ -94,11 +94,10 @@ Si el AE no supera al one-hot, comprimir no aporta para estas tareas, y eso es u
 
 1. **Piloto.** Configuración base, d = 8, una semilla, 100.000 pasos, evaluación cada 5.000.
    - Mide la velocidad (pasos por segundo) en la GPU.
-   - Fija **S_max**: el primer múltiplo de 10.000 pasos en el que S alcanza el 99 % del máximo de S del piloto, entre 20.000 y 100.000.
+   - Fija **S_max**: el primer múltiplo de 10.000 pasos en el que la fracción de secuencias exactas en validación alcanza el 99 % de su máximo en el piloto, entre 20.000 y 100.000 (desviación 2). Resultado: **S_max = 80.000**.
    - Fija el intervalo de checkpoint: cada 5 minutos, aproximadamente.
 2. **Búsqueda.** d = 8, una semilla, 24 configuraciones: la base más 23 sorteadas del espacio de §5 con semilla fija (sin repetir), guardadas en `data/autoencoder_v3/tuneo/plan_busqueda.json` la primera vez.
-   - Selección por rondas (successive halving): las 24 hasta S_max/4; las 12 de mayor S siguen hasta S_max/2; las 6 de mayor S, hasta S_max.
-   - En cada ronda cuenta el S del último checkpoint.
+   - Las 24 se entrenan hasta S_max y se comparan por su S en S_max (sin rondas: desviación 3).
 3. **Confirmación.** Las 4 de mayor S en la búsqueda, con 3 semillas (0, 1, 2) y d ∈ {4, 8, 16, 20}, hasta S_max (48 corridas).
 4. **Elección.** Se elige por el S medio entre semillas, promediado sobre los cuatro d (§7).
 5. **Modelos finales.** La configuración elegida, reentrenada con todo el universo de América Latina (entrenamiento y validación), con d ∈ {2, 3, 4, 6, 8, 12, 16, 20, 24, 31} × 3 semillas (30 corridas), hasta S_max. Son los modelos que entran a la evaluación.
@@ -117,10 +116,17 @@ Si el AE no supera al one-hot, comprimir no aporta para estas tareas, y eso es u
   - estado guardado en disco.
 - **Código:** `scripts/modelo/tuneo_ae.py` (subcomandos `particion`, `referencias`, `piloto`, `busqueda`, `confirmar`, `final`, `estado`, `resumen`) y `src/land2vec/criterio_procesos.py`.
 - **Salidas:** `models/autoencoder_v3/tuneo/` (modelos y checkpoints) y `data/autoencoder_v3/tuneo/` (partición, configuraciones, métricas).
-- **Costo estimado** en la GTX 1060, con S_max = 50.000: alrededor de un día de GPU en total. Se corrige con la velocidad medida en el piloto.
+- **Costo:** el piloto corrió a 41,9 pasos/s con un proceso en la GTX 1060. La búsqueda (24 × 80.000 = 1,92 millones de pasos) se estima en 6–9 horas en esa GPU con 3–4 corridas en paralelo; menos en Mendieta (`scripts/cluster/`). Las configuraciones grandes (n_embd 256, 4 capas, lote 512) son más lentas.
 
 ## 9. Desviaciones
 1. **2026-10-09, antes del piloto: el criterio principal pasó de la sonda de 10 vecinos al agrupamiento con k-medias.**
    - **Motivo:** la sonda satura. Con la partición fijada dio 0,124 con z al azar, 0,900 con PCA d = 8 y 0,947 con el one-hot; una corrida de prueba del AE con sólo 100 pasos (reconstrucción por año 0,61) ya daba 0,852. Todas las configuraciones caerían en una franja de unas 0,1, con diferencias del orden del ruido entre semillas: el problema del barrido de v2. Los vecinos inmediatos de una trayectoria son casi copias suyas, así que casi cualquier representación los pone cerca. El agrupamiento mide el orden a mayor escala, que es lo que importa para agrupar, y va de 0 (azar) a 0,53 (one-hot).
    - **Qué se había visto de un AE al decidir:** sólo esa corrida de prueba de 100 pasos (S de la sonda 0,852), usada para probar el código.
    - **Cambios:** k-medias pasa de 4 a 10 arranques y de k ∈ {12, 24, 48} a k ∈ {8, 12, 16, 24, 32, 48, 64}; S pasa a ser el promedio sobre esos k; la sonda queda como secundaria (S_vecinos). El algoritmo (k-medias) y los k los eligió el usuario.
+2. **2026-10-09, después del piloto: S_max se fija por la reconstrucción, no por S.**
+   - **Motivo:** en el piloto (configuración base, d = 8), S bajó a medida que el AE aprendía a reconstruir: 0,429 a los 5.000 pasos, 0,354 a los 20.000 y ~0,30 desde los 40.000, mientras las secuencias exactas en validación subían de 0,29 a 0,935. El máximo de S está en la primera evaluación, así que la regla original diría "entrenar lo mínimo", y compararía AE que todavía no reconstruyen.
+   - **Diagnóstico** (k-medias, información mutua normalizada con k = 24): el z del AE agrupa más por el año del primer cambio (0,15, contra 0,07 de PCA y 0,09 del one-hot) y menos por el estado final (0,12, contra 0,14 y 0,20) y por proceso (0,15, contra 0,24 y 0,25). Los procesos se definen por el estado de destino: la pérdida de reconstrucción organiza z en contra de esta tarea.
+   - **Regla nueva:** primer múltiplo de 10.000 pasos con secuencias exactas ≥ 99 % de su máximo en el piloto → **S_max = 80.000** (0,930; máximo 0,935).
+3. **2026-10-09, después del piloto: la búsqueda no usa rondas.**
+   - **Motivo:** como S es más alto cuanto menos entrenado está el AE, cortar en S_max/4 y seguir con las de mayor S favorecería a las configuraciones que aprenden más despacio (tasa baja, modelos grandes), no a las que organizan mejor los procesos.
+   - **Cambio:** las 24 configuraciones se entrenan hasta S_max y se comparan ahí. Costo: 1,92 millones de pasos en vez de 1,44 millones.
