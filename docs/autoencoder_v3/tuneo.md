@@ -96,7 +96,7 @@ Si el AE no supera al one-hot, comprimir no aporta para estas tareas, y eso es u
    - Mide la velocidad (pasos por segundo) en la GPU.
    - Fija **S_max**: el primer múltiplo de 10.000 pasos en el que S alcanza el 99 % del máximo de S del piloto, entre 20.000 y 100.000.
    - Fija el intervalo de checkpoint: cada 5 minutos, aproximadamente.
-2. **Búsqueda.** d = 8, una semilla, 24 configuraciones: la base más 23 sorteadas del espacio de §5 con semilla fija (sin repetir), guardadas en `configs_busqueda.json` la primera vez.
+2. **Búsqueda.** d = 8, una semilla, 24 configuraciones: la base más 23 sorteadas del espacio de §5 con semilla fija (sin repetir), guardadas en `data/autoencoder_v3/tuneo/plan_busqueda.json` la primera vez.
    - Selección por rondas (successive halving): las 24 hasta S_max/4; las 12 de mayor S siguen hasta S_max/2; las 6 de mayor S, hasta S_max.
    - En cada ronda cuenta el S del último checkpoint.
 3. **Confirmación.** Las 4 de mayor S en la búsqueda, con 3 semillas (0, 1, 2) y d ∈ {4, 8, 16, 20}, hasta S_max (48 corridas).

@@ -31,6 +31,7 @@ import json
 import math
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -54,6 +55,7 @@ V = len(Tokenizer.VOCAB)
 DATA = P.DATA / "autoencoder_v3" / "tuneo"
 MODELS = P.MODELS_V3 / "tuneo"
 STOP = MODELS / "STOP"
+NODO = socket.gethostname()
 
 BASE = {"tope": 100, "dropout": 0.1, "weight_decay": 1e-2, "n_embd": 128, "n_layer": 2, "pooling": "query",
         "lr": 1e-3, "batch": 128}
@@ -207,7 +209,8 @@ def cmd_correr(args):
     cfg = leer_json(d / "config.json")
     objetivo = cfg["objetivo"]
     estado = leer_json(d / "estado.json", {})
-    escribir_json(d / "estado.json", estado | {"estado": "en curso", "pid": os.getpid(), "inicio": time.time()})
+    escribir_json(d / "estado.json", estado | {"estado": "en curso", "pid": os.getpid(), "nodo": NODO, "inicio": time.time(),
+                                               "ckpt_seg": args.ckpt_seg})
     parada = Parada()
     torch.set_num_threads(args.threads)
     device = "cuda" if args.device == "auto" and torch.cuda.is_available() else ("cpu" if args.device == "auto" else args.device)
@@ -300,6 +303,14 @@ def vivo(pid) -> bool:
         return False
 
 
+def en_curso(est: dict) -> bool:
+    """¿La corrida sigue viva? En este nodo, por su pid. En otro nodo (cluster con /home compartido) el pid no se puede
+    mirar: se la da por viva si actualizó estado.json hace menos de 3 intervalos de checkpoint."""
+    if est.get("nodo", NODO) == NODO:
+        return vivo(est.get("pid"))
+    return time.time() - max(est.get("inicio", 0), est.get("actualizado", 0)) < 3 * est.get("ckpt_seg", 300)
+
+
 def preparar(etapa: str, nombre: str, cfg: dict) -> Path:
     "Crea la carpeta de la corrida o sube su objetivo; el resto de la configuración no puede cambiar."
     d = MODELS / etapa / nombre
@@ -338,8 +349,8 @@ def lanzar(dirs: list[Path], args) -> bool:
         if not pendiente(d):
             continue
         est = leer_json(d / "estado.json", {})
-        if est.get("estado") == "en curso" and vivo(est.get("pid")) and est.get("pid") != os.getpid():
-            print(f"  {d.name}: ya está corriendo (pid {est['pid']}), se saltea")
+        if est.get("estado") == "en curso" and en_curso(est) and est.get("pid") != os.getpid():
+            print(f"  {d.name}: ya está corriendo (pid {est['pid']} en {est.get('nodo', NODO)}), se saltea")
             continue
         cola.append(d)
     if not cola:
@@ -495,8 +506,8 @@ def cmd_estado(args):
         d = f.parent
         cfg, est, m = leer_json(f), leer_json(d / "estado.json", {}), ultima_metrica(d)
         e = est.get("estado", "pendiente")
-        if e == "en curso" and not vivo(est.get("pid")):
-            e = "interrumpida (corte abrupto)"
+        if e == "en curso":
+            e = (f"en curso ({est['nodo']})" if est.get("nodo", NODO) != NODO else e) if en_curso(est) else "interrumpida (corte abrupto)"
         paso = est.get("paso", 0)
         # velocidad de la última sesión (desde que se lanzó o retomó)
         dt_ = est.get("actualizado", 0) - est.get("inicio", 0)

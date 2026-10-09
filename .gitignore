@@ -259,3 +259,10 @@ data/autoencoder_v3/mundo/ckpt.pkl
 # autoencoder_v3: intermedios del censo y fuente descargable de la máscara de AL
 data/autoencoder_v3/*/ckpt_*.pkl
 data/geo/ne_50m_admin_0_map_units_*.geojson
+
+# tuneo del AE v3: los checkpoints de reanudación y los logs de Slurm quedan en el cluster
+# (se versionan modelo.pt, codigos.npz y las métricas)
+models/autoencoder_v3/tuneo/**/ckpt.pt
+models/autoencoder_v3/tuneo/**/*.tmp
+models/autoencoder_v3/tuneo/STOP
+logs/
