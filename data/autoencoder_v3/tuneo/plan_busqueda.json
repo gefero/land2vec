@@ -1,0 +1,245 @@
+{
+ "s_max": 80000,
+ "configs": {
+  "c00": {
+   "tope": 100,
+   "dropout": 0.1,
+   "weight_decay": 0.01,
+   "n_embd": 128,
+   "n_layer": 2,
+   "pooling": "query",
+   "lr": 0.001,
+   "batch": 128
+  },
+  "c01": {
+   "tope": 100,
+   "dropout": 0.2,
+   "weight_decay": 0.1,
+   "n_embd": 64,
+   "n_layer": 2,
+   "pooling": "query",
+   "lr": 0.003,
+   "batch": 512
+  },
+  "c02": {
+   "tope": 100,
+   "dropout": 0.1,
+   "weight_decay": 0.1,
+   "n_embd": 64,
+   "n_layer": 4,
+   "pooling": "query",
+   "lr": 0.001,
+   "batch": 512
+  },
+  "c03": {
+   "tope": 1,
+   "dropout": 0.0,
+   "weight_decay": 0.0,
+   "n_embd": 128,
+   "n_layer": 4,
+   "pooling": "mean",
+   "lr": 0.001,
+   "batch": 512
+  },
+  "c04": {
+   "tope": 10,
+   "dropout": 0.0,
+   "weight_decay": 0.1,
+   "n_embd": 64,
+   "n_layer": 1,
+   "pooling": "mean",
+   "lr": 0.001,
+   "batch": 128
+  },
+  "c05": {
+   "tope": null,
+   "dropout": 0.0,
+   "weight_decay": 0.1,
+   "n_embd": 64,
+   "n_layer": 2,
+   "pooling": "query",
+   "lr": 0.0003,
+   "batch": 512
+  },
+  "c06": {
+   "tope": 1,
+   "dropout": 0.0,
+   "weight_decay": 0.1,
+   "n_embd": 256,
+   "n_layer": 1,
+   "pooling": "mean",
+   "lr": 0.001,
+   "batch": 512
+  },
+  "c07": {
+   "tope": null,
+   "dropout": 0.0,
+   "weight_decay": 0.1,
+   "n_embd": 128,
+   "n_layer": 1,
+   "pooling": "mean",
+   "lr": 0.001,
+   "batch": 512
+  },
+  "c08": {
+   "tope": 10,
+   "dropout": 0.0,
+   "weight_decay": 0.0,
+   "n_embd": 128,
+   "n_layer": 4,
+   "pooling": "query",
+   "lr": 0.003,
+   "batch": 512
+  },
+  "c09": {
+   "tope": null,
+   "dropout": 0.2,
+   "weight_decay": 0.01,
+   "n_embd": 256,
+   "n_layer": 2,
+   "pooling": "query",
+   "lr": 0.003,
+   "batch": 128
+  },
+  "c10": {
+   "tope": 100,
+   "dropout": 0.1,
+   "weight_decay": 0.01,
+   "n_embd": 256,
+   "n_layer": 1,
+   "pooling": "query",
+   "lr": 0.0003,
+   "batch": 128
+  },
+  "c11": {
+   "tope": 1,
+   "dropout": 0.0,
+   "weight_decay": 0.01,
+   "n_embd": 128,
+   "n_layer": 2,
+   "pooling": "mean",
+   "lr": 0.001,
+   "batch": 128
+  },
+  "c12": {
+   "tope": 10,
+   "dropout": 0.0,
+   "weight_decay": 0.0,
+   "n_embd": 256,
+   "n_layer": 4,
+   "pooling": "query",
+   "lr": 0.001,
+   "batch": 512
+  },
+  "c13": {
+   "tope": null,
+   "dropout": 0.2,
+   "weight_decay": 0.0,
+   "n_embd": 128,
+   "n_layer": 4,
+   "pooling": "query",
+   "lr": 0.001,
+   "batch": 128
+  },
+  "c14": {
+   "tope": 100,
+   "dropout": 0.1,
+   "weight_decay": 0.01,
+   "n_embd": 256,
+   "n_layer": 2,
+   "pooling": "mean",
+   "lr": 0.001,
+   "batch": 512
+  },
+  "c15": {
+   "tope": 100,
+   "dropout": 0.0,
+   "weight_decay": 0.0,
+   "n_embd": 64,
+   "n_layer": 4,
+   "pooling": "query",
+   "lr": 0.001,
+   "batch": 128
+  },
+  "c16": {
+   "tope": 100,
+   "dropout": 0.0,
+   "weight_decay": 0.01,
+   "n_embd": 128,
+   "n_layer": 2,
+   "pooling": "query",
+   "lr": 0.003,
+   "batch": 128
+  },
+  "c17": {
+   "tope": 100,
+   "dropout": 0.0,
+   "weight_decay": 0.0,
+   "n_embd": 64,
+   "n_layer": 1,
+   "pooling": "query",
+   "lr": 0.001,
+   "batch": 128
+  },
+  "c18": {
+   "tope": 100,
+   "dropout": 0.1,
+   "weight_decay": 0.0,
+   "n_embd": 256,
+   "n_layer": 2,
+   "pooling": "mean",
+   "lr": 0.0003,
+   "batch": 128
+  },
+  "c19": {
+   "tope": 100,
+   "dropout": 0.2,
+   "weight_decay": 0.0,
+   "n_embd": 64,
+   "n_layer": 2,
+   "pooling": "mean",
+   "lr": 0.003,
+   "batch": 128
+  },
+  "c20": {
+   "tope": null,
+   "dropout": 0.1,
+   "weight_decay": 0.1,
+   "n_embd": 256,
+   "n_layer": 1,
+   "pooling": "query",
+   "lr": 0.003,
+   "batch": 128
+  },
+  "c21": {
+   "tope": 100,
+   "dropout": 0.0,
+   "weight_decay": 0.1,
+   "n_embd": 64,
+   "n_layer": 2,
+   "pooling": "mean",
+   "lr": 0.001,
+   "batch": 128
+  },
+  "c22": {
+   "tope": 1,
+   "dropout": 0.2,
+   "weight_decay": 0.0,
+   "n_embd": 64,
+   "n_layer": 4,
+   "pooling": "query",
+   "lr": 0.0003,
+   "batch": 128
+  },
+  "c23": {
+   "tope": null,
+   "dropout": 0.1,
+   "weight_decay": 0.0,
+   "n_embd": 128,
+   "n_layer": 2,
+   "pooling": "mean",
+   "lr": 0.0003,
+   "batch": 128
+  }
+ }
+}

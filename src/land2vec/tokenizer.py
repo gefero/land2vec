@@ -1,4 +1,10 @@
-import torch
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:   # sólo para la anotación: importar torch tarda segundos y no hace falta para codificar
+    import torch
+
 
 class Tokenizer:
     VOCAB = {
