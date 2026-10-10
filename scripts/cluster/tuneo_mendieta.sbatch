@@ -27,14 +27,14 @@
 
 set -euo pipefail
 . /etc/profile
-source .venv/bin/activate
+source scripts/cluster/entorno_scratch.sh
 
 ETAPA=${1:?etapa: piloto | busqueda | confirmar | final}
 shift
 
 MARGEN_SEG=${MARGEN_SEG:-900}
 FIN=$(squeue -h -j "$SLURM_JOB_ID" -o %e)
-MAX_HORAS=$(python -c "import datetime as d; print(max(0.1, (d.datetime.fromisoformat('$FIN') - d.datetime.now()).total_seconds() - $MARGEN_SEG) / 3600)")
+MAX_HORAS=$(python3 -c "import datetime as d; print(max(0.1, (d.datetime.fromisoformat('$FIN') - d.datetime.now()).total_seconds() - $MARGEN_SEG) / 3600)")
 
 # Con --gres, Slurm renumera las GPUs asignadas desde 0 en CUDA_VISIBLE_DEVICES.
 N_GPU=$(awk -F, '{print NF}' <<<"${CUDA_VISIBLE_DEVICES:?no hay GPU asignada}")
@@ -46,7 +46,7 @@ export OMP_NUM_THREADS=$THREADS MKL_NUM_THREADS=$THREADS
 echo "$(date '+%F %T') job $SLURM_JOB_ID en $(hostname): etapa $ETAPA $*"
 echo "  GPUs $DEVICES ($(nvidia-smi --query-gpu=name --format=csv,noheader | sort -u | paste -sd,)), $WORKERS corridas a la vez, $THREADS hilos c/u, para a las ${MAX_HORAS:0:5} h"
 
-python scripts/modelo/tuneo_ae.py "$ETAPA" "$@" \
+python3 scripts/modelo/tuneo_ae.py "$ETAPA" "$@" \
     --device "$DEVICES" --workers "$WORKERS" --threads "$THREADS" --max-horas "$MAX_HORAS"
-python scripts/modelo/tuneo_ae.py estado
-[ "$ETAPA" = piloto ] && python scripts/modelo/tuneo_ae.py resumen || true
+python3 scripts/modelo/tuneo_ae.py estado
+[ "$ETAPA" = piloto ] && python3 scripts/modelo/tuneo_ae.py resumen || true

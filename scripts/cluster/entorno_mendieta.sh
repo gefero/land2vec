@@ -5,6 +5,8 @@
 #   bash scripts/cluster/entorno_mendieta.sh
 #   sbatch scripts/cluster/prueba_mendieta.sbatch      # después: verificar en un nodo de cómputo
 #
+# Al final arma entorno/py313_tuneo.tar (empaquetar_entorno.sh), que los sbatch descomprimen en el /scratch del nodo.
+#
 # Notas:
 # - uv en vez de Miniconda: un solo binario en ~/.local/bin, mismo resultado (entorno propio en el home).
 # - Python: se pide la variante x86-64 base. Los nodos de Mendieta son Xeon E5-2680 v2 (Ivy Bridge, sin AVX2);
@@ -22,7 +24,8 @@ if ! command -v uv >/dev/null 2>&1; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 uv python install "$PY"
-uv venv --python "$PY" .venv
+# only-managed: el Python de uv (relocalizable), no el de Miniconda que esté primero en el PATH
+uv venv --python-preference only-managed --python "$PY" .venv
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
@@ -31,4 +34,6 @@ uv pip install $(grep -E '^(numpy|pandas|scikit-learn|scipy|joblib|threadpoolctl
 uv pip install -e .
 
 python -c "import torch, numpy, pandas, sklearn; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
-echo "Entorno listo en $(pwd)/.venv. Falta probarlo en un nodo con GPU: sbatch scripts/cluster/prueba_mendieta.sbatch"
+# los jobs no usan .venv desde el /home (lento por NFS): lo empaquetan al /scratch del nodo
+bash scripts/cluster/empaquetar_entorno.sh
+echo "Entorno listo. Falta probarlo en un nodo con GPU: sbatch scripts/cluster/prueba_mendieta.sbatch"
