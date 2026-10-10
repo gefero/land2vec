@@ -40,7 +40,7 @@ subir-estado)
     rsync -avzu data/autoencoder_v3/tuneo/ "$R/data/autoencoder_v3/tuneo/"
     ;;
 bajar)
-    mkdir -p models/autoencoder_v3/tuneo data/autoencoder_v3/tuneo
+    mkdir -p models/autoencoder_v3/tuneo data/autoencoder_v3/tuneo logs/mendieta
     # ckpt.pt sólo sirve para retomar corridas, y eso pasa en el cluster
     rsync -avz --exclude STOP --exclude ckpt.pt --exclude '*.tmp' "$R/models/autoencoder_v3/tuneo/" models/autoencoder_v3/tuneo/
     rsync -avz "$R/data/autoencoder_v3/tuneo/" data/autoencoder_v3/tuneo/

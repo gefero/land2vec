@@ -231,9 +231,10 @@ def cmd_correr(args):
         model.load_state_dict(st["model"])
         opt.load_state_dict(st["opt"])
         paso = st["paso"]
-        torch.set_rng_state(st["rng_cpu"])
+        # map_location también manda a la GPU los estados de los generadores; set_rng_state los exige en la CPU
+        torch.set_rng_state(st["rng_cpu"].cpu())
         if device.startswith("cuda") and st.get("rng_cuda") is not None:
-            torch.cuda.set_rng_state(st["rng_cuda"], device=torch.device(device))
+            torch.cuda.set_rng_state(st["rng_cuda"].cpu(), device=torch.device(device))
         print(f"retomando en el paso {paso:,} (objetivo {objetivo:,})", flush=True)
     paso_inicio = paso
     escribir_json(d / "estado.json", leer_json(d / "estado.json") | {"paso_inicio": paso_inicio, "paso": paso})

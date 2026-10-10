@@ -25,8 +25,8 @@
 #SBATCH --time=2-00:00
 #SBATCH --output=logs/tuneo-%x-%j.out
 
+. /etc/profile   # antes de set -u: el /etc/profile del cluster usa variables sin definir (HISTCONTROL)
 set -euo pipefail
-. /etc/profile
 source scripts/cluster/entorno_scratch.sh
 
 ETAPA=${1:?etapa: piloto | busqueda | confirmar | final}
